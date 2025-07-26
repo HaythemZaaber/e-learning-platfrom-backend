@@ -2,51 +2,90 @@ import { Injectable } from '@nestjs/common';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import * as jwt from 'jsonwebtoken';
 
-const clerkClient = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
 @Injectable()
 export class ClerkService {
+  private clerkClient;
+
+  constructor() {
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey) {
+      console.error('CLERK_SECRET_KEY is not configured');
+      throw new Error('CLERK_SECRET_KEY is required');
+    }
+
+    this.clerkClient = createClerkClient({
+      secretKey: secretKey,
+    });
+
+    console.log('Clerk client initialized successfully');
+  }
+
   async verifyToken(token: string) {
+    console.log('Verifying token...');
     try {
-      const publicKey = process.env.CLERK_PEM_PUBLIC_KEY;
-      if (!publicKey) {
-        throw new Error('Clerk PEM public key not configured');
+      const secretKey = process.env.CLERK_SECRET_KEY;
+      if (!secretKey) {
+        throw new Error('CLERK_SECRET_KEY is not configured');
       }
-      //   // Verify and decode the JWT
-      //   const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] }) as any;
-      //   // Return the user ID (sub)
-      //   return { sub: decoded.sub || decoded.userId };
 
       try {
-        const { sessionId, userId, getToken } = await verifyToken(token, {
-          secretKey: process.env.CLERK_API_KEY, // optional if your env is already configured
+        const { sub } = await verifyToken(token, {
+          secretKey: secretKey,
         });
 
-        // Token is valid
-        return { sub: userId } as { sub: string };
+        console.log('Token verified successfully, user ID:', sub);
 
+        if (!sub) {
+          throw new Error('No user ID found in token');
+        }
+
+        // Token is valid
+        return { sub } as { sub: string };
       } catch (err) {
+        console.error('Token verification failed:', err);
         throw new Error('Invalid token');
       }
     } catch (error) {
+      console.error('Error in verifyToken:', error);
       throw new Error('Invalid token');
     }
   }
 
   async getUser(userId: string) {
     try {
-      const user = await clerkClient.users.getUser(userId);
+      console.log('Finding user with ID:', userId);
+
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+
+      if (!this.clerkClient) {
+        throw new Error('Clerk client not initialized');
+      }
+
+      console.log('Calling Clerk API to get user...');
+      const user = await this.clerkClient.users.getUser(userId);
+      console.log('User found:', user ? 'Yes' : 'No', user?.id);
+
+      if (!user) {
+        throw new Error('User not found in Clerk');
+      }
+
       return user;
     } catch (error) {
+      console.error('Error in getUser:', error);
+
+      if (error instanceof Error) {
+        throw new Error(`Failed to get user: ${error.message}`);
+      }
+
       throw new Error('User not found');
     }
   }
 
   async updateUserMetadata(userId: string, metadata: any) {
     try {
-      const user = await clerkClient.users.updateUser(userId, {
+      const user = await this.clerkClient.users.updateUser(userId, {
         publicMetadata: metadata,
       });
       return user;

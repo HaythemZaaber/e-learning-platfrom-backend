@@ -24,6 +24,9 @@ export class UserObject {
   lastName?: string;
 
   @Field({ nullable: true })
+  profileImage?: string;
+
+  @Field({ nullable: true })
   phone?: string;
 
   @Field({ nullable: true })

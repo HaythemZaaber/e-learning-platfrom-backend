@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Enhanced E-Learning Platform Prisma Schema
+// Modern AI-powered learning management system
 
 generator client {
   provider = "prisma-client-js"
@@ -15,32 +12,474 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  clerkId     String   @unique
-  email       String   @unique
-  firstName   String?
-  lastName    String?
-  phone       String?
-  address     String?
-  city        String?
-  state       String?
-  zip         String?
-  country     String?
-  role        UserRole @default(VISITOR)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(cuid())
+  clerkId       String    @unique
+  email         String    @unique
+  username      String?  
+  firstName     String?
+  lastName      String?
+  profileImage  String?
+  bio           String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  zip           String?
+  country       String?
+  dateOfBirth   DateTime?
+  gender        Gender?
+  
+  // Role Management
+  role          UserRole  @default(VISITOR)
+  isEmailVerified Boolean @default(false)
+  isPhoneVerified Boolean @default(false)
+  
+  // Instructor-specific fields
+  instructorStatus   InstructorStatus @default(NOT_APPLIED)
+  instructorBio      String?
+  expertise          String[]         @default([])
+  qualifications     String[]         @default([])
+  experience         Int?             // years of experience
+  socialLinks        Json             @default("{}")
+  
+  // Platform engagement
+  lastLoginAt       DateTime?
+  isActive          Boolean          @default(true)
+  preferences       Json             @default("{}")
+  
+  // Timestamps
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
   
   // Relations
-  // courses     Course[]
-  // enrollments Enrollment[]
+  instructorCourses     Course[]           @relation("InstructorCourses")
+  enrollments          Enrollment[]
+  progress             Progress[]
+  reviews              Review[]
+  instructorApplication InstructorApplication?
+  aiInteractions       AIInteraction[]
+  certificates         Certificate[]
+  discussions          Discussion[]
+  notifications        Notification[]
   
   @@map("users")
 }
 
+model InstructorApplication {
+  id                String                    @id @default(cuid())
+  userId            String                    @unique
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Application Details
+  motivation        String                    // Why they want to become instructor
+  teachingExperience String
+  portfolioUrl      String?
+  resumeUrl         String?
+  identityDocument  String?                   // URL to uploaded ID
+  qualificationDocs String[]                  @default([])
+  
+  // Review Process
+  status            ApplicationStatus         @default(PENDING)
+  reviewedBy        String?                   // Admin user ID
+  reviewNotes       String?
+  reviewedAt        DateTime?
+  
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  
+  @@map("instructor_applications")
+}
+
+model Course {
+  id             String         @id @default(cuid())
+  title          String
+  description    String
+  shortDescription String?       // For cards/previews
+  category       String
+  subcategory    String?
+  level          CourseLevel    @default(BEGINNER)
+  thumbnail      String?
+  trailer        String?        // Course preview video
+  price          Float          @default(0)
+  originalPrice  Float?         // For discount display
+  currency       String         @default("USD")
+  
+  // Course Content
+  objectives     String[]       @default([])
+  prerequisites  String[]       @default([])
+  whatYouLearn   String[]       @default([])
+  
+  // SEO & Marketing
+  seoTags        String[]       @default([])
+  seoDescription String?
+  marketingTags  String[]       @default([])
+  
+  // Course Settings
+  status         CourseStatus   @default(DRAFT)
+  enrollmentType EnrollmentType @default(FREE)
+  language       String         @default("en")
+  isPublic       Boolean        @default(true)
+  certificate    Boolean        @default(false)
+  
+  // Modern Features
+  hasAITutor     Boolean        @default(false)
+  aiPersonality  String?        // AI tutor personality type
+  difficulty     Float          @default(1.0) // 1.0-5.0 AI-calculated difficulty
+  estimatedHours Int           @default(0)
+  
+  // Accessibility
+  accessibility  Json           @default("{\"captions\": false, \"transcripts\": false, \"audioDescription\": false, \"signLanguage\": false}")
+  
+  // Analytics
+  views          Int            @default(0)
+  avgRating      Float          @default(0)
+  totalRatings   Int            @default(0)
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  publishedAt    DateTime?
+
+  // Relationships
+  instructorId   String
+  instructor     User           @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Cascade)
+  sections       Section[]
+  enrollments    Enrollment[]
+  reviews        Review[]
+  progress       Progress[]
+  aiInteractions AIInteraction[]
+  certificates   Certificate[]
+  discussions    Discussion[]
+
+  @@map("courses")
+}
+
+model Section {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  order       Int      @default(0)
+  isLocked    Boolean  @default(false) // For progressive unlocking
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  courseId String
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons  Lesson[]
+
+  @@map("sections")
+}
+
+model Lesson {
+  id            String     @id @default(cuid())
+  title         String
+  description   String?
+  type          LessonType
+  content       String?    // Rich text content
+  videoUrl      String?
+  audioUrl      String?    // For audio lessons
+  attachmentUrl String?
+  downloadUrls  String[]   @default([]) // Multiple downloadable resources
+  
+  // Lesson Properties
+  duration      Int        @default(0) // in seconds
+  order         Int        @default(0)
+  isPreview     Boolean    @default(false)
+  isInteractive Boolean    @default(false)
+  
+  // AI Features
+  hasAIQuiz     Boolean    @default(false)
+  aiSummary     String?    // AI-generated lesson summary
+  transcription String?    // Auto-generated transcription
+  
+  // Accessibility
+  captions      String?    // VTT file URL
+  transcript    String?    // Full transcript
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relationships
+  sectionId String
+  section   Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress  Progress[]
+  discussions Discussion[]
+
+  @@map("lessons")
+}
+
+model Enrollment {
+  id             String           @id @default(cuid())
+  enrolledAt     DateTime         @default(now())
+  completedAt    DateTime?
+  status         EnrollmentStatus @default(ACTIVE)
+  progress       Float            @default(0) // 0-100
+  currentLessonId String?         // Track current lesson
+  
+  // Payment Info (if paid course)
+  paymentStatus  PaymentStatus    @default(FREE)
+  paymentId      String?          // Stripe/payment provider ID
+  amountPaid     Float?
+  
+  // Learning Analytics
+  totalTimeSpent Int              @default(0) // in minutes
+  streakDays     Int              @default(0)
+  lastAccessedAt DateTime?
+
+  // Relationships
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model Progress {
+  id          String    @id @default(cuid())
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  timeSpent   Int       @default(0) // in seconds
+  attempts    Int       @default(0) // For quizzes/assignments
+  score       Float?    // For assessments
+  
+  // AI Insights
+  difficultyRating Float? // User's perceived difficulty (1-5)
+  aiRecommendations String? // AI suggestions for improvement
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@map("progress")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      @default(1) // 1-5 stars
+  comment   String?
+  isVerified Boolean @default(false) // Verified purchase
+  helpfulCount Int   @default(0)
+  
+  // Review Details
+  courseQuality    Int? // 1-5
+  instructorRating Int? // 1-5
+  difficultyRating Int? // 1-5
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("reviews")
+}
+
+// AI Features
+model AIInteraction {
+  id            String          @id @default(cuid())
+  type          AIInteractionType
+  query         String
+  response      String
+  context       Json            @default("{}")
+  isHelpful     Boolean?        // User feedback
+  
+  createdAt     DateTime        @default(now())
+  
+  // Relationships
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String?
+  course        Course?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  
+  @@map("ai_interactions")
+}
+
+model Certificate {
+  id            String    @id @default(cuid())
+  certificateId String    @unique // Public certificate ID
+  templateUrl   String    // Certificate template/design
+  issueDate     DateTime  @default(now())
+  isVerified    Boolean   @default(true)
+  
+  // Certificate Data
+  completionScore Float?  // Final score
+  completionTime  Int     // Time taken to complete (hours)
+  
+  // Relationships
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@map("certificates")
+}
+
+model Discussion {
+  id          String         @id @default(cuid())
+  title       String?
+  content     String
+  type        DiscussionType @default(QUESTION)
+  isResolved  Boolean        @default(false)
+  isPinned    Boolean        @default(false)
+  upvotes     Int            @default(0)
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  // Relationships
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId    String?
+  course      Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId    String?
+  lesson      Lesson?        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  parentId    String?        // For replies
+  parent      Discussion?    @relation("DiscussionReplies", fields: [parentId], references: [id])
+  replies     Discussion[]   @relation("DiscussionReplies")
+  
+  @@map("discussions")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  data      Json             @default("{}")
+  
+  createdAt DateTime         @default(now())
+  
+  // Relationships
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+// Enums
 enum UserRole {
-  ADMIN
-  INSTRUCTOR
-  STUDENT
-  PARENT
-  VISITOR
+  VISITOR      // Just signed up, limited access
+  STUDENT      // Can enroll in courses
+  INSTRUCTOR   // Can create and manage courses
+  ADMIN        // Full platform access
+  PARENT       // For minor students
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum InstructorStatus {
+  NOT_APPLIED    // Default for students
+  PENDING        // Application submitted
+  UNDER_REVIEW   // Being reviewed by admin
+  APPROVED       // Can create courses
+  REJECTED       // Application denied
+  SUSPENDED      // Temporarily disabled
+}
+
+enum ApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REQUIRES_MORE_INFO
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+  ALL_LEVELS
+}
+
+enum CourseStatus {
+  DRAFT
+  UNDER_REVIEW
+  PUBLISHED
+  ARCHIVED
+  SUSPENDED
+}
+
+enum EnrollmentType {
+  FREE
+  PAID
+  SUBSCRIPTION
+  INVITATION_ONLY
+}
+
+enum LessonType {
+  VIDEO
+  TEXT
+  AUDIO
+  QUIZ
+  ASSIGNMENT
+  DOWNLOAD
+  INTERACTIVE
+  LIVE_SESSION
+  AR_VR
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  SUSPENDED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  FREE
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum AIInteractionType {
+  QUESTION
+  EXPLANATION
+  QUIZ_GENERATION
+  SUMMARY
+  RECOMMENDATION
+  TUTORING
+  CODE_REVIEW
+}
+
+enum DiscussionType {
+  QUESTION
+  ANSWER
+  ANNOUNCEMENT
+  GENERAL
+  BUG_REPORT
+}
+
+enum NotificationType {
+  COURSE_UPDATE
+  NEW_LESSON
+  ASSIGNMENT_DUE
+  CERTIFICATE_EARNED
+  DISCUSSION_REPLY
+  INSTRUCTOR_APPROVED
+  SYSTEM_ANNOUNCEMENT
+  AI_RECOMMENDATION
 }
