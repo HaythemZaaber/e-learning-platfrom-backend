@@ -47,9 +47,9 @@ export class UserObject {
   @Field(() => UserRole)
   role: UserRole;
 
-  @Field()
-  createdAt: Date;
+  @Field(() => Date, {nullable: true})
+  createdAt: Date | null;
 
-  @Field()
-  updatedAt: Date;
-} 
+  @Field(() => Date, {nullable: true})
+  updatedAt: Date | null;
+}

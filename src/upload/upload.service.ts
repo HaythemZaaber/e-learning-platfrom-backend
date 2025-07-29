@@ -19,7 +19,7 @@ export class UploadService {
       );
 
       const file_url =
-        (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3000/public') +
+        (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/public') +
         '/' +
         filePath.replace(/\\/g, '/');
 

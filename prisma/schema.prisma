@@ -61,8 +61,26 @@ model User {
   certificates         Certificate[]
   discussions          Discussion[]
   notifications        Notification[]
+  courseDrafts         CourseDraft[]      // New: For saving drafts during creation
   
   @@map("users")
+}
+
+// New model for course drafts during creation process
+model CourseDraft {
+  id               String    @id @default(cuid())
+  instructorId     String
+  instructor       User      @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  
+  // Draft data - JSON to store flexible structure
+  draftData        Json      @default("{}")
+  currentStep      Int       @default(0)  // Which step user is on
+  completionScore  Int       @default(0)  // Completion percentage
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  @@map("course_drafts")
 }
 
 model InstructorApplication {
@@ -127,6 +145,9 @@ model Course {
   difficulty     Float          @default(1.0) // 1.0-5.0 AI-calculated difficulty
   estimatedHours Int           @default(0)
   
+  // Course Settings (expanded) - Store all your frontend settings
+  settings       Json           @default("{}")  
+  
   // Accessibility
   accessibility  Json           @default("{\"captions\": false, \"transcripts\": false, \"audioDescription\": false, \"signLanguage\": false}")
   
@@ -149,6 +170,7 @@ model Course {
   aiInteractions AIInteraction[]
   certificates   Certificate[]
   discussions    Discussion[]
+  contentItems   ContentItem[]  // Direct relation to content items
 
   @@map("courses")
 }
@@ -175,11 +197,7 @@ model Lesson {
   title         String
   description   String?
   type          LessonType
-  content       String?    // Rich text content
-  videoUrl      String?
-  audioUrl      String?    // For audio lessons
-  attachmentUrl String?
-  downloadUrls  String[]   @default([]) // Multiple downloadable resources
+  content       String?    // Rich text content for text lessons
   
   // Lesson Properties
   duration      Int        @default(0) // in seconds
@@ -196,16 +214,52 @@ model Lesson {
   captions      String?    // VTT file URL
   transcript    String?    // Full transcript
   
+  // Lesson settings and metadata
+  settings      Json       @default("{}")
+  
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
   // Relationships
-  sectionId String
-  section   Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  progress  Progress[]
-  discussions Discussion[]
+  sectionId    String
+  section      Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress     Progress[]
+  discussions  Discussion[]
+  contentItems ContentItem[] // New: Lessons can have multiple content items
 
   @@map("lessons")
+}
+
+// New model to handle all types of content uniformly
+model ContentItem {
+  id           String      @id @default(cuid())
+  title        String
+  description  String?
+  type         ContentType
+  
+  // File information (for uploaded content)
+  fileUrl      String?
+  fileName     String?
+  fileSize     Int?        // in bytes
+  mimeType     String?
+  
+  // Content data (for text, assignments, etc.)
+  contentData  Json        @default("{}")
+  
+  // Metadata
+  isPublished  Boolean     @default(false)
+  order        Int         @default(0)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  courseId     String?
+  course       Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId     String?
+  lesson       Lesson?     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@map("content_items")
 }
 
 model Enrollment {
@@ -437,6 +491,20 @@ enum LessonType {
   INTERACTIVE
   LIVE_SESSION
   AR_VR
+}
+
+// New enum for unified content handling
+enum ContentType {
+  VIDEO
+  AUDIO
+  DOCUMENT
+  TEXT
+  QUIZ
+  ASSIGNMENT
+  RESOURCE
+  LINK
+  IMAGE
+  ARCHIVE
 }
 
 enum EnrollmentStatus {

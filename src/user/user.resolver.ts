@@ -13,9 +13,27 @@ export class UserResolver {
   constructor(private userService: UserService) {}
 
   @Query(() => UserObject, { name: 'me', nullable: true })
-  async getCurrentUser(@Context() context: any): Promise<User | null> {
-    const clerkId = context.req.user.id;
-    return this.userService.findByClerkId(clerkId);
+  async getCurrentUser(@Context() context: any): Promise<UserObject | null> {
+    const clerkId = context.req.user.clerkId;
+
+    const user = await this.userService.findByClerkId(clerkId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    console.log('userrrrr', user);
+
+    const userObject: UserObject = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName || undefined,
+      lastName: user.lastName || undefined,
+      profileImage: user.profileImage || undefined,
+      role: user.role,
+      createdAt: new Date(user.createdAt),
+      updatedAt: new Date(user.updatedAt),
+      clerkId: user.clerkId,
+    };
+    return userObject;
   }
 
   @Query(() => [UserObject], { name: 'users' })

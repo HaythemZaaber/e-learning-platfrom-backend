@@ -25,6 +25,8 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('No token provided');
     }
 
+    
+
     try {
       const sessionToken = await this.clerkService.verifyToken(token);
       console.log('Session token:', sessionToken);
@@ -46,8 +48,9 @@ export class AuthGuard implements CanActivate {
       // Add user info to request context
       request.user = {
         id: dbUser.id,
+        clerkId: clerkUser.id,
         email: clerkUser.emailAddresses[0]?.emailAddress,
-        role: clerkUser.publicMetadata?.role || 'STUDENT',
+        role: dbUser.role || 'STUDENT',
         ...clerkUser.publicMetadata,
       };
 

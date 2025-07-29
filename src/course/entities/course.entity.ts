@@ -7,8 +7,14 @@ import {
   registerEnumType,
 } from '@nestjs/graphql';
 import { UserObject } from '../../user/user.entity'; // Adjust import path as needed
-import { CourseLevel, EnrollmentType } from '../../../generated/prisma';
+import {
+  CourseLevel,
+  EnrollmentType,
+  ContentType,
+  LessonType,
+} from '../../../generated/prisma';
 
+// Register all enums at the top level
 registerEnumType(CourseLevel, {
   name: 'CourseLevel',
   description: 'The difficulty level of the course',
@@ -17,6 +23,16 @@ registerEnumType(CourseLevel, {
 registerEnumType(EnrollmentType, {
   name: 'EnrollmentType',
   description: 'The type of enrollment for the course',
+});
+
+registerEnumType(ContentType, {
+  name: 'ContentType',
+  description: 'The type of content item',
+});
+
+registerEnumType(LessonType, {
+  name: 'LessonType',
+  description: 'The type of lesson',
 });
 
 @ObjectType()

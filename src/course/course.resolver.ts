@@ -1,18 +1,18 @@
 import { Resolver, Mutation, Query, Args, Context } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
-// Remove GraphQL upload imports for now - use REST uploads instead
-// import { GraphQLUpload, FileUpload } from 'graphql-upload';
 import { CourseService } from './course.service';
 import { Course, CourseCreationResponse } from './entities/course.entity';
 import {
   CreateCourseInput,
   UpdateCourseInput,
+  SaveCourseDraftInput,
   CourseFiltersInput,
+  CourseDraftResponse,
 } from './dto/course-creation.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../../generated/prisma';
+import { UserRole, ContentType } from '../../generated/prisma';
 
 @Resolver(() => Course)
 @UseGuards(AuthGuard, RolesGuard)
@@ -20,7 +20,7 @@ export class CourseResolver {
   constructor(private courseService: CourseService) {}
 
   // ============================================
-  // COURSE CREATION MUTATIONS
+  // COMPREHENSIVE COURSE CREATION
   // ============================================
 
   @Mutation(() => CourseCreationResponse)
@@ -51,160 +51,161 @@ export class CourseResolver {
     });
   }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async updateCourse(
-  //   @Args('courseId') courseId: string,
-  //   @Args('input') input: UpdateCourseInput,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.updateCourse(courseId, user.id, input);
-  // }
+  // ============================================
+  // DRAFT MANAGEMENT
+  // ============================================
 
-  // // ============================================
-  // // FILE URL UPDATE MUTATIONS (No direct file upload)
-  // // Use REST /upload endpoint for files, then update course with URLs
-  // // ============================================
+  @Mutation(() => CourseDraftResponse, { name: 'saveCourseDraft' })
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async saveCourseDraft(
+    @Args('input') input: SaveCourseDraftInput,
+    @Context() context: any,
+  ): Promise<CourseDraftResponse> {
+    const user = context.req.user;
+    return this.courseService.saveCourseDraft(user.id, input);
+  }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async updateCourseThumbnail(
-  //   @Args('courseId') courseId: string,
-  //   @Args('thumbnailUrl') thumbnailUrl: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   // Update course with thumbnail URL (after uploading via REST)
-  //   return this.courseService.updateCourse(courseId, user.id, {
-  //     thumbnail: thumbnailUrl,
-  //   });
-  // }
+  @Query(() => CourseDraftResponse, { name: 'getCourseDraft' })
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async getCourseDraft(@Context() context: any): Promise<CourseDraftResponse> {
+    const user = context.req.user;
+    return this.courseService.getCourseDraft(user.id);
+  }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async updateCourseTrailer(
-  //   @Args('courseId') courseId: string,
-  //   @Args('trailerUrl') trailerUrl: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   // Update course with trailer URL (after uploading via REST)
-  //   return this.courseService.updateCourse(courseId, user.id, {
-  //     trailer: trailerUrl,
-  //   });
-  // }
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteCourseDraft(
+    @Context() context: any,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = context.req.user;
+    return this.courseService.deleteCourseDraft(user.id);
+  }
 
-  // // ============================================
-  // // COURSE STATUS MUTATIONS
-  // // ============================================
+  // ============================================
+  // CONTENT MANAGEMENT
+  // ============================================
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async saveCourseAsDraft(
-  //   @Args('courseId') courseId: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.saveCourseAsDraft(courseId, user.id);
-  // }
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async createTextContent(
+    @Args('courseId') courseId: string,
+    @Args('title') title: string,
+    @Args('content') content: string,
+    @Args('description', { nullable: true }) description?: string,
+    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('order', { nullable: true }) order?: number,
+    @Context() context?: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.createTextContent(courseId, user.id, {
+      title,
+      content,
+      description,
+      lessonId,
+      order,
+    });
+  }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async submitCourseForReview(
-  //   @Args('courseId') courseId: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.submitCourseForReview(courseId, user.id);
-  // }
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async createAssignment(
+    @Args('courseId') courseId: string,
+    @Args('title') title: string,
+    @Args('description') description: string,
+    @Args('instructions', { nullable: true }) instructions?: string,
+    @Args('dueDate', { nullable: true }) dueDate?: string,
+    @Args('points', { nullable: true }) points?: number,
+    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('order', { nullable: true }) order?: number,
+    @Context() context?: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.createAssignment(courseId, user.id, {
+      title,
+      description,
+      instructions,
+      dueDate,
+      points,
+      lessonId,
+      order,
+    });
+  }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async publishCourse(
-  //   @Args('courseId') courseId: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.publishCourse(courseId, user.id);
-  // }
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async createResourceLink(
+    @Args('courseId') courseId: string,
+    @Args('title') title: string,
+    @Args('url') url: string,
+    @Args('resourceType') resourceType: string,
+    @Args('description', { nullable: true }) description?: string,
+    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('order', { nullable: true }) order?: number,
+    @Context() context?: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.createResourceLink(courseId, user.id, {
+      title,
+      url,
+      description,
+      resourceType,
+      lessonId,
+      order,
+    });
+  }
 
-  // @Mutation(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async deleteCourse(
-  //   @Args('courseId') courseId: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.deleteCourse(courseId, user.id);
-  // }
+  // ============================================
+  // COURSE MANAGEMENT
+  // ============================================
 
-  // // ============================================
-  // // QUERIES
-  // // ============================================
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async updateCourse(
+    @Args('courseId') courseId: string,
+    @Args('input') input: UpdateCourseInput,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    return this.courseService.updateCourse(courseId, user.id, input);
+  }
 
-  // @Query(() => Course, { nullable: true })
-  // async getCourse(
-  //   @Args('courseId') courseId: string,
-  //   @Args('includeUnpublished', { defaultValue: false })
-  //   includeUnpublished: boolean,
-  // ): Promise<Course | null> {
-  //   try {
-  //     return await this.courseService.getCourseById(
-  //       courseId,
-  //       includeUnpublished,
-  //     );
-  //   } catch (error) {
-  //     return null;
-  //   }
-  // }
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async publishCourse(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    return this.courseService.publishCourse(courseId, user.id);
+  }
 
-  // @Query(() => [Course])
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async getInstructorCourses(
-  //   @Args('filters', { nullable: true }) filters: CourseFiltersInput,
-  //   @Context('user') user: any,
-  // ): Promise<Course[]> {
-  //   return this.courseService.getInstructorCourses(user.id, filters);
-  // }
+  // ============================================
+  // COURSE QUERIES
+  // ============================================
 
-  // @Query(() => CourseCreationResponse)
-  // @UseGuards(RolesGuard)
-  // @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  // async validateCourse(
-  //   @Args('courseId') courseId: string,
-  //   @Context('user') user: any,
-  // ): Promise<CourseCreationResponse> {
-  //   return this.courseService.validateCourseForPublication(courseId, user.id);
-  // }
+  @Query(() => Course)
+  async getCourse(
+    @Args('courseId') courseId: string,
+    @Context() context?: any,
+  ) {
+    const user = context?.req?.user;
+    return this.courseService.getCourseWithContent(courseId, user?.id);
+  }
 
-  // // ============================================
-  // // UTILITY QUERIES
-  // // ============================================
+  @Query(() => [Course])
+  async getCourses(
+    @Args('filters', { nullable: true }) filters?: CourseFiltersInput,
+  ) {
+    // Implementation for getting courses with filters
+    // This would include pagination, search, filtering logic
+    return [];
+  }
 
-  // @Query(() => [String])
-  // getAvailableCategories(): string[] {
-  //   return [
-  //     'Programming',
-  //     'Web Development',
-  //     'Mobile Development',
-  //     'Data Science',
-  //     'Machine Learning',
-  //     'Design',
-  //     'Marketing',
-  //     'Business',
-  //     'Photography',
-  //     'Music',
-  //     'Language',
-  //     'Health & Fitness',
-  //     'Personal Development',
-  //     'Other',
-  //   ];
-  // }
-
-  // @Query(() => [String])
-  // getAvailableLevels(): string[] {
-  //   return ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT', 'ALL_LEVELS'];
-  // }
+  @Query(() => [Course])
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async getMyCourses(@Context() context: any) {
+    const user = context.req.user;
+    // Implementation for getting instructor's courses
+    return [];
+  }
 }

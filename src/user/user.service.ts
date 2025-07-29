@@ -8,6 +8,25 @@ export class UserService {
 
   constructor(private prisma: PrismaService) {}
 
+  private convertNullsToUndefined<T>(obj: T): T {
+    if (obj === null) return undefined as T;
+    if (obj === undefined) return obj;
+
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.convertNullsToUndefined(item)) as T;
+    }
+
+    if (typeof obj === 'object' && obj !== null) {
+      const result = {} as T;
+      for (const [key, value] of Object.entries(obj)) {
+        (result as any)[key] = this.convertNullsToUndefined(value);
+      }
+      return result;
+    }
+
+    return obj;
+  }
+
   async createUser(data: {
     clerkId: string;
     email: string;
@@ -41,9 +60,10 @@ export class UserService {
 
   async findByClerkId(clerkId: string): Promise<User | null> {
     try {
-      return await this.prisma.user.findUnique({
+      const user = await this.prisma.user.findUnique({
         where: { clerkId },
       });
+      return user
     } catch (error) {
       this.logger.error('Error finding user by clerkId:', error);
       throw error;
