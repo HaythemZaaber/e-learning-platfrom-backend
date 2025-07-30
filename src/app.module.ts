@@ -8,6 +8,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { WebhookModule } from './webhooks/webhook.module';
 import { CourseModule } from './course/course.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CourseModule } from './course/course.module';
       // graphiql: true,
     }),
     AuthModule,
+    UploadModule,
     UserModule,
     CourseModule,
     PrismaModule,
