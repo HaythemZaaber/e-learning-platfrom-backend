@@ -23,7 +23,7 @@ export class UploadService {
     try {
       // Create organized folder structure: Uploads/{contentType}/
       const contentTypeFolder = metadata.type.toLowerCase();
-      const folderPath = `Uploads/${contentTypeFolder}`;
+      const folderPath = `${contentTypeFolder}`;
       const fileName = `${Date.now()}-${this.sanitizeFileName(file.originalname)}`;
       
       const uploadResult = this.uploadFile(file, fileName, folderPath);
@@ -101,6 +101,8 @@ export class UploadService {
   // ============================================
   // FILE DELETION (for orphaned files)
   // ============================================
+  // how will be the filePath should i send all the url file
+
   async deleteFile(filePath: string, userId: string) {
     try {
       // Verify the file exists and user has access

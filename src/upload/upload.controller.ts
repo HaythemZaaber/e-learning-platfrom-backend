@@ -45,11 +45,6 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -76,11 +71,6 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -107,11 +97,7 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
+    
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -138,11 +124,7 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
+   
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -169,11 +151,6 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -203,11 +180,6 @@ export class UploadController {
     file: Express.Multer.File,
     @Body('title') title: string,
     @Body('contentType') contentType: string,
-    @Body('description') description?: string,
-    @Body('courseId') courseId?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: number,
-    @GetUser() user?: any,
   ) {
     if (!title || !contentType) {
       throw new BadRequestException('Title and contentType are required');
