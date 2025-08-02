@@ -25,7 +25,7 @@ import {
 } from '../../generated/prisma';
 import { UploadService } from '../upload/upload.service';
 
-// Define SortOrder type locally since it's not exported from the main Prisma package
+// Define SortOrder type locally since it's not exported from the main prisma index
 type SortOrder = 'asc' | 'desc';
 
 @Injectable()
@@ -36,7 +36,7 @@ export class CourseService {
   ) {}
 
   // ============================================
-  // COMPREHENSIVE COURSE CREATION WITH TEMP UPLOADS
+  // ENHANCED COURSE CREATION WITH ORGANIZED CONTENT
   // ============================================
 
   async createCourse(
@@ -85,19 +85,12 @@ export class CourseService {
             language: sanitizedInput.settings?.language || 'en',
             isPublic: sanitizedInput.settings?.isPublic ?? true,
             certificate: sanitizedInput.settings?.certificate ?? false,
-
-            // Store all settings as JSON
             settings: sanitizedInput.settings || {},
-
-            // Default accessibility
             accessibility: sanitizedInput.settings?.accessibility || {
               captions: false,
               transcripts: false,
               audioDescription: false,
-              signLanguage: false,
             },
-
-            // Analytics defaults
             views: 0,
             avgRating: 0,
             totalRatings: 0,
@@ -105,11 +98,11 @@ export class CourseService {
         });
 
         // 2. Create sections and lessons
+        const sectionMap = new Map<string, string>(); // frontend ID -> backend ID
+        const lectureMap = new Map<string, string>(); // frontend ID -> backend ID
+
         if (sanitizedInput.sections && sanitizedInput.sections.length > 0) {
-          for (const [
-            sectionIndex,
-            sectionInput,
-          ] of sanitizedInput.sections.entries()) {
+          for (const [sectionIndex, sectionInput] of sanitizedInput.sections.entries()) {
             const section = await prisma.section.create({
               data: {
                 title: sectionInput.title,
@@ -119,12 +112,12 @@ export class CourseService {
               },
             });
 
+            // Map frontend section ID to backend ID
+            sectionMap.set(sectionInput.id, section.id);
+
             // Create lessons for this section
             if (sectionInput.lectures && sectionInput.lectures.length > 0) {
-              for (const [
-                lectureIndex,
-                lectureInput,
-              ] of sectionInput.lectures.entries()) {
+              for (const [lectureIndex, lectureInput] of sectionInput.lectures.entries()) {
                 const lesson = await prisma.lesson.create({
                   data: {
                     title: lectureInput.title,
@@ -140,285 +133,157 @@ export class CourseService {
                   },
                 });
 
-                // Create content items for this lesson
-                if (
-                  lectureInput.contentItems &&
-                  lectureInput.contentItems.length > 0
-                ) {
-                  for (const [
-                    contentIndex,
-                    contentInput,
-                  ] of lectureInput.contentItems.entries()) {
-                    await prisma.contentItem.create({
-                      data: {
-                        title: contentInput.title,
-                        description: contentInput.description,
-                        type: contentInput.type,
-                        fileUrl: contentInput.fileUrl,
-                        fileName: contentInput.fileName,
-                        fileSize: contentInput.fileSize,
-                        mimeType: contentInput.mimeType,
-                        contentData: contentInput.contentData || {},
-                        order: contentIndex,
-                        isPublished: true,
-                        courseId: course.id,
-                        lessonId: lesson.id,
-                      },
-                    });
-                  }
+                // Map frontend lecture ID to backend ID
+                lectureMap.set(lectureInput.id, lesson.id);
+
+                // Create content item for this lesson if provided
+                if (lectureInput.contentItem) {
+                  console.log(`Creating content item for lesson ${lesson.id}:`, lectureInput.contentItem);
+                  const contentItem = await prisma.contentItem.create({
+                    data: {
+                      title: lectureInput.contentItem.title,
+                      description: lectureInput.contentItem.description,
+                      type: lectureInput.contentItem.type,
+                      fileUrl: lectureInput.contentItem.fileUrl,
+                      fileName: lectureInput.contentItem.fileName,
+                      fileSize: lectureInput.contentItem.fileSize,
+                      mimeType: lectureInput.contentItem.mimeType,
+                      contentData: lectureInput.contentItem.contentData || {},
+                      order: lectureInput.contentItem.order || 0,
+                      isPublished: true,
+                      courseId: course.id,
+                      lessonId: lesson.id,
+                    },
+                  });
+                  console.log(`Created content item:`, contentItem);
+                } else {
+                  console.log(`No content item provided for lesson ${lesson.id}`);
                 }
               }
             }
           }
         }
 
-        // 3. Create additional content items (not tied to specific lessons)
-        if (
-          sanitizedInput.additionalContent &&
-          sanitizedInput.additionalContent.length > 0
-        ) {
-          for (const [
-            contentIndex,
-            contentInput,
-          ] of sanitizedInput.additionalContent.entries()) {
-            await prisma.contentItem.create({
+        // Create additional content items at course level
+        if (sanitizedInput.additionalContent && sanitizedInput.additionalContent.length > 0) {
+          console.log(`Creating ${sanitizedInput.additionalContent.length} additional content items`);
+          for (const [index, contentItem] of sanitizedInput.additionalContent.entries()) {
+            console.log(`Creating course-level content item ${index}:`, contentItem);
+            const createdContentItem = await prisma.contentItem.create({
               data: {
-                title: contentInput.title,
-                description: contentInput.description,
-                type: contentInput.type,
-                fileUrl: contentInput.fileUrl,
-                fileName: contentInput.fileName,
-                fileSize: contentInput.fileSize,
-                mimeType: contentInput.mimeType,
-                contentData: contentInput.contentData || {},
-                order: contentIndex,
+                title: contentItem.title,
+                description: contentItem.description,
+                type: contentItem.type,
+                fileUrl: contentItem.fileUrl,
+                fileName: contentItem.fileName,
+                fileSize: contentItem.fileSize,
+                mimeType: contentItem.mimeType,
+                contentData: contentItem.contentData || {},
+                order: contentItem.order || index,
                 isPublished: true,
                 courseId: course.id,
-                // lessonId is null for course-level content
+                // No lessonId for course-level content items
               },
             });
+            console.log(`Created course-level content item:`, createdContentItem);
           }
+        } else {
+          console.log('No additional content items provided');
         }
 
-        // 4. CONVERT TEMPORARY UPLOADS TO PERMANENT
-        await this.convertUserTempUploadsToPermanent(instructorId, course.id, prisma);
+
 
         // Return the complete course with all relations
-        return prisma.course.findUnique({
+        const result = await prisma.course.findUnique({
           where: { id: course.id },
           include: this.getCourseIncludeOptions(),
         });
+
+        return result;
       });
 
       // Convert null values to undefined for GraphQL compatibility
       const courseWithUndefined = this.convertNullsToUndefined(result);
 
-      return {
+      
+
+      const response = {
         success: true,
-        message: 'Course created successfully with all content and structure!',
+        message: 'Course created successfully with all content organized by lectures!',
         course: courseWithUndefined,
-        completionPercentage:
-          this.calculateCourseCompletionPercentage(courseWithUndefined),
+        completionPercentage: this.calculateCourseCompletionPercentage(courseWithUndefined),
+        errors: [],
       };
+      return response;
     } catch (error) {
       console.error('Course creation error:', error);
-      throw new BadRequestException(
-        `Failed to create course: ${error.message}`,
-      );
+      
+      // Return error response instead of throwing
+      return {
+        success: false,
+        message: 'Failed to create course',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred during course creation'],
+      };
     }
   }
 
-  // ============================================
-  // CONVERT TEMP UPLOADS TO PERMANENT
-  // ============================================
-
-  private async convertUserTempUploadsToPermanent(
+  async createCourseWithBasicInfo(
     instructorId: string,
-    courseId: string,
-    prisma: any // Transaction prisma instance
-  ) {
-    try {
-      // Get all temporary uploads for this user
-      const tempUploads = await prisma.temporaryUpload.findMany({
-        where: { userId: instructorId },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      if (tempUploads.length === 0) {
-        console.log('No temporary uploads found for user:', instructorId);
-        return;
-      }
-
-      console.log(`Converting ${tempUploads.length} temporary uploads to permanent...`);
-
-      for (const tempUpload of tempUploads) {
-        try {
-          // Convert each temp upload to permanent
-          const result = await this.uploadService.convertTempToPermanent(
-            tempUpload.id,
-            courseId,
-            tempUpload.tempId?.includes('lecture-') ? tempUpload.tempId.split('lecture-')[1] : undefined,
-            0 // Default order
-          );
-
-          if (result.success) {
-            console.log(`Successfully converted temp upload: ${tempUpload.originalName}`);
-          }
-        } catch (convertError) {
-          console.error(`Failed to convert temp upload ${tempUpload.id}:`, convertError);
-          // Continue with other uploads even if one fails
-        }
-      }
-
-      // Clean up any remaining temp uploads for this user
-      await this.uploadService.cleanupUserTempUploads(instructorId);
-
-    } catch (error) {
-      console.error('Error converting temp uploads:', error);
-      // Don't throw error here as the course creation should still succeed
-      // even if some uploads fail to convert
-    }
-  }
-
-  // ============================================
-  // ENHANCED DRAFT MANAGEMENT WITH FILE HANDLING
-  // ============================================
-
-  async saveCourseDraft(
-    instructorId: string,
-    draftInput: SaveCourseDraftInput,
-  ): Promise<CourseDraftResponse> {
+    basicInfo: {
+      title: string;
+      description: string;
+      category: string;
+      level: string;
+    },
+  ): Promise<CourseCreationResponse> {
     try {
       await this.verifyInstructorPermissions(instructorId);
 
-      // Check if draft already exists
-      const existingDraft = await this.prisma.courseDraft.findFirst({
-        where: { instructorId },
-      });
-
-      let draft;
-      if (existingDraft) {
-        // Update existing draft
-        draft = await this.prisma.courseDraft.update({
-          where: { id: existingDraft.id },
-          data: {
-            draftData: draftInput.draftData,
-            currentStep: draftInput.currentStep,
-            completionScore: draftInput.completionScore,
+      const course = await this.prisma.course.create({
+        data: {
+          title: basicInfo.title,
+          description: basicInfo.description,
+          category: basicInfo.category,
+          level: basicInfo.level as CourseLevel,
+          instructorId,
+          status: CourseStatus.DRAFT,
+          enrollmentType: EnrollmentType.FREE,
+          language: 'en',
+          isPublic: false,
+          certificate: false,
+          settings: {},
+          accessibility: {
+            captions: false,
+            transcripts: false,
+            audioDescription: false,
           },
-        });
-      } else {
-        // Create new draft
-        draft = await this.prisma.courseDraft.create({
-          data: {
-            instructorId,
-            draftData: draftInput.draftData,
-            currentStep: draftInput.currentStep,
-            completionScore: draftInput.completionScore,
-          },
-        });
-      }
-
-      return {
-        success: true,
-        message: 'Draft saved successfully',
-        draftData: draft.draftData,
-        currentStep: draft.currentStep,
-        completionScore: draft.completionScore,
-      };
-    } catch (error) {
-      throw new BadRequestException(`Failed to save draft: ${error.message}`);
-    }
-  }
-
-  async getCourseDraft(instructorId: string): Promise<CourseDraftResponse> {
-    try {
-      const draft = await this.prisma.courseDraft.findFirst({
-        where: { instructorId },
+          views: 0,
+          avgRating: 0,
+          totalRatings: 0,
+        },
+        include: this.getCourseIncludeOptions(),
       });
 
-      if (!draft) {
-        return {
-          success: false,
-          message: 'No draft found',
-        };
-      }
-
       return {
         success: true,
-        message: 'Draft retrieved successfully',
-        draftData: draft.draftData,
-        currentStep: draft.currentStep,
-        completionScore: draft.completionScore,
+        message: 'Course created successfully with basic information',
+        course: this.convertNullsToUndefined(course),
+        completionPercentage: this.calculateCourseCompletionPercentage(course),
+        errors: [],
       };
     } catch (error) {
-      throw new BadRequestException(`Failed to get draft: ${error.message}`);
-    }
-  }
-
-  async deleteCourseDraft(
-    instructorId: string,
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      // Delete draft
-      await this.prisma.courseDraft.deleteMany({
-        where: { instructorId },
-      });
-
-      // Also cleanup any temporary uploads for this user
-      await this.uploadService.cleanupUserTempUploads(instructorId);
-
+      console.error('Course creation error:', error);
+      
+      // Return error response instead of throwing
       return {
-        success: true,
-        message: 'Draft and temporary uploads deleted successfully',
+        success: false,
+        message: 'Failed to create course with basic information',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred during course creation'],
       };
-    } catch (error) {
-      throw new BadRequestException(`Failed to delete draft: ${error.message}`);
-    }
-  }
-
-  // ============================================
-  // ENHANCED CONTENT MANAGEMENT
-  // ============================================
-
-  async uploadContent(
-    courseId: string,
-    instructorId: string,
-    file: Express.Multer.File,
-    contentType: ContentType,
-    metadata: {
-      title: string;
-      description?: string;
-      lessonId?: string;
-      order?: number;
-    },
-  ) {
-    try {
-      await this.verifyCourseOwnership(courseId, instructorId);
-
-      // Use the enhanced upload service for permanent uploads
-      const result = await this.uploadService.createPermanentUpload(
-        file,
-        courseId,
-        {
-          type: contentType,
-          title: metadata.title,
-          description: metadata.description,
-          lessonId: metadata.lessonId,
-          order: metadata.order,
-        }
-      );
-
-      return {
-        success: true,
-        message: 'Content uploaded successfully',
-        contentItem: result.contentItem,
-        fileInfo: result.fileInfo,
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to upload content: ${error.message}`,
-      );
     }
   }
 
@@ -432,7 +297,7 @@ export class CourseService {
       lessonId?: string;
       order?: number;
     },
-  ) {
+  ): Promise<CourseCreationResponse> {
     try {
       await this.verifyCourseOwnership(courseId, instructorId);
 
@@ -455,12 +320,16 @@ export class CourseService {
       return {
         success: true,
         message: 'Text content created successfully',
-        contentItem,
+        course: contentItem,
+        errors: [],
       };
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to create text content: ${error.message}`,
-      );
+      return {
+        success: false,
+        message: 'Failed to create text content',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating text content'],
+      };
     }
   }
 
@@ -476,7 +345,7 @@ export class CourseService {
       lessonId?: string;
       order?: number;
     },
-  ) {
+  ): Promise<CourseCreationResponse> {
     try {
       await this.verifyCourseOwnership(courseId, instructorId);
 
@@ -501,12 +370,16 @@ export class CourseService {
       return {
         success: true,
         message: 'Assignment created successfully',
-        contentItem,
+        course: contentItem,
+        errors: [],
       };
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to create assignment: ${error.message}`,
-      );
+      return {
+        success: false,
+        message: 'Failed to create assignment',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating assignment'],
+      };
     }
   }
 
@@ -521,7 +394,7 @@ export class CourseService {
       lessonId?: string;
       order?: number;
     },
-  ) {
+  ): Promise<CourseCreationResponse> {
     try {
       await this.verifyCourseOwnership(courseId, instructorId);
 
@@ -545,193 +418,16 @@ export class CourseService {
       return {
         success: true,
         message: 'Resource link created successfully',
-        contentItem,
+        course: contentItem,
+        errors: [],
       };
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to create resource link: ${error.message}`,
-      );
-    }
-  }
-
-  // ============================================
-  // ENHANCED FILE UPLOAD METHODS
-  // ============================================
-
-  async uploadCourseThumbnail(
-    courseId: string,
-    instructorId: string,
-    file: Express.Multer.File,
-  ) {
-    try {
-      await this.verifyCourseOwnership(courseId, instructorId);
-
-      const uploadResult = this.uploadService.uploadFile(
-        file,
-        `course-${courseId}-thumbnail`,
-        'course-thumbnails',
-      );
-
-      const file_url = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/public') + 
-                      '/' + uploadResult.path.replace(/\\/g, '/');
-
-      await this.prisma.course.update({
-        where: { id: courseId },
-        data: {
-          thumbnail: file_url,
-          updatedAt: new Date(),
-        },
-      });
-
       return {
-        success: true,
-        message: 'Course thumbnail uploaded successfully',
-        thumbnailUrl: file_url,
-        fileSize: file.size,
-        fileName: file.originalname,
+        success: false,
+        message: 'Failed to create resource link',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating resource link'],
       };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to upload thumbnail: ${error.message}`,
-      );
-    }
-  }
-
-  async uploadCourseTrailer(
-    courseId: string,
-    instructorId: string,
-    file: Express.Multer.File,
-  ) {
-    try {
-      await this.verifyCourseOwnership(courseId, instructorId);
-
-      const uploadResult = this.uploadService.uploadFile(
-        file,
-        `course-${courseId}-trailer`,
-        'course-trailers',
-      );
-
-      const file_url = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/public') + 
-                      '/' + uploadResult.path.replace(/\\/g, '/');
-
-      await this.prisma.course.update({
-        where: { id: courseId },
-        data: {
-          trailer: file_url,
-          updatedAt: new Date(),
-        },
-      });
-
-      return {
-        success: true,
-        message: 'Course trailer uploaded successfully',
-        trailerUrl: file_url,
-        fileSize: file.size,
-        fileName: file.originalname,
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to upload trailer: ${error.message}`,
-      );
-    }
-  }
-
-  // ============================================
-  // TEMPORARY UPLOAD MANAGEMENT
-  // ============================================
-
-  async getUserTempUploads(instructorId: string) {
-    try {
-      await this.verifyInstructorPermissions(instructorId);
-
-      const tempUploads = await this.prisma.temporaryUpload.findMany({
-        where: { userId: instructorId },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      return {
-        success: true,
-        tempUploads,
-        message: 'Temporary uploads retrieved successfully',
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to get temporary uploads: ${error.message}`,
-      );
-    }
-  }
-
-  async cleanupUserTempUploads(instructorId: string) {
-    try {
-      await this.verifyInstructorPermissions(instructorId);
-      await this.uploadService.cleanupUserTempUploads(instructorId);
-
-      return {
-        success: true,
-        message: 'Temporary uploads cleaned up successfully',
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to cleanup temporary uploads: ${error.message}`,
-      );
-    }
-  }
-
-  // ============================================
-  // Keep all existing methods as they were...
-  // ============================================
-
-  async createCourseWithBasicInfo(
-    instructorId: string,
-    basicInfo: {
-      title: string;
-      description: string;
-      category: string;
-      level: string;
-    },
-  ): Promise<CourseCreationResponse> {
-    try {
-      await this.verifyInstructorPermissions(instructorId);
-
-      const course = await this.prisma.course.create({
-        data: {
-          title: basicInfo.title.trim(),
-          description: basicInfo.description.trim(),
-          category: basicInfo.category,
-          level: basicInfo.level as CourseLevel,
-          instructorId,
-          status: CourseStatus.DRAFT,
-          enrollmentType: EnrollmentType.FREE,
-          price: 0,
-          objectives: [],
-          prerequisites: [],
-          whatYouLearn: [],
-          seoTags: [],
-          marketingTags: [],
-          accessibility: {
-            captions: false,
-            transcripts: false,
-            audioDescription: false,
-            signLanguage: false,
-          },
-          settings: {},
-        },
-        include: this.getCourseIncludeOptions(),
-      });
-
-      const courseWithUndefined = this.convertNullsToUndefined(course);
-
-      return {
-        success: true,
-        message: 'Course created successfully! Continue building your course.',
-        course: courseWithUndefined,
-        completionPercentage:
-          this.calculateCourseCompletionPercentage(courseWithUndefined),
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to create course: ${error.message}`,
-      );
     }
   }
 
@@ -743,7 +439,17 @@ export class CourseService {
     try {
       await this.verifyCourseOwnership(courseId, instructorId);
 
+      // Validate and sanitize input
       const sanitizedInput = this.sanitizeCourseInput(input);
+
+      // Validate pricing logic if price is being updated
+      if (sanitizedInput.price !== undefined || sanitizedInput.originalPrice !== undefined) {
+        this.validatePricing(
+          sanitizedInput.price,
+          sanitizedInput.originalPrice,
+          sanitizedInput.settings?.enrollmentType || EnrollmentType.FREE,
+        );
+      }
 
       const updatedCourse = await this.prisma.course.update({
         where: { id: courseId },
@@ -758,13 +464,605 @@ export class CourseService {
         success: true,
         message: 'Course updated successfully',
         course: this.convertNullsToUndefined(updatedCourse),
+        completionPercentage: this.calculateCourseCompletionPercentage(updatedCourse),
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to update course',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred while updating course'],
+      };
+    }
+  }
+
+
+
+  // ============================================
+  // ENHANCED DRAFT MANAGEMENT WITH ORGANIZED CONTENT
+  // ============================================
+
+  async saveCourseDraft(
+    instructorId: string,
+    draftInput: SaveCourseDraftInput,
+  ): Promise<CourseDraftResponse> {
+    try {
+      await this.verifyInstructorPermissions(instructorId);
+
+      // Check if draft already exists
+      const existingDraft = await this.prisma.courseDraft.findFirst({
+        where: { instructorId },
+      });
+
+      // Ensure organized content is properly stored
+      const enhancedDraftData = {
+        ...draftInput.draftData,
+        _lastSaved: new Date().toISOString(),
+        _contentSummary: this.generateDraftContentSummary(draftInput.draftData),
+      };
+
+      let draft;
+      if (existingDraft) {
+        // Update existing draft
+        draft = await this.prisma.courseDraft.update({
+          where: { id: existingDraft.id },
+          data: {
+            draftData: enhancedDraftData,
+            currentStep: draftInput.currentStep,
+            completionScore: draftInput.completionScore,
+          },
+        });
+      } else {
+        // Create new draft
+        draft = await this.prisma.courseDraft.create({
+          data: {
+            instructorId,
+            draftData: enhancedDraftData,
+            currentStep: draftInput.currentStep,
+            completionScore: draftInput.completionScore,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Draft saved successfully with organized content',
+        draftData: draft.draftData,
+        currentStep: draft.currentStep,
+        completionScore: draft.completionScore,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to save draft: ${error.message}`);
+    }
+  }
+
+  async getCourseDraft(instructorId: string): Promise<CourseDraftResponse> {
+    try {
+      const draft = await this.prisma.courseDraft.findFirst({
+        where: { instructorId },
+      });
+
+      if (!draft) {
+        return {
+          success: false,
+          message: 'No draft found',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Draft retrieved successfully with organized content',
+        draftData: draft.draftData,
+        currentStep: draft.currentStep,
+        completionScore: draft.completionScore,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get draft: ${error.message}`);
+    }
+  }
+
+  async deleteCourseDraft(
+    instructorId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // Delete draft
+      await this.prisma.courseDraft.deleteMany({
+        where: { instructorId },
+      });
+
+
+
+      return {
+        success: true,
+        message: 'Draft and temporary uploads deleted successfully',
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to delete draft: ${error.message}`);
+    }
+  }
+
+  // ============================================
+  // ENHANCED COURSE RETRIEVAL WITH ORGANIZED CONTENT
+  // ============================================
+
+  async getCourseWithOrganizedContent(courseId: string, instructorId?: string) {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          ...this.getCourseIncludeOptions(),
+          sections: {
+            include: {
+              lessons: {
+                include: {
+                  contentItem: true, // One-to-one relationship
+                },
+                orderBy: { order: 'asc' },
+              },
+            },
+            orderBy: { order: 'asc' },
+          },
+        },
+      });
+
+      if (!course) {
+        throw new NotFoundException('Course not found');
+      }
+
+      // Check permissions for private courses
+      if (!course.isPublic && course.instructorId !== instructorId) {
+        throw new ForbiddenException('Access denied to private course');
+      }
+
+      // Organize content by lecture for easier frontend consumption
+      const organizedCourse = this.organizeCourseContentByLecture(course);
+
+      return this.convertNullsToUndefined(organizedCourse);
+    } catch (error) {
+      throw new BadRequestException(`Failed to get course: ${error.message}`);
+    }
+  }
+
+  private organizeCourseContentByLecture(course: any) {
+    const contentByLecture: Record<string, any> = {};
+
+    // Organize content items by lecture
+    course.sections?.forEach((section: any) => {
+      section.lectures?.forEach((lecture: any) => {
+        if (!contentByLecture[lecture.id]) {
+          contentByLecture[lecture.id] = {
+            contentItem: null, // Single content item per lecture
+          };
+        }
+
+        // Each lecture has exactly one content item
+        if (lecture.contentItem) {
+          const item = lecture.contentItem;
+          contentByLecture[lecture.id].contentItem = {
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            type: item.type,
+            fileUrl: item.fileUrl,
+            fileName: item.fileName,
+            fileSize: item.fileSize,
+            mimeType: item.mimeType,
+            contentData: item.contentData,
+            order: item.order,
+            isPublished: item.isPublished,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+          };
+        }
+      });
+    });
+
+    return {
+      ...course,
+      organizedContent: {
+        contentByLecture,
+        summary: this.generateContentSummaryFromOrganized(contentByLecture),
+      },
+    };
+  }
+
+  private mapContentTypeToCategory(contentType: ContentType): string {
+    const mapping: Record<ContentType, string> = {
+      [ContentType.VIDEO]: 'videos',
+      [ContentType.DOCUMENT]: 'documents',
+      [ContentType.IMAGE]: 'images',
+      [ContentType.AUDIO]: 'audio',
+      [ContentType.ARCHIVE]: 'archives',
+      [ContentType.TEXT]: 'text',
+      [ContentType.ASSIGNMENT]: 'assignments',
+      [ContentType.RESOURCE]: 'resources',
+      [ContentType.LINK]: 'resources',
+      [ContentType.QUIZ]: 'quizzes',
+    };
+
+    return mapping[contentType] || 'other';
+  }
+
+  private generateContentSummaryFromOrganized(contentByLecture: Record<string, any>) {
+    const summary = {
+      totalLectures: Object.keys(contentByLecture).length,
+      totalContent: 0,
+      contentTypes: {} as Record<string, number>,
+      lectureBreakdown: {} as Record<string, any>,
+    };
+
+    Object.entries(contentByLecture).forEach(([lectureId, content]) => {
+      let lectureTotal = 0;
+      const lectureBreakdown: Record<string, number> = {};
+
+      // Check if lecture has a content item
+      if (content.contentItem) {
+        lectureTotal = 1;
+        summary.totalContent += 1;
+        
+        const contentType = this.mapContentTypeToCategory(content.contentItem.type);
+        summary.contentTypes[contentType] = (summary.contentTypes[contentType] || 0) + 1;
+        lectureBreakdown[contentType] = 1;
+      }
+
+      summary.lectureBreakdown[lectureId] = {
+        total: lectureTotal,
+        breakdown: lectureBreakdown,
+      };
+    });
+
+    return summary;
+  }
+
+  // ============================================
+  // ENHANCED CONTENT MANAGEMENT
+  // ============================================
+
+  async uploadContentToLecture(
+    courseId: string,
+    lectureId: string,
+    instructorId: string,
+    file: Express.Multer.File,
+    contentType: ContentType,
+    metadata: {
+      title: string;
+      description?: string;
+      order?: number;
+    },
+  ) {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Verify lecture belongs to course
+      const lecture = await this.prisma.lesson.findFirst({
+        where: {
+          id: lectureId,
+          section: {
+            courseId: courseId,
+          },
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found in this course');
+      }
+
+      // Use the upload service to store the file and get the URL
+      const uploadResult = await this.uploadService.createDirectUpload(
+        file,
+        {
+          type: contentType,
+        }
+      );
+
+      // Create the content item with the uploaded file information
+      const contentItem = await this.prisma.contentItem.create({
+        data: {
+          title: metadata.title,
+          description: metadata.description,
+          type: contentType,
+          fileUrl: uploadResult.fileInfo.file_url,
+          fileName: uploadResult.fileInfo.originalName,
+          fileSize: uploadResult.fileInfo.size,
+          mimeType: uploadResult.fileInfo.mimetype,
+          order: metadata.order || 0,
+          isPublished: true,
+          courseId,
+          lessonId: lectureId,
+          contentData: {
+            uploadedAt: uploadResult.fileInfo.uploadedAt,
+            filePath: uploadResult.fileInfo.filePath,
+          }
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Content uploaded successfully to lecture',
+        contentItem,
+        fileInfo: uploadResult.fileInfo,
       };
     } catch (error) {
       throw new BadRequestException(
-        `Failed to update course: ${error.message}`,
+        `Failed to upload content to lecture: ${error.message}`,
       );
     }
   }
+
+  async createTextContentForLecture(
+    courseId: string,
+    lectureId: string,
+    instructorId: string,
+    contentData: {
+      title: string;
+      content: string;
+      description?: string;
+      order?: number;
+    },
+  ): Promise<CourseCreationResponse> {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Verify lecture belongs to course
+      const lecture = await this.prisma.lesson.findFirst({
+        where: {
+          id: lectureId,
+          section: {
+            courseId: courseId,
+          },
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found in this course');
+      }
+
+      const contentItem = await this.prisma.contentItem.create({
+        data: {
+          title: contentData.title,
+          description: contentData.description,
+          type: ContentType.TEXT,
+          order: contentData.order || 0,
+          isPublished: true,
+          courseId,
+          lessonId: lectureId,
+          contentData: {
+            textContent: contentData.content,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Text content created successfully for lecture',
+        course: contentItem,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to create text content for lecture',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating text content for lecture'],
+      };
+    }
+  }
+
+  async createAssignmentForLecture(
+    courseId: string,
+    lectureId: string,
+    instructorId: string,
+    assignmentData: {
+      title: string;
+      description: string;
+      instructions?: string;
+      dueDate?: string;
+      points?: number;
+      order?: number;
+    },
+  ): Promise<CourseCreationResponse> {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Verify lecture belongs to course
+      const lecture = await this.prisma.lesson.findFirst({
+        where: {
+          id: lectureId,
+          section: {
+            courseId: courseId,
+          },
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found in this course');
+      }
+
+      const contentItem = await this.prisma.contentItem.create({
+        data: {
+          title: assignmentData.title,
+          description: assignmentData.description,
+          type: ContentType.ASSIGNMENT,
+          order: assignmentData.order || 0,
+          isPublished: true,
+          courseId,
+          lessonId: lectureId,
+          contentData: {
+            instructions: assignmentData.instructions,
+            dueDate: assignmentData.dueDate,
+            points: assignmentData.points,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Assignment created successfully for lecture',
+        course: contentItem,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to create assignment for lecture',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating assignment for lecture'],
+      };
+    }
+  }
+
+  async createResourceForLecture(
+    courseId: string,
+    lectureId: string,
+    instructorId: string,
+    resourceData: {
+      title: string;
+      url: string;
+      description?: string;
+      resourceType: string;
+      order?: number;
+    },
+  ): Promise<CourseCreationResponse> {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Verify lecture belongs to course
+      const lecture = await this.prisma.lesson.findFirst({
+        where: {
+          id: lectureId,
+          section: {
+            courseId: courseId,
+          },
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found in this course');
+      }
+
+      const contentItem = await this.prisma.contentItem.create({
+        data: {
+          title: resourceData.title,
+          description: resourceData.description,
+          type: ContentType.LINK,
+          order: resourceData.order || 0,
+          isPublished: true,
+          courseId,
+          lessonId: lectureId,
+          contentData: {
+            url: resourceData.url,
+            resourceType: resourceData.resourceType,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Resource created successfully for lecture',
+        course: contentItem,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to create resource for lecture',
+        course: null,
+        errors: [error.message || 'An unexpected error occurred while creating resource for lecture'],
+      };
+    }
+  }
+
+  // ============================================
+  // ENHANCED VALIDATION WITH CONTENT CHECKING
+  // ============================================
+
+  async validateCourseForPublishing(courseId: string, instructorId: string) {
+    try {
+      const course = await this.getCourseWithOrganizedContent(courseId, instructorId);
+
+      const validation = {
+        isValid: true,
+        errors: [] as string[],
+        warnings: [] as string[],
+        completionPercentage: 0,
+      };
+
+      // Basic information validation
+      if (!course.title || course.title.length < 10) {
+        validation.errors.push('Course title must be at least 10 characters long');
+      }
+
+      if (!course.description || course.description.length < 100) {
+        validation.errors.push('Course description must be at least 100 characters long');
+      }
+
+      if (!course.thumbnail) {
+        validation.errors.push('Course thumbnail is required');
+      }
+
+      if (!course.objectives || course.objectives.length === 0) {
+        validation.errors.push('At least one learning objective is required');
+      }
+
+      // Structure validation
+      if (!course.sections || course.sections.length === 0) {
+        validation.errors.push('At least one section is required');
+      } else {
+        const totalLectures = course.sections.reduce(
+          (total: number, section: any) => total + (section.lectures?.length || 0),
+          0
+        );
+
+        if (totalLectures === 0) {
+          validation.errors.push('At least one lecture is required');
+        }
+
+        // Content validation using organized content
+        if (course.organizedContent?.summary) {
+          const { totalContent, lectureBreakdown } = course.organizedContent.summary;
+
+          if (totalContent === 0) {
+            validation.errors.push('At least some content is required');
+          }
+
+          // Check for lectures without content
+          const lecturesWithoutContent = Object.entries(lectureBreakdown).filter(
+            ([_, breakdown]: [string, any]) => breakdown.total === 0
+          );
+
+          if (lecturesWithoutContent.length > 0) {
+            validation.warnings.push(
+              `${lecturesWithoutContent.length} lecture(s) have no content`
+            );
+          }
+        }
+      }
+
+      // Pricing validation
+      if (course.enrollmentType === 'PAID' && (course.price || 0) <= 0) {
+        validation.errors.push('Paid courses must have a price greater than 0');
+      }
+
+      // Calculate completion percentage
+      validation.completionPercentage = this.calculateCourseCompletionPercentage(course);
+
+      // Final validation
+      validation.isValid = validation.errors.length === 0 && validation.completionPercentage >= 80;
+
+      return validation;
+    } catch (error) {
+      throw new BadRequestException(`Failed to validate course: ${error.message}`);
+    }
+  }
+
+  // ============================================
+  // ENHANCED COURSE PUBLISHING
+  // ============================================
 
   async publishCourse(
     courseId: string,
@@ -773,31 +1071,15 @@ export class CourseService {
     try {
       const course = await this.verifyCourseOwnership(courseId, instructorId);
 
-      // Check if user is admin or if course is approved
-      const user = await this.prisma.user.findUnique({
-        where: { id: instructorId },
-      });
-
-      if (
-        course.status !== CourseStatus.PUBLISHED &&
-        user?.role !== UserRole.ADMIN &&
-        course.status !== CourseStatus.UNDER_REVIEW
-      ) {
-        throw new ForbiddenException(
-          'Course must be approved before publishing',
-        );
-      }
-
-      // Validate course completeness
-      const validationResult = await this.validateCourseForReview(courseId);
+      // Enhanced validation before publishing
+      const validationResult = await this.validateCourseForPublishing(courseId, instructorId);
 
       if (!validationResult.isValid) {
         return {
           success: false,
-          message:
-            'Course validation failed. Please complete all required fields before publishing.',
+          message: 'Course validation failed. Please complete all requirements before publishing.',
           errors: validationResult.errors,
-          warnings: validationResult.missingItems,
+          warnings: validationResult.warnings,
           completionPercentage: validationResult.completionPercentage,
         };
       }
@@ -819,45 +1101,52 @@ export class CourseService {
 
       return {
         success: true,
-        message:
-          'Course published successfully! Students can now enroll in your course.',
+        message: 'Course published successfully! Students can now enroll in your course.',
         course: this.convertNullsToUndefined(publishedCourse),
         completionPercentage: validationResult.completionPercentage,
+        errors: [],
       };
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to publish course: ${error.message}`,
-      );
+      return {
+        success: false,
+        message: 'Failed to publish course',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred while publishing course'],
+      };
     }
   }
 
-  // ... [Keep all other existing methods unchanged] ...
-  // getCourseWithContent, getCourses, getMyCourses, deleteCourse, etc.
-
   // ============================================
-  // UTILITY METHODS (Updated)
+  // UTILITY METHODS
   // ============================================
 
-  private getContentFolderPath(
-    contentType: ContentType,
-    courseId: string,
-  ): string {
-    const basePath = `courses/${courseId}`;
+  private generateDraftContentSummary(draftData: any) {
+    const summary = {
+      hasBasicInfo: !!(draftData.title && draftData.description),
+      hasStructure: !!(draftData.sections && draftData.sections.length > 0),
+      hasContent: false,
+      contentByLecture: {},
+      totalContent: 0,
+      lastModified: new Date().toISOString(),
+    };
 
-    switch (contentType) {
-      case ContentType.VIDEO:
-        return `${basePath}/videos`;
-      case ContentType.AUDIO:
-        return `${basePath}/audio`;
-      case ContentType.DOCUMENT:
-        return `${basePath}/documents`;
-      case ContentType.IMAGE:
-        return `${basePath}/images`;
-      case ContentType.ARCHIVE:
-        return `${basePath}/archives`;
-      default:
-        return `${basePath}/misc`;
+    // Check for organized content
+    if (draftData._contentByLecture) {
+      summary.contentByLecture = draftData._contentByLecture;
+      summary.totalContent = Object.values(draftData._contentByLecture as Record<string, any>).reduce(
+        (total: number, lectureContent: any) => {
+          return total + Object.values(lectureContent as Record<string, any>).reduce(
+            (lectureTotal: number, items: any) => lectureTotal + (Array.isArray(items) ? items.length : 0),
+            0
+          );
+        },
+        0
+      );
+      summary.hasContent = summary.totalContent > 0;
     }
+
+    return summary;
   }
 
   private convertNullsToUndefined<T>(obj: T): T {
@@ -880,7 +1169,7 @@ export class CourseService {
   }
 
   // ============================================
-  // VALIDATION METHODS (Keep as is)
+  // EXISTING VALIDATION METHODS (Enhanced)
   // ============================================
 
   private async verifyInstructorPermissions(userId: string) {
@@ -987,10 +1276,16 @@ export class CourseService {
         include: {
           lessons: {
             include: {
-              contentItems: true,
+              contentItem: true, // One-to-one relationship
             },
             orderBy: { order: 'asc' },
           },
+        },
+        orderBy: { order: 'asc' },
+      },
+      contentItems: {
+        where: {
+          lessonId: null, // Course-level content items only
         },
         orderBy: { order: 'asc' },
       },
@@ -1000,7 +1295,7 @@ export class CourseService {
           reviews: true,
         },
       },
-    } as any; // Type assertion to bypass complex Prisma type issues
+    } as any;
   }
 
   private calculateCourseCompletionPercentage(course: any): number {
@@ -1009,18 +1304,14 @@ export class CourseService {
 
     // Basic Information (30 points)
     if (course.title && course.title.length >= 10) completionScore += 5;
-    if (course.description && course.description.length >= 100)
-      completionScore += 10;
-    if (course.shortDescription && course.shortDescription.length >= 50)
-      completionScore += 5;
+    if (course.description && course.description.length >= 100) completionScore += 10;
+    if (course.shortDescription && course.shortDescription.length >= 50) completionScore += 5;
     if (course.category) completionScore += 5;
     if (course.level) completionScore += 5;
 
     // Learning Objectives (20 points)
-    if (course.objectives && course.objectives.length >= 3)
-      completionScore += 10;
-    if (course.whatYouLearn && course.whatYouLearn.length >= 3)
-      completionScore += 10;
+    if (course.objectives && course.objectives.length >= 3) completionScore += 10;
+    if (course.whatYouLearn && course.whatYouLearn.length >= 3) completionScore += 10;
 
     // Media Content (25 points)
     if (course.thumbnail) completionScore += 15;
@@ -1028,126 +1319,24 @@ export class CourseService {
 
     // Content Structure (15 points)
     if (course.sections && course.sections.length > 0) completionScore += 10;
-    const totalLessons =
-      course.sections?.reduce(
-        (total: number, section: any) => total + (section.lessons?.length || 0),
-        0,
-      ) || 0;
+    const totalLessons = course.sections?.reduce(
+      (total: number, section: any) => total + (section.lessons?.length || 0),
+      0,
+    ) || 0;
     if (totalLessons > 0) completionScore += 5;
 
-    // Pricing & Settings (10 points)
-    if (
-      course.enrollmentType === EnrollmentType.FREE ||
-      (course.enrollmentType === EnrollmentType.PAID && course.price > 0)
-    ) {
+    // Content Items (10 points) - Enhanced with organized content
+    if (course.organizedContent?.summary?.totalContent > 0) {
       completionScore += 10;
     }
 
     return Math.min(completionScore, maxScore);
   }
 
-  private async validateCourseForReview(courseId: string) {
-    const course = await this.prisma.course.findUnique({
-      where: { id: courseId },
-      include: {
-        sections: {
-          include: {
-            lessons: {
-              include: {
-                contentItems: true,
-              },
-            },
-          },
-        },
-        contentItems: true,
-      },
-    });
+  // ============================================
+  // EXISTING METHODS (Keep all existing functionality)
+  // ============================================
 
-    if (!course) {
-      return {
-        isValid: false,
-        errors: ['Course not found'],
-        missingItems: [],
-        completionPercentage: 0,
-      };
-    }
-
-    const errors: string[] = [];
-    const missingItems: string[] = [];
-
-    // Validate basic information
-    if (!course.title || course.title.length < 10) {
-      errors.push('Course title must be at least 10 characters long');
-      missingItems.push('Descriptive course title');
-    }
-
-    if (!course.description || course.description.length < 100) {
-      errors.push('Course description must be at least 100 characters long');
-      missingItems.push('Detailed course description');
-    }
-
-    if (!course.thumbnail) {
-      errors.push('Course thumbnail is required');
-      missingItems.push('Course thumbnail image');
-    }
-
-    if (!course.objectives || course.objectives.length === 0) {
-      errors.push('At least one learning objective is required');
-      missingItems.push('Learning objectives');
-    }
-
-    if (!course.whatYouLearn || course.whatYouLearn.length === 0) {
-      errors.push('At least one "what you learn" item is required');
-      missingItems.push('What students will learn');
-    }
-
-    // Validate content structure
-    if (!course.sections || course.sections.length === 0) {
-      errors.push('At least one section is required');
-      missingItems.push('Course sections');
-    }
-
-    const totalLessons =
-      course.sections?.reduce(
-        (total, section) => total + section.lessons.length,
-        0,
-      ) || 0;
-
-    if (totalLessons === 0) {
-      errors.push('At least one lesson is required');
-      missingItems.push('Course lessons');
-    }
-
-    // Validate content items
-    const totalContentItems = course.sections?.reduce(
-      (total, section) => total + section.lessons.reduce(
-        (lessonTotal, lesson) => lessonTotal + lesson.contentItems.length,
-        0
-      ),
-      0
-    ) || 0;
-
-    if (totalContentItems === 0) {
-      errors.push('At least some content items are required');
-      missingItems.push('Course content (videos, documents, etc.)');
-    }
-
-    // Validate pricing
-    if (course.enrollmentType === EnrollmentType.PAID && course.price <= 0) {
-      errors.push('Paid courses must have a price greater than 0');
-      missingItems.push('Course pricing');
-    }
-
-    const completionPercentage =
-      this.calculateCourseCompletionPercentage(course);
-
-    return {
-      isValid: errors.length === 0 && completionPercentage >= 80,
-      errors,
-      missingItems,
-      completionPercentage,
-    };
-  }
 
   // ============================================
   // Keep all remaining existing methods...
@@ -1170,9 +1359,7 @@ export class CourseService {
             include: {
               lessons: {
                 include: {
-                  contentItems: {
-                    orderBy: { order: 'asc' as SortOrder },
-                  },
+                  contentItem: true, // One-to-one relationship
                 },
                 orderBy: { order: 'asc' as SortOrder },
               },
@@ -1657,7 +1844,7 @@ export class CourseService {
             include: {
               lessons: {
                 include: {
-                  contentItems: true,
+                  contentItem: true, // One-to-one relationship
                 },
               },
             },
@@ -1741,25 +1928,25 @@ export class CourseService {
             },
           });
 
-          // Duplicate content items
-          for (const contentItem of lesson.contentItems) {
-            await this.prisma.contentItem.create({
-              data: {
-                title: contentItem.title,
-                description: contentItem.description,
-                type: contentItem.type,
-                fileUrl: contentItem.fileUrl,
-                fileName: contentItem.fileName,
-                fileSize: contentItem.fileSize,
-                mimeType: contentItem.mimeType,
-                contentData: contentItem.contentData as any,
-                order: contentItem.order,
-                isPublished: contentItem.isPublished,
-                courseId: duplicatedCourse.id,
-                lessonId: duplicatedLesson.id,
-              },
-            });
-          }
+                  // Duplicate content item (one-to-one relationship)
+        if (lesson.contentItem) {
+          await this.prisma.contentItem.create({
+            data: {
+              title: lesson.contentItem.title,
+              description: lesson.contentItem.description,
+              type: lesson.contentItem.type,
+              fileUrl: lesson.contentItem.fileUrl,
+              fileName: lesson.contentItem.fileName,
+              fileSize: lesson.contentItem.fileSize,
+              mimeType: lesson.contentItem.mimeType,
+              contentData: lesson.contentItem.contentData as any,
+              order: lesson.contentItem.order,
+              isPublished: lesson.contentItem.isPublished,
+              courseId: duplicatedCourse.id,
+              lessonId: duplicatedLesson.id,
+            },
+          });
+        }
         }
       }
 

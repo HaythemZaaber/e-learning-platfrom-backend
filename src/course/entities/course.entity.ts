@@ -35,65 +35,7 @@ registerEnumType(LessonType, {
   description: 'The type of lesson',
 });
 
-@ObjectType()
-export class CourseCreationResponse {
-  @Field()
-  success: boolean;
 
-  @Field()
-  message: string;
-
-  // @Field(() => Course, { nullable: true })
-  // course?: Course;
-
-  // @Field(() => [String], { nullable: true })
-  // errors?: string[];
-
-  // @Field(() => [String], { nullable: true })
-  // missingItems?: string[];
-
-  @Field(() => [String], { nullable: true })
-  nextSteps?: string[];
-
-  // @Field(() => [String], { nullable: true })
-  // recommendations?: string[];
-
-  // @Field(() => Float, { nullable: true })
-  // completionPercentage?: number;
-
-  // @Field(() => Boolean, { nullable: true })
-  // readyForReview?: boolean;
-
-  // @Field(() => Boolean, { nullable: true })
-  // isBasicVersion?: boolean;
-
-  // @Field({ nullable: true })
-  // thumbnailUrl?: string;
-
-  // @Field({ nullable: true })
-  // trailerUrl?: string;
-
-  // @Field(() => Int, { nullable: true })
-  // fileSize?: number;
-
-  // @Field({ nullable: true })
-  // fileName?: string;
-
-  // @Field({ nullable: true })
-  // estimatedReviewTime?: string;
-
-  // @Field({ nullable: true })
-  // publishedAt?: Date;
-
-  // @Field({ nullable: true })
-  // courseUrl?: string;
-
-  // @Field({ nullable: true })
-  // deletedCourseTitle?: string;
-
-  // @Field(() => Boolean, { nullable: true })
-  // isValid?: boolean;
-}
 
 @ObjectType()
 export class Section {
@@ -120,6 +62,45 @@ export class Section {
 
   @Field(() => [Lesson], { nullable: true })
   lessons?: Lesson[];
+}
+
+@ObjectType()
+export class ContentItem {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field({ nullable: true })
+  description?: string;
+
+  @Field()
+  type: string;
+
+  @Field({ nullable: true })
+  fileUrl?: string;
+
+  @Field({ nullable: true })
+  fileName?: string;
+
+  @Field(() => Int, { nullable: true })
+  fileSize?: number;
+
+  @Field({ nullable: true })
+  mimeType?: string;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  isPublished: boolean;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
 }
 
 @ObjectType()
@@ -177,6 +158,9 @@ export class Lesson {
 
   @Field({ nullable: true })
   transcript?: string;
+
+  @Field(() => ContentItem, { nullable: true })
+  contentItem?: ContentItem;
 
   @Field()
   createdAt: Date;
@@ -293,6 +277,9 @@ export class Course {
   @Field(() => [Section], { nullable: true })
   sections?: Section[];
 
+  @Field(() => [ContentItem], { nullable: true })
+  contentItems?: ContentItem[];
+
   // Calculated fields
   @Field(() => Int, { nullable: true })
   totalLessons?: number;
@@ -305,4 +292,65 @@ export class Course {
 
   @Field(() => Float, { nullable: true })
   completionPercentage?: number;
+}
+
+
+@ObjectType()
+export class CourseCreationResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => Course, { nullable: true })
+  course?: Course;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+
+  // @Field(() => [String], { nullable: true })
+  // missingItems?: string[];
+
+  @Field(() => [String], { nullable: true })
+  nextSteps?: string[];
+
+  // @Field(() => [String], { nullable: true })
+  // recommendations?: string[];
+
+  // @Field(() => Float, { nullable: true })
+  // completionPercentage?: number;
+
+  // @Field(() => Boolean, { nullable: true })
+  // readyForReview?: boolean;
+
+  // @Field(() => Boolean, { nullable: true })
+  // isBasicVersion?: boolean;
+
+  // @Field({ nullable: true })
+  // thumbnailUrl?: string;
+
+  // @Field({ nullable: true })
+  // trailerUrl?: string;
+
+  // @Field(() => Int, { nullable: true })
+  // fileSize?: number;
+
+  // @Field({ nullable: true })
+  // fileName?: string;
+
+  // @Field({ nullable: true })
+  // estimatedReviewTime?: string;
+
+  // @Field({ nullable: true })
+  // publishedAt?: Date;
+
+  // @Field({ nullable: true })
+  // courseUrl?: string;
+
+  // @Field({ nullable: true })
+  // deletedCourseTitle?: string;
+
+  // @Field(() => Boolean, { nullable: true })
+  // isValid?: boolean;
 }

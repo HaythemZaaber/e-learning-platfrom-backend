@@ -39,7 +39,8 @@ export class ContentItemInput {
 
   @Field({ nullable: true })
   @IsOptional()
-  @IsUrl()
+  // @IsUrl()
+  @IsString()
   fileUrl?: string;
 
   @Field({ nullable: true })
@@ -80,6 +81,10 @@ export class LectureInput {
   @IsOptional()
   @IsString()
   description?: string;
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  status?: string;
 
   @Field(() => LessonType)
   @IsEnum(LessonType)
@@ -94,11 +99,11 @@ export class LectureInput {
   @IsString()
   content?: string;
 
-  @Field(() => [ContentItemInput], { defaultValue: [] })
-  @IsArray()
-  @ValidateNested({ each: true })
+  @Field(() => ContentItemInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
   @Type(() => ContentItemInput)
-  contentItems: ContentItemInput[];
+  contentItem?: ContentItemInput;
 
   @Field(() => GraphQLJSON, { nullable: true })
   @IsOptional()
@@ -379,7 +384,8 @@ export class CreateCourseInput {
 
   @Field({ nullable: true })
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  // @IsUrl()
   thumbnail?: string;
 
   @Field({ nullable: true })

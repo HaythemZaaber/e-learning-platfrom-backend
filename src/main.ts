@@ -6,6 +6,11 @@ import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  
+  // Configure payload size limits
+  app.use(require('express').json({ limit: '10mb' }));
+  app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
+  
   // Enable CORS
   app.enableCors({
     origin: ['http://localhost:3000', 'https://your-frontend-domain.com'],

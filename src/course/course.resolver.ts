@@ -23,7 +23,7 @@ export class CourseResolver {
   // COMPREHENSIVE COURSE CREATION
   // ============================================
 
-  @Mutation(() => CourseCreationResponse)
+  @Mutation(() => CourseCreationResponse, { name: 'createCourse' })
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createCourse(
     @Args('input') input: CreateCourseInput,

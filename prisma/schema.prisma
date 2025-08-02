@@ -62,7 +62,6 @@ model User {
   discussions          Discussion[]
   notifications        Notification[]
   courseDrafts         CourseDraft[]      // New: For saving drafts during creation
-  temporaryUploads    TemporaryUpload[]
   
   @@map("users")
 }
@@ -84,41 +83,7 @@ model CourseDraft {
   @@map("course_drafts")
 }
 
-model TemporaryUpload {
-  id            String      @id @default(cuid())
-  userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // File information
-  originalName  String
-  fileName      String
-  filePath      String
-  fileUrl       String
-  fileSize      Int
-  mimeType      String
-  
-  // Content metadata
-  contentType   ContentType
-  title         String
-  description   String?
-  tempId        String?     // Frontend-generated temp ID for tracking
-  
-  // Section and Lecture Assignment
-  sectionId     String?     // Frontend section ID from course structure
-  lectureId     String?     // Frontend lecture ID from course structure
-  sectionTitle  String?     // Store section title for reference
-  lectureTitle  String?     // Store lecture title for reference
-  order         Int         @default(0) // Order within the lecture
-  
-  // Course Draft Association (optional - for better organization)
-  courseDraftId String?     // Link to course draft if needed
-  
-  // Lifecycle
-  expiresAt     DateTime    // Auto-cleanup after 24 hours
-  createdAt     DateTime    @default(now())
-  
-  @@map("temporary_uploads")
-}
+
 
 model InstructorApplication {
   id                String                    @id @default(cuid())
@@ -262,7 +227,7 @@ model Lesson {
   section      Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   progress     Progress[]
   discussions  Discussion[]
-  contentItems ContentItem[] // New: Lessons can have multiple content items
+  contentItem  ContentItem?  // One-to-one: Each lesson has exactly one content item
 
   @@map("lessons")
 }
@@ -293,7 +258,7 @@ model ContentItem {
   // Relationships
   courseId     String?
   course       Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  lessonId     String?
+  lessonId     String?     @unique  // One-to-one relationship with lesson
   lesson       Lesson?     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   
   @@map("content_items")

@@ -26,13 +26,13 @@ export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   // ============================================
-  // TEMPORARY UPLOADS (for course creation)
+  // DIRECT UPLOADS (for course content)
   // ============================================
 
-  @Post('temp/video')
+  @Post('video')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadTempVideo(
+  async uploadVideo(
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -46,65 +46,24 @@ export class UploadController {
     file: Express.Multer.File,
     @Body('title') title: string,
     @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
-    @Body('lectureId') lectureId?: string,
+    @Body('courseId') courseId?: string,
+    @Body('lessonId') lessonId?: string,
     @Body('order') order?: number,
-    @Body('sectionId') sectionId?: string,
     @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
     }
 
- 
-
-    return this.uploadService.createTemporaryUpload(file, user.id, {
+    return this.uploadService.createDirectUpload(file, {
       type: ContentType.VIDEO,
-      title,
-      description,
-      tempId,
-      lectureId,
-      order,
-      sectionId,
     });
   }
 
-  @Post('temp/document')
+  @Post('image')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadTempDocument(
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addFileTypeValidator({
-          fileType: /^(application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain)$/i,
-        })
-        .addMaxSizeValidator({
-          maxSize: 1024 * 1024 * 50, // 50MB
-        })
-        .build(),
-    )
-    file: Express.Multer.File,
-    @Body('title') title: string,
-    @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
-    @GetUser() user?: any,
-  ) {
-    if (!title) {
-      throw new BadRequestException('Title is required');
-    }
-
-    return this.uploadService.createTemporaryUpload(file, user.id, {
-      type: ContentType.DOCUMENT,
-      title,
-      description,
-      tempId,
-    });
-  }
-
-  @Post('temp/image')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadTempImage(
+  async uploadImage(
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -118,25 +77,55 @@ export class UploadController {
     file: Express.Multer.File,
     @Body('title') title: string,
     @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
+    @Body('courseId') courseId?: string,
+    @Body('lessonId') lessonId?: string,
+    @Body('order') order?: number,
     @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
     }
 
-    return this.uploadService.createTemporaryUpload(file, user.id, {
+    return this.uploadService.createDirectUpload(file, {
       type: ContentType.IMAGE,
-      title,
-      description,
-      tempId,
     });
   }
 
-  @Post('temp/audio')
+  @Post('document')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadTempAudio(
+  async uploadDocument(
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({
+          fileType: /^(application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain)$/i,
+        })
+        .addMaxSizeValidator({
+          maxSize: 1024 * 1024 * 50, // 50MB
+        })
+        .build(),
+    )
+    file: Express.Multer.File,
+    @Body('title') title: string,
+    @Body('description') description?: string,
+    @Body('courseId') courseId?: string,
+    @Body('lessonId') lessonId?: string,
+    @Body('order') order?: number,
+    @GetUser() user?: any,
+  ) {
+    if (!title) {
+      throw new BadRequestException('Title is required');
+    }
+
+    return this.uploadService.createDirectUpload(file, {
+      type: ContentType.DOCUMENT,
+    });
+  }
+
+  @Post('audio')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAudio(
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -150,25 +139,24 @@ export class UploadController {
     file: Express.Multer.File,
     @Body('title') title: string,
     @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
+    @Body('courseId') courseId?: string,
+    @Body('lessonId') lessonId?: string,
+    @Body('order') order?: number,
     @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
     }
 
-    return this.uploadService.createTemporaryUpload(file, user.id, {
+    return this.uploadService.createDirectUpload(file, {
       type: ContentType.AUDIO,
-      title,
-      description,
-      tempId,
     });
   }
 
-  @Post('temp/archive')
+  @Post('archive')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadTempArchive(
+  async uploadArchive(
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -182,29 +170,24 @@ export class UploadController {
     file: Express.Multer.File,
     @Body('title') title: string,
     @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
+    @Body('courseId') courseId?: string,
+    @Body('lessonId') lessonId?: string,
+    @Body('order') order?: number,
     @GetUser() user?: any,
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
     }
 
-    return this.uploadService.createTemporaryUpload(file, user.id, {
+    return this.uploadService.createDirectUpload(file, {
       type: ContentType.ARCHIVE,
-      title,
-      description,
-      tempId,
     });
   }
 
-  // ============================================
-  // BATCH TEMPORARY UPLOAD (unified endpoint)
-  // ============================================
-
-  @Post('temp/batch')
+  @Post('batch')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadTempBatch(
+  async uploadBatch(
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
@@ -221,122 +204,62 @@ export class UploadController {
     @Body('title') title: string,
     @Body('contentType') contentType: string,
     @Body('description') description?: string,
-    @Body('tempId') tempId?: string,
-    @GetUser() user?: any,
-  ) {
-    if (!title || !contentType) {
-      throw new BadRequestException('Title and contentType are required');
-    }
-
-    if (!Object.values(ContentType).includes(contentType as ContentType)) {
-      throw new BadRequestException('Invalid content type');
-    }
-
-    return this.uploadService.createTemporaryUpload(file, user.id, {
-      type: contentType as ContentType,
-      title,
-      description,
-      tempId,
-    });
-  }
-
-  // ============================================
-  // PERMANENT UPLOADS (for existing courses)
-  // ============================================
-
-  @Post('course/:courseId/permanent')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadPermanent(
-    @Param('courseId') courseId: string,
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addFileTypeValidator({
-          fileType: new RegExp(
-            /^(image\/jpeg|image\/png|image\/gif|image\/bmp|image\/webp|application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|video\/mp4|video\/webm|video\/quicktime|video\/x-msvideo|audio\/mpeg|audio\/wav|text\/csv|application\/msword|text\/plain|application\/zip|application\/x-rar-compressed)$/i,
-          ),
-        })
-        .addMaxSizeValidator({
-          maxSize: 1024 * 1024 * 500, // 500MB max
-        })
-        .build(),
-    )
-    file: Express.Multer.File,
-    @Body('title') title: string,
-    @Body('contentType') contentType: string,
-    @Body('description') description?: string,
-    @Body('lessonId') lessonId?: string,
-    @Body('order') order?: string,
-    @GetUser() user?: any,
-  ) {
-    if (!title || !contentType) {
-      throw new BadRequestException('Title and contentType are required');
-    }
-
-    if (!Object.values(ContentType).includes(contentType as ContentType)) {
-      throw new BadRequestException('Invalid content type');
-    }
-
-    return this.uploadService.createPermanentUpload(file, courseId, {
-      type: contentType as ContentType,
-      title,
-      description,
-      lessonId,
-      order: order ? parseInt(order) : undefined,
-    });
-  }
-
-  // ============================================
-  // TEMP TO PERMANENT CONVERSION
-  // ============================================
-
-  @Post('convert/:tempUploadId')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async convertTempToPermanent(
-    @Param('tempUploadId') tempUploadId: string,
-    @Body('courseId') courseId: string,
+    @Body('courseId') courseId?: string,
     @Body('lessonId') lessonId?: string,
     @Body('order') order?: number,
+    @GetUser() user?: any,
   ) {
-    if (!courseId) {
-      throw new BadRequestException('Course ID is required');
+    if (!title || !contentType) {
+      throw new BadRequestException('Title and contentType are required');
     }
 
-    return this.uploadService.convertTempToPermanent(
-      tempUploadId,
-      courseId,
-      lessonId,
-      order,
-    );
+    if (!Object.values(ContentType).includes(contentType as ContentType)) {
+      throw new BadRequestException('Invalid content type');
+    }
+
+    return this.uploadService.createDirectUpload(file, {
+      type: contentType as ContentType,
+    });
+  }
+
+  // ============================================
+  // DELETION ENDPOINTS
+  // ============================================
+
+  @Delete('content/:contentItemId')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteContentItem(
+    @Param('contentItemId') contentItemId: string,
+    @GetUser() user: any,
+  ) {
+    if (!contentItemId) {
+      throw new BadRequestException('Content item ID is required');
+    }
+
+    return this.uploadService.deleteContentItem(contentItemId, user.id);
+  }
+
+  @Delete('file/*path')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteFile(
+    @Param('path') filePath: string,
+    @GetUser() user: any,
+  ) {
+    if (!filePath) {
+      throw new BadRequestException('File path is required');
+    }
+
+    return this.uploadService.deleteFile(filePath, user.id);
   }
 
   // ============================================
   // MANAGEMENT ENDPOINTS
   // ============================================
 
-  @Get('temp/my-uploads')
+  @Get('my-content')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async getMyTempUploads(@GetUser() user: any) {
-    // Implementation would fetch user's temp uploads from database
-    // This would be useful for resuming course creation
-    return { message: 'Get temp uploads endpoint - implement in service' };
-  }
-
-  @Delete('temp/cleanup')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async cleanupMyTempUploads(@GetUser() user: any) {
-    await this.uploadService.cleanupUserTempUploads(user.id);
-    return { success: true, message: 'Temporary uploads cleaned up' };
-  }
-
-  @Delete('temp/:tempUploadId')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async deleteTempUpload(
-    @Param('tempUploadId') tempUploadId: string,
-    @GetUser() user: any,
-  ) {
-    // Implementation would delete specific temp upload
-    return { message: 'Delete temp upload endpoint - implement in service' };
+  async getMyContentItems(@GetUser() user: any) {
+    return this.uploadService.getUserContentItems(user.id);
   }
 
   // ============================================
@@ -375,4 +298,6 @@ export class UploadController {
       uploadedAt: new Date().toISOString(),
     };
   }
+
+  
 }
