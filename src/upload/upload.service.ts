@@ -265,4 +265,242 @@ export class UploadService {
       return { exists: false, error: error.message };
     }
   }
+
+  // ============================================
+  // COURSE THUMBNAIL DELETION
+  // ============================================
+  async deleteCourseThumbnail(
+    thumbnailUrl: string,
+    userId: string,
+    options: {
+      courseId?: string;
+      isDraft?: boolean;
+      isUnsaved?: boolean;
+    } = {}
+  ) {
+    try {
+      // Extract file path from URL
+      const urlParts = thumbnailUrl.split('/uploads/');
+      if (urlParts.length < 2) {
+        throw new Error('Invalid thumbnail URL format');
+      }
+
+      const filePath = urlParts[1];
+      const fullPath = path.join(this.uploadPath, filePath);
+
+      // Verify file exists
+      if (!fs.existsSync(fullPath)) {
+        console.log(`File not found: ${fullPath}`);
+        // Return success even if file doesn't exist (might have been deleted already)
+        return {
+          success: true,
+          message: 'Thumbnail deleted successfully (file was already removed)',
+          deletedFile: {
+            path: filePath,
+            url: thumbnailUrl
+          }
+        };
+      }
+
+      // For unsaved files (not associated with any course), just delete the file
+      if (options.isUnsaved) {
+        fs.unlinkSync(fullPath);
+        console.log(`Unsaved thumbnail deleted: ${fullPath}`);
+        
+        return {
+          success: true,
+          message: 'Unsaved thumbnail deleted successfully',
+          deletedFile: {
+            path: filePath,
+            url: thumbnailUrl
+          }
+        };
+      }
+
+      // For draft files, check if it's associated with a draft course
+      if (options.isDraft && options.courseId) {
+        const draftCourse = await this.prisma.course.findFirst({
+          where: {
+            id: options.courseId,
+            instructorId: userId,
+            status: 'DRAFT'
+          }
+        });
+
+        if (!draftCourse) {
+          throw new Error('Draft course not found or access denied');
+        }
+
+        // Update the courseDraft table to set thumbnail to null in draftData
+        const courseDrafts = await this.prisma.courseDraft.findMany({
+          where: {
+            instructorId: userId,
+          }
+        });
+
+        // Update each draft to remove thumbnail from draftData
+        for (const draft of courseDrafts) {
+          const draftData = draft.draftData as any;
+          if (draftData && typeof draftData === 'object') {
+            // Remove thumbnail from draftData
+            delete draftData.thumbnail;
+            
+            await this.prisma.courseDraft.update({
+              where: { id: draft.id },
+              data: {
+                draftData: draftData
+              }
+            });
+          }
+        }
+
+        // Delete the file
+        fs.unlinkSync(fullPath);
+        console.log(`Draft thumbnail deleted: ${fullPath}`);
+
+        // Update the course to remove thumbnail reference
+        await this.prisma.course.update({
+          where: { id: options.courseId },
+          data: { thumbnail: null }
+        });
+
+        return {
+          success: true,
+          message: 'Draft course thumbnail deleted successfully',
+          deletedFile: {
+            path: filePath,
+            url: thumbnailUrl
+          }
+        };
+      }
+
+      // For published courses, verify ownership and check if thumbnail is still in use
+      if (options.courseId) {
+        const course = await this.prisma.course.findFirst({
+          where: {
+            id: options.courseId,
+            instructorId: userId
+          }
+        });
+
+        if (!course) {
+          throw new Error('Course not found or access denied');
+        }
+
+        // Check if this thumbnail is still being used by the course
+        if (course.thumbnail === thumbnailUrl) {
+          // Update the course to remove thumbnail reference
+          await this.prisma.course.update({
+            where: { id: options.courseId },
+            data: { thumbnail: null }
+          });
+        }
+
+        // Delete the file
+        fs.unlinkSync(fullPath);
+        console.log(`Published course thumbnail deleted: ${fullPath}`);
+
+        return {
+          success: true,
+          message: 'Course thumbnail deleted successfully',
+          deletedFile: {
+            path: filePath,
+            url: thumbnailUrl
+          }
+        };
+      }
+
+      // If no specific scenario is provided, just delete the file
+      fs.unlinkSync(fullPath);
+      console.log(`Thumbnail deleted: ${fullPath}`);
+
+      return {
+        success: true,
+        message: 'Thumbnail deleted successfully',
+        deletedFile: {
+          path: filePath,
+          url: thumbnailUrl
+        }
+      };
+
+    } catch (error) {
+      console.error('Delete course thumbnail error:', error);
+      throw new Error(`Failed to delete course thumbnail: ${error.message}`);
+    }
+  }
+
+  // ============================================
+  // BULK THUMBNAIL CLEANUP (for orphaned files)
+  // ============================================
+  async cleanupOrphanedThumbnails(userId: string) {
+    try {
+      // Get all courses for this user
+      const userCourses = await this.prisma.course.findMany({
+        where: { instructorId: userId },
+        select: { id: true, thumbnail: true }
+      });
+
+      // Create a set of valid thumbnail URLs
+      const validThumbnails = new Set(
+        userCourses
+          .map(course => course.thumbnail)
+          .filter(Boolean)
+      );
+
+      // Scan uploads directory for orphaned thumbnail files
+      const thumbnailFiles: string[] = [];
+      
+      const scanDirectory = (dir: string) => {
+        if (!fs.existsSync(dir)) return;
+        
+        const items = fs.readdirSync(dir);
+        for (const item of items) {
+          const fullPath = path.join(dir, item);
+          const stat = fs.statSync(fullPath);
+          
+          if (stat.isDirectory()) {
+            scanDirectory(fullPath);
+          } else if (stat.isFile()) {
+            // Check if it's an image file (potential thumbnail)
+            const ext = path.extname(item).toLowerCase();
+            if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
+              const relativePath = path.relative(this.uploadPath, fullPath);
+              const fileUrl = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/uploads') + 
+                             '/' + relativePath.replace(/\\/g, '/');
+              
+              // If this file URL is not in valid thumbnails, it's orphaned
+              if (!validThumbnails.has(fileUrl)) {
+                thumbnailFiles.push(fullPath);
+              }
+            }
+          }
+        }
+      };
+
+      scanDirectory(this.uploadPath);
+
+      // Delete orphaned files
+      const deletedFiles: string[] = [];
+      for (const filePath of thumbnailFiles) {
+        try {
+          fs.unlinkSync(filePath);
+          deletedFiles.push(filePath);
+          console.log(`Orphaned thumbnail deleted: ${filePath}`);
+        } catch (error) {
+          console.error(`Failed to delete orphaned file: ${filePath}`, error);
+        }
+      }
+
+      return {
+        success: true,
+        message: `Cleanup completed. Deleted ${deletedFiles.length} orphaned thumbnail files.`,
+        deletedFiles,
+        totalFound: thumbnailFiles.length
+      };
+
+    } catch (error) {
+      console.error('Cleanup orphaned thumbnails error:', error);
+      throw new Error(`Failed to cleanup orphaned thumbnails: ${error.message}`);
+    }
+  }
 }

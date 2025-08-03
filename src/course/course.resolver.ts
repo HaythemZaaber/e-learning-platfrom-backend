@@ -5,6 +5,8 @@ import { Course, CourseCreationResponse } from './entities/course.entity';
 import {
   CreateCourseInput,
   UpdateCourseInput,
+  UpdateCourseBasicInfoInput,
+  UpdateCourseSettingsInput,
   SaveCourseDraftInput,
   CourseFiltersInput,
   CourseDraftResponse,
@@ -158,7 +160,7 @@ export class CourseResolver {
   // COURSE MANAGEMENT
   // ============================================
 
-  @Mutation(() => CourseCreationResponse)
+  @Mutation(() => CourseCreationResponse, { name: 'updateCourse' })
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourse(
     @Args('courseId') courseId: string,
@@ -170,6 +172,28 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async updateCourseBasicInfo(
+    @Args('courseId') courseId: string,
+    @Args('basicInfo', { type: () => UpdateCourseBasicInfoInput }) basicInfo: UpdateCourseBasicInfoInput,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    return this.courseService.updateCourseBasicInfo(courseId, user.id, basicInfo);
+  }
+
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async updateCourseSettings(
+    @Args('courseId') courseId: string,
+    @Args('settings', { type: () => UpdateCourseSettingsInput }) settings: UpdateCourseSettingsInput,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    return this.courseService.updateCourseSettings(courseId, user.id, settings);
+  }
+
+  @Mutation(() => CourseCreationResponse, { name: 'publishCourse' })
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async publishCourse(
     @Args('courseId') courseId: string,

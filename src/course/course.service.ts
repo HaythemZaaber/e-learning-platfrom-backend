@@ -8,10 +8,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateCourseInput,
   UpdateCourseInput,
+  UpdateCourseBasicInfoInput,
+  UpdateCourseSettingsInput,
   CourseFiltersInput,
   SaveCourseDraftInput,
   CourseCreationResponse,
   CourseDraftResponse,
+  CourseSettingsInput,
 } from './dto/course-creation.dto';
 import {
   CourseStatus,
@@ -451,6 +454,335 @@ export class CourseService {
         );
       }
 
+      // Use database transaction for complex operations
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // 1. Update the main course
+        const course = await prisma.course.update({
+          where: { id: courseId },
+          data: {
+            title: sanitizedInput.title,
+            description: sanitizedInput.description,
+            shortDescription: sanitizedInput.shortDescription,
+            category: sanitizedInput.category,
+            subcategory: sanitizedInput.subcategory,
+            level: sanitizedInput.level,
+            thumbnail: sanitizedInput.thumbnail,
+            trailer: sanitizedInput.trailer,
+            price: sanitizedInput.price,
+            originalPrice: sanitizedInput.originalPrice,
+            currency: sanitizedInput.currency,
+            objectives: sanitizedInput.objectives,
+            prerequisites: sanitizedInput.prerequisites,
+            whatYouLearn: sanitizedInput.whatYouLearn,
+            seoTags: sanitizedInput.seoTags,
+            marketingTags: sanitizedInput.marketingTags,
+            enrollmentType: sanitizedInput.settings?.enrollmentType,
+            language: sanitizedInput.settings?.language,
+            isPublic: sanitizedInput.settings?.isPublic,
+            certificate: sanitizedInput.settings?.certificate,
+            settings: sanitizedInput.settings || {},
+            accessibility: sanitizedInput.settings?.accessibility || {
+              captions: false,
+              transcripts: false,
+              audioDescription: false,
+            },
+            updatedAt: new Date(),
+          },
+        });
+
+        // 2. Handle sections and lessons updates if provided
+        if (sanitizedInput.sections && sanitizedInput.sections.length > 0) {
+          // Get existing sections to track what needs to be updated/deleted
+          const existingSections = await prisma.section.findMany({
+            where: { courseId },
+            include: {
+              lessons: {
+                include: {
+                  contentItem: true,
+                },
+              },
+            },
+            orderBy: { order: 'asc' },
+          });
+
+          // Create maps for efficient lookup
+          const existingSectionMap = new Map(existingSections.map(s => [s.id, s]));
+          const existingLessonMap = new Map();
+          existingSections.forEach(section => {
+            section.lessons.forEach(lesson => {
+              existingLessonMap.set(lesson.id, lesson);
+            });
+          });
+
+          // Process each section from input
+          for (const [sectionIndex, sectionInput] of sanitizedInput.sections.entries()) {
+            let section;
+            
+            if (existingSectionMap.has(sectionInput.id)) {
+              // Update existing section
+              section = await prisma.section.update({
+                where: { id: sectionInput.id },
+                data: {
+                  title: sectionInput.title,
+                  description: sectionInput.description,
+                  order: sectionIndex,
+                },
+              });
+            } else {
+              // Create new section
+              section = await prisma.section.create({
+                data: {
+                  title: sectionInput.title,
+                  description: sectionInput.description,
+                  order: sectionIndex,
+                  courseId: course.id,
+                },
+              });
+            }
+
+            // Handle lessons for this section
+            if (sectionInput.lectures && sectionInput.lectures.length > 0) {
+              for (const [lectureIndex, lectureInput] of sectionInput.lectures.entries()) {
+                let lesson;
+                
+                if (existingLessonMap.has(lectureInput.id)) {
+                  // Update existing lesson
+                  lesson = await prisma.lesson.update({
+                    where: { id: lectureInput.id },
+                    data: {
+                      title: lectureInput.title,
+                      description: lectureInput.description,
+                      type: lectureInput.type,
+                      content: lectureInput.content,
+                      duration: lectureInput.duration,
+                      order: lectureIndex,
+                      settings: lectureInput.settings || {},
+                    },
+                  });
+                } else {
+                  // Create new lesson
+                  lesson = await prisma.lesson.create({
+                    data: {
+                      title: lectureInput.title,
+                      description: lectureInput.description,
+                      type: lectureInput.type,
+                      content: lectureInput.content,
+                      duration: lectureInput.duration,
+                      order: lectureIndex,
+                      isPreview: false,
+                      isInteractive: false,
+                      sectionId: section.id,
+                      settings: lectureInput.settings || {},
+                    },
+                  });
+                }
+
+                // Handle content item for this lesson
+                if (lectureInput.contentItem) {
+                  // Check if lesson already has a content item
+                  const existingContentItem = await prisma.contentItem.findFirst({
+                    where: { lessonId: lesson.id },
+                  });
+
+                  if (existingContentItem) {
+                    // Update existing content item
+                    await prisma.contentItem.update({
+                      where: { id: existingContentItem.id },
+                      data: {
+                        title: lectureInput.contentItem.title,
+                        description: lectureInput.contentItem.description,
+                        type: lectureInput.contentItem.type,
+                        fileUrl: lectureInput.contentItem.fileUrl,
+                        fileName: lectureInput.contentItem.fileName,
+                        fileSize: lectureInput.contentItem.fileSize,
+                        mimeType: lectureInput.contentItem.mimeType,
+                        contentData: lectureInput.contentItem.contentData || {},
+                        order: lectureInput.contentItem.order || 0,
+                        isPublished: true,
+                      },
+                    });
+                  } else {
+                    // Create new content item
+                    await prisma.contentItem.create({
+                      data: {
+                        title: lectureInput.contentItem.title,
+                        description: lectureInput.contentItem.description,
+                        type: lectureInput.contentItem.type,
+                        fileUrl: lectureInput.contentItem.fileUrl,
+                        fileName: lectureInput.contentItem.fileName,
+                        fileSize: lectureInput.contentItem.fileSize,
+                        mimeType: lectureInput.contentItem.mimeType,
+                        contentData: lectureInput.contentItem.contentData || {},
+                        order: lectureInput.contentItem.order || 0,
+                        isPublished: true,
+                        courseId: course.id,
+                        lessonId: lesson.id,
+                      },
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // Delete sections and lessons that are no longer in the input
+          const inputSectionIds = new Set(sanitizedInput.sections.map(s => s.id));
+          const inputLessonIds = new Set();
+          sanitizedInput.sections.forEach(section => {
+            section.lectures.forEach(lecture => {
+              inputLessonIds.add(lecture.id);
+            });
+          });
+
+          // Delete lessons that are no longer in input
+          for (const existingSection of existingSections) {
+            for (const lesson of existingSection.lessons) {
+              if (!inputLessonIds.has(lesson.id)) {
+                // Delete content item first (if exists)
+                if (lesson.contentItem) {
+                  await prisma.contentItem.delete({
+                    where: { id: lesson.contentItem.id },
+                  });
+                }
+                // Delete lesson
+                await prisma.lesson.delete({
+                  where: { id: lesson.id },
+                });
+              }
+            }
+          }
+
+          // Delete sections that are no longer in input
+          for (const existingSection of existingSections) {
+            if (!inputSectionIds.has(existingSection.id)) {
+              await prisma.section.delete({
+                where: { id: existingSection.id },
+              });
+            }
+          }
+        }
+
+        // 3. Handle additional content items at course level
+        if (sanitizedInput.additionalContent && sanitizedInput.additionalContent.length > 0) {
+          // Get existing course-level content items
+          const existingCourseContent = await prisma.contentItem.findMany({
+            where: {
+              courseId,
+              lessonId: null, // Course-level content items only
+            },
+            orderBy: { order: 'asc' },
+          });
+
+          // Create map for efficient lookup
+          const existingContentMap = new Map(existingCourseContent.map(c => [c.id, c]));
+
+          // Process each additional content item
+          for (const [index, contentItem] of sanitizedInput.additionalContent.entries()) {
+            if (existingContentMap.has(contentItem.id)) {
+              // Update existing content item
+              await prisma.contentItem.update({
+                where: { id: contentItem.id },
+                data: {
+                  title: contentItem.title,
+                  description: contentItem.description,
+                  type: contentItem.type,
+                  fileUrl: contentItem.fileUrl,
+                  fileName: contentItem.fileName,
+                  fileSize: contentItem.fileSize,
+                  mimeType: contentItem.mimeType,
+                  contentData: contentItem.contentData || {},
+                  order: contentItem.order || index,
+                  isPublished: true,
+                },
+              });
+            } else {
+              // Create new content item
+              await prisma.contentItem.create({
+                data: {
+                  title: contentItem.title,
+                  description: contentItem.description,
+                  type: contentItem.type,
+                  fileUrl: contentItem.fileUrl,
+                  fileName: contentItem.fileName,
+                  fileSize: contentItem.fileSize,
+                  mimeType: contentItem.mimeType,
+                  contentData: contentItem.contentData || {},
+                  order: contentItem.order || index,
+                  isPublished: true,
+                  courseId: course.id,
+                  // No lessonId for course-level content items
+                },
+              });
+            }
+          }
+
+          // Delete course-level content items that are no longer in input
+          const inputContentIds = new Set(sanitizedInput.additionalContent.map(c => c.id));
+          for (const existingContent of existingCourseContent) {
+            if (!inputContentIds.has(existingContent.id)) {
+              await prisma.contentItem.delete({
+                where: { id: existingContent.id },
+              });
+            }
+          }
+        }
+
+        // Return the complete updated course with all relations
+        const result = await prisma.course.findUnique({
+          where: { id: course.id },
+          include: this.getCourseIncludeOptions(),
+        });
+
+        return result;
+      });
+
+      // Convert null values to undefined for GraphQL compatibility
+      const courseWithUndefined = this.convertNullsToUndefined(result);
+
+      return {
+        success: true,
+        message: 'Course updated successfully with all content organized!',
+        course: courseWithUndefined,
+        completionPercentage: this.calculateCourseCompletionPercentage(courseWithUndefined),
+        errors: [],
+      };
+    } catch (error) {
+      console.error('Course update error:', error);
+      
+      return {
+        success: false,
+        message: 'Failed to update course',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred during course update'],
+      };
+    }
+  }
+
+  // ============================================
+  // PARTIAL COURSE UPDATE METHODS
+  // ============================================
+
+  async updateCourseBasicInfo(
+    courseId: string,
+    instructorId: string,
+    basicInfo: UpdateCourseBasicInfoInput,
+  ): Promise<CourseCreationResponse> {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Validate and sanitize input
+      const sanitizedInput = this.sanitizeCourseInput(basicInfo);
+
+      // Validate pricing logic if price is being updated
+      if (sanitizedInput.price !== undefined || sanitizedInput.originalPrice !== undefined) {
+        this.validatePricing(
+          sanitizedInput.price,
+          sanitizedInput.originalPrice,
+          EnrollmentType.FREE, // Default, will be overridden if settings are provided
+        );
+      }
+
       const updatedCourse = await this.prisma.course.update({
         where: { id: courseId },
         data: {
@@ -462,23 +794,102 @@ export class CourseService {
 
       return {
         success: true,
-        message: 'Course updated successfully',
+        message: 'Course basic information updated successfully',
         course: this.convertNullsToUndefined(updatedCourse),
         completionPercentage: this.calculateCourseCompletionPercentage(updatedCourse),
         errors: [],
       };
     } catch (error) {
+      console.error('Course basic info update error:', error);
+      
       return {
         success: false,
-        message: 'Failed to update course',
+        message: 'Failed to update course basic information',
         course: null,
         completionPercentage: 0,
-        errors: [error.message || 'An unexpected error occurred while updating course'],
+        errors: [error.message || 'An unexpected error occurred during course basic info update'],
       };
     }
   }
 
+  async updateCourseSettings(
+    courseId: string,
+    instructorId: string,
+    settings: UpdateCourseSettingsInput,
+  ): Promise<CourseCreationResponse> {
+    try {
+      await this.verifyCourseOwnership(courseId, instructorId);
 
+      // Build update data object with only provided fields
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+
+      if (settings.enrollmentType !== undefined) {
+        updateData.enrollmentType = settings.enrollmentType;
+      }
+      if (settings.language !== undefined) {
+        updateData.language = settings.language;
+      }
+      if (settings.isPublic !== undefined) {
+        updateData.isPublic = settings.isPublic;
+      }
+      if (settings.certificate !== undefined) {
+        updateData.certificate = settings.certificate;
+      }
+      if (settings.seoDescription !== undefined) {
+        updateData.seoDescription = settings.seoDescription;
+      }
+      if (settings.seoTags !== undefined) {
+        updateData.seoTags = settings.seoTags;
+      }
+      if (settings.accessibility !== undefined) {
+        updateData.accessibility = settings.accessibility as any;
+      }
+      if (settings.pricing !== undefined) {
+        updateData.settings = { ...updateData.settings, pricing: settings.pricing };
+      }
+      if (settings.enrollment !== undefined) {
+        updateData.settings = { ...updateData.settings, enrollment: settings.enrollment };
+      }
+      if (settings.communication !== undefined) {
+        updateData.settings = { ...updateData.settings, communication: settings.communication };
+      }
+      if (settings.completion !== undefined) {
+        updateData.settings = { ...updateData.settings, completion: settings.completion };
+      }
+      if (settings.content !== undefined) {
+        updateData.settings = { ...updateData.settings, content: settings.content };
+      }
+      if (settings.marketing !== undefined) {
+        updateData.settings = { ...updateData.settings, marketing: settings.marketing };
+      }
+
+      const updatedCourse = await this.prisma.course.update({
+        where: { id: courseId },
+        data: updateData,
+        include: this.getCourseIncludeOptions(),
+      });
+
+      return {
+        success: true,
+        message: 'Course settings updated successfully',
+        course: this.convertNullsToUndefined(updatedCourse),
+        completionPercentage: this.calculateCourseCompletionPercentage(updatedCourse),
+        errors: [],
+      };
+    } catch (error) {
+      console.error('Course settings update error:', error);
+      
+      return {
+        success: false,
+        message: 'Failed to update course settings',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred during course settings update'],
+      };
+    }
+  }
 
   // ============================================
   // ENHANCED DRAFT MANAGEMENT WITH ORGANIZED CONTENT
@@ -502,6 +913,8 @@ export class CourseService {
         _lastSaved: new Date().toISOString(),
         _contentSummary: this.generateDraftContentSummary(draftInput.draftData),
       };
+
+      console.log("enhancedDraftData", enhancedDraftData)
 
       let draft;
       if (existingDraft) {
@@ -567,16 +980,37 @@ export class CourseService {
     instructorId: string,
   ): Promise<{ success: boolean; message: string }> {
     try {
+      // Get the draft data first to extract thumbnail URLs
+      const existingDraft = await this.prisma.courseDraft.findFirst({
+        where: { instructorId },
+      });
+
+      if (existingDraft && existingDraft.draftData) {
+        // Extract thumbnail URL from draft data
+        const draftData = existingDraft.draftData as any;
+        if (draftData.thumbnail) {
+          try {
+            // Delete the thumbnail file
+            await this.uploadService.deleteCourseThumbnail(
+              draftData.thumbnail,
+              instructorId,
+              { isUnsaved: true }
+            );
+          } catch (error) {
+            console.error('Failed to delete draft thumbnail:', error);
+            // Continue with draft deletion even if thumbnail deletion fails
+          }
+        }
+      }
+
       // Delete draft
       await this.prisma.courseDraft.deleteMany({
         where: { instructorId },
       });
 
-
-
       return {
         success: true,
-        message: 'Draft and temporary uploads deleted successfully',
+        message: 'Draft and associated files deleted successfully',
       };
     } catch (error) {
       throw new BadRequestException(`Failed to delete draft: ${error.message}`);
@@ -628,19 +1062,19 @@ export class CourseService {
   private organizeCourseContentByLecture(course: any) {
     const contentByLecture: Record<string, any> = {};
 
-    // Organize content items by lecture
+    // Organize content items by lesson
     course.sections?.forEach((section: any) => {
-      section.lectures?.forEach((lecture: any) => {
-        if (!contentByLecture[lecture.id]) {
-          contentByLecture[lecture.id] = {
-            contentItem: null, // Single content item per lecture
+      section.lessons?.forEach((lesson: any) => {
+        if (!contentByLecture[lesson.id]) {
+          contentByLecture[lesson.id] = {
+            contentItem: null, // Single content item per lesson
           };
         }
 
-        // Each lecture has exactly one content item
-        if (lecture.contentItem) {
-          const item = lecture.contentItem;
-          contentByLecture[lecture.id].contentItem = {
+        // Each lesson has exactly one content item
+        if (lesson.contentItem) {
+          const item = lesson.contentItem;
+          contentByLecture[lesson.id].contentItem = {
             id: item.id,
             title: item.title,
             description: item.description,
@@ -1013,34 +1447,17 @@ export class CourseService {
       if (!course.sections || course.sections.length === 0) {
         validation.errors.push('At least one section is required');
       } else {
-        const totalLectures = course.sections.reduce(
-          (total: number, section: any) => total + (section.lectures?.length || 0),
+        // Calculate total lessons across all sections
+        const totalLessons = course.sections.reduce(
+          (total: number, section: any) => total + (section.lessons?.length || 0),
           0
         );
 
-        if (totalLectures === 0) {
-          validation.errors.push('At least one lecture is required');
+        if (totalLessons === 0) {
+          validation.errors.push('At least one lesson is required');
         }
 
-        // Content validation using organized content
-        if (course.organizedContent?.summary) {
-          const { totalContent, lectureBreakdown } = course.organizedContent.summary;
-
-          if (totalContent === 0) {
-            validation.errors.push('At least some content is required');
-          }
-
-          // Check for lectures without content
-          const lecturesWithoutContent = Object.entries(lectureBreakdown).filter(
-            ([_, breakdown]: [string, any]) => breakdown.total === 0
-          );
-
-          if (lecturesWithoutContent.length > 0) {
-            validation.warnings.push(
-              `${lecturesWithoutContent.length} lecture(s) have no content`
-            );
-          }
-        }
+        
       }
 
       // Pricing validation
@@ -1049,10 +1466,10 @@ export class CourseService {
       }
 
       // Calculate completion percentage
-      validation.completionPercentage = this.calculateCourseCompletionPercentage(course);
+      // validation.completionPercentage = this.calculateCourseCompletionPercentage(course);
 
       // Final validation
-      validation.isValid = validation.errors.length === 0 && validation.completionPercentage >= 80;
+      validation.isValid = validation.errors.length === 0 
 
       return validation;
     } catch (error) {
@@ -1107,6 +1524,7 @@ export class CourseService {
         errors: [],
       };
     } catch (error) {
+
       return {
         success: false,
         message: 'Failed to publish course',
@@ -1114,6 +1532,7 @@ export class CourseService {
         completionPercentage: 0,
         errors: [error.message || 'An unexpected error occurred while publishing course'],
       };
+
     }
   }
 

@@ -491,6 +491,11 @@ export class UpdateCourseInput {
   @IsString()
   category?: string;
 
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  subcategory?: string;
+
   @Field(() => CourseLevel, { nullable: true })
   @IsOptional()
   @IsEnum(CourseLevel)
@@ -498,19 +503,244 @@ export class UpdateCourseInput {
 
   @Field({ nullable: true })
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  // @IsUrl()
   thumbnail?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsUrl()
+  trailer?: string;
 
   @Field(() => Float, { nullable: true })
   @IsOptional()
   @IsNumber()
   price?: number;
 
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  originalPrice?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
   @Field(() => [String], { nullable: true })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   objectives?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  prerequisites?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  whatYouLearn?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  seoTags?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  marketingTags?: string[];
+
+  @Field(() => [SectionInput], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SectionInput)
+  sections?: SectionInput[];
+
+  @Field(() => CourseSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CourseSettingsInput)
+  settings?: CourseSettingsInput;
+
+  @Field(() => [ContentItemInput], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ContentItemInput)
+  additionalContent?: ContentItemInput[];
+}
+
+@InputType()
+export class UpdateCourseBasicInfoInput {
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  shortDescription?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  subcategory?: string;
+
+  @Field(() => CourseLevel, { nullable: true })
+  @IsOptional()
+  @IsEnum(CourseLevel)
+  level?: CourseLevel;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  // @IsUrl()
+  thumbnail?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsUrl()
+  trailer?: string;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  price?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  originalPrice?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  objectives?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  prerequisites?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  whatYouLearn?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  seoTags?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  marketingTags?: string[];
+}
+
+@InputType()
+export class UpdateCourseSettingsInput {
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @Field(() => EnrollmentType, { nullable: true })
+  @IsOptional()
+  @IsEnum(EnrollmentType)
+  enrollmentType?: EnrollmentType;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  certificate?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  seoDescription?: string;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  seoTags?: string[];
+
+  @Field(() => AccessibilitySettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AccessibilitySettingsInput)
+  accessibility?: AccessibilitySettingsInput;
+
+  @Field(() => PricingSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PricingSettingsInput)
+  pricing?: PricingSettingsInput;
+
+  @Field(() => EnrollmentSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EnrollmentSettingsInput)
+  enrollment?: EnrollmentSettingsInput;
+
+  @Field(() => CommunicationSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CommunicationSettingsInput)
+  communication?: CommunicationSettingsInput;
+
+  @Field(() => CompletionSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CompletionSettingsInput)
+  completion?: CompletionSettingsInput;
+
+  @Field(() => ContentAccessSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContentAccessSettingsInput)
+  content?: ContentAccessSettingsInput;
+
+  @Field(() => MarketingSettingsInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MarketingSettingsInput)
+  marketing?: MarketingSettingsInput;
 }
 
 // ==============================================

@@ -225,6 +225,72 @@ export class UploadController {
   }
 
   // ============================================
+  // COURSE THUMBNAIL DELETION ENDPOINTS
+  // ============================================
+
+  @Delete('thumbnail/unsaved')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteUnsavedThumbnail(
+    @Body('thumbnailUrl') thumbnailUrl: string,
+    @GetUser() user: any,
+  ) {
+    if (!thumbnailUrl) {
+      throw new BadRequestException('Thumbnail URL is required');
+    }
+
+    return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
+      isUnsaved: true
+    });
+  }
+
+  @Delete('thumbnail/draft/:courseId')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteDraftThumbnail(
+    @Param('courseId') courseId: string,
+    @Body('thumbnailUrl') thumbnailUrl: string,
+    @GetUser() user: any,
+  ) {
+    if (!thumbnailUrl) {
+      throw new BadRequestException('Thumbnail URL is required');
+    }
+
+    if (!courseId) {
+      throw new BadRequestException('Course ID is required');
+    }
+
+    return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
+      courseId,
+      isDraft: true
+    });
+  }
+
+  @Delete('thumbnail/course/:courseId')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteCourseThumbnail(
+    @Param('courseId') courseId: string,
+    @Body('thumbnailUrl') thumbnailUrl: string,
+    @GetUser() user: any,
+  ) {
+    if (!thumbnailUrl) {
+      throw new BadRequestException('Thumbnail URL is required');
+    }
+
+    if (!courseId) {
+      throw new BadRequestException('Course ID is required');
+    }
+
+    return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
+      courseId
+    });
+  }
+
+  @Delete('thumbnail/cleanup')
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async cleanupOrphanedThumbnails(@GetUser() user: any) {
+    return this.uploadService.cleanupOrphanedThumbnails(user.id);
+  }
+
+  // ============================================
   // MANAGEMENT ENDPOINTS
   // ============================================
 
