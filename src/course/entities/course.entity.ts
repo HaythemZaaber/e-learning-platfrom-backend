@@ -12,9 +12,30 @@ import {
   EnrollmentType,
   ContentType,
   LessonType,
+  CourseIntensity,
+  VideoProvider,
+  QuestionType,
+  AssignmentType,
+  EnrollmentStatus,
+  ReviewStatus,
+  CourseStatus,
+  SubmissionStatus,
+  PaymentStatus,
+  AnnouncementPriority,
+  DiscussionType,
+  NotificationType,
+  NotificationPriority,
+  AIInteractionType,
+  UserRole,
+  Gender,
+  LearningStyle,
+  InstructorStatus,
+  ApplicationStatus,
+  EnrollmentSource,
 } from '../../../generated/prisma';
+import GraphQLJSON from 'graphql-type-json';
 
-// Register all enums at the top level
+// Register all enums for GraphQL
 registerEnumType(CourseLevel, {
   name: 'CourseLevel',
   description: 'The difficulty level of the course',
@@ -35,34 +56,109 @@ registerEnumType(LessonType, {
   description: 'The type of lesson',
 });
 
+registerEnumType(CourseIntensity, {
+  name: 'CourseIntensity',
+  description: 'The intensity level of the course',
+});
 
+registerEnumType(VideoProvider, {
+  name: 'VideoProvider',
+  description: 'The video hosting provider',
+});
 
-@ObjectType()
-export class Section {
-  @Field(() => ID)
-  id: string;
+registerEnumType(QuestionType, {
+  name: 'QuestionType',
+  description: 'The type of quiz question',
+});
 
-  @Field()
-  title: string;
+registerEnumType(AssignmentType, {
+  name: 'AssignmentType',
+  description: 'The type of assignment submission',
+});
 
-  @Field({ nullable: true })
-  description?: string;
+registerEnumType(EnrollmentStatus, {
+  name: 'EnrollmentStatus',
+  description: 'The status of course enrollment',
+});
 
-  @Field(() => Int)
-  order: number;
+registerEnumType(ReviewStatus, {
+  name: 'ReviewStatus',
+  description: 'The status of course review',
+});
 
-  @Field()
-  isLocked: boolean;
+registerEnumType(CourseStatus, {
+  name: 'CourseStatus',
+  description: 'The publication status of the course',
+});
 
-  @Field()
-  createdAt: Date;
+registerEnumType(SubmissionStatus, {
+  name: 'SubmissionStatus',
+  description: 'The status of assignment submission',
+});
 
-  @Field()
-  updatedAt: Date;
+registerEnumType(PaymentStatus, {
+  name: 'PaymentStatus',
+  description: 'The status of payment',
+});
 
-  @Field(() => [Lesson], { nullable: true })
-  lessons?: Lesson[];
-}
+registerEnumType(AnnouncementPriority, {
+  name: 'AnnouncementPriority',
+  description: 'The priority level of announcements',
+});
+
+registerEnumType(DiscussionType, {
+  name: 'DiscussionType',
+  description: 'The type of discussion',
+});
+
+registerEnumType(NotificationType, {
+  name: 'NotificationType',
+  description: 'The type of notification',
+});
+
+registerEnumType(NotificationPriority, {
+  name: 'NotificationPriority',
+  description: 'The priority level of notifications',
+});
+
+registerEnumType(AIInteractionType, {
+  name: 'AIInteractionType',
+  description: 'The type of AI interaction',
+});
+
+registerEnumType(UserRole, {
+  name: 'UserRole',
+  description: 'The role of the user',
+});
+
+registerEnumType(Gender, {
+  name: 'Gender',
+  description: 'The gender of the user',
+});
+
+registerEnumType(LearningStyle, {
+  name: 'LearningStyle',
+  description: 'The learning style preference',
+});
+
+registerEnumType(InstructorStatus, {
+  name: 'InstructorStatus',
+  description: 'The status of instructor application',
+});
+
+registerEnumType(ApplicationStatus, {
+  name: 'ApplicationStatus',
+  description: 'The status of instructor application',
+});
+
+registerEnumType(EnrollmentSource, {
+  name: 'EnrollmentSource',
+  description: 'The source of enrollment',
+});
+
+// ============================================
+// ENHANCED CONTENT ENTITIES
+// ============================================
 
 @ObjectType()
 export class ContentItem {
@@ -75,8 +171,8 @@ export class ContentItem {
   @Field({ nullable: true })
   description?: string;
 
-  @Field()
-  type: string;
+  @Field(() => ContentType)
+  type: ContentType;
 
   @Field({ nullable: true })
   fileUrl?: string;
@@ -90,11 +186,26 @@ export class ContentItem {
   @Field({ nullable: true })
   mimeType?: string;
 
+  @Field(() => GraphQLJSON, { nullable: true })
+  contentData?: any;
+
+  @Field({ nullable: true })
+  version?: string;
+
+  @Field({ nullable: true })
+  checksum?: string;
+
   @Field(() => Int)
   order: number;
 
   @Field()
   isPublished: boolean;
+
+  @Field()
+  isDownloadable: boolean;
+
+  @Field()
+  requiresAuth: boolean;
 
   @Field()
   createdAt: Date;
@@ -114,23 +225,21 @@ export class Lesson {
   @Field({ nullable: true })
   description?: string;
 
-  @Field()
-  type: string;
+  @Field(() => LessonType)
+  type: LessonType;
 
   @Field({ nullable: true })
   content?: string;
 
+  // Enhanced video fields
   @Field({ nullable: true })
   videoUrl?: string;
 
-  @Field({ nullable: true })
-  audioUrl?: string;
+  @Field(() => VideoProvider, { nullable: true })
+  videoProvider?: VideoProvider;
 
-  @Field({ nullable: true })
-  attachmentUrl?: string;
-
-  @Field(() => [String])
-  downloadUrls: string[];
+  @Field(() => Int, { nullable: true })
+  videoDuration?: number;
 
   @Field(() => Int)
   duration: number;
@@ -145,6 +254,9 @@ export class Lesson {
   isInteractive: boolean;
 
   @Field()
+  isRequired: boolean;
+
+  @Field()
   hasAIQuiz: boolean;
 
   @Field({ nullable: true })
@@ -153,11 +265,26 @@ export class Lesson {
   @Field({ nullable: true })
   transcription?: string;
 
+  @Field()
+  autoTranscript: boolean;
+
   @Field({ nullable: true })
   captions?: string;
 
   @Field({ nullable: true })
   transcript?: string;
+
+  @Field()
+  downloadable: boolean;
+
+  @Field({ nullable: true })
+  offlineContent?: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  settings?: any;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  metadata?: any;
 
   @Field(() => ContentItem, { nullable: true })
   contentItem?: ContentItem;
@@ -167,7 +294,294 @@ export class Lesson {
 
   @Field()
   updatedAt: Date;
+
+  // Computed fields
+  @Field(() => Int, { nullable: true })
+  completionCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  averageTimeSpent?: number;
 }
+
+@ObjectType()
+export class Section {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field({ nullable: true })
+  description?: string;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  isLocked: boolean;
+
+  @Field()
+  isRequired: boolean;
+
+  @Field(() => Int)
+  estimatedDuration: number; // in minutes
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+
+  @Field(() => [Lesson], { nullable: true })
+  lessons?: Lesson[];
+
+  // Computed fields
+  @Field(() => Int, { nullable: true })
+  totalLessons?: number;
+
+  @Field(() => Int, { nullable: true })
+  totalDuration?: number;
+
+  @Field(() => Float, { nullable: true })
+  completionRate?: number;
+}
+
+// ============================================
+// QUIZ & ASSIGNMENT ENTITIES
+// ============================================
+
+@ObjectType()
+export class QuizQuestion {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  question: string;
+
+  @Field(() => QuestionType)
+  type: QuestionType;
+
+  @Field(() => GraphQLJSON)
+  options: any;
+
+  @Field(() => GraphQLJSON)
+  correctAnswer: any;
+
+  @Field({ nullable: true })
+  explanation?: string;
+
+  @Field(() => Float)
+  points: number;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+}
+
+@ObjectType()
+export class Quiz {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field({ nullable: true })
+  description?: string;
+
+  @Field({ nullable: true })
+  instructions?: string;
+
+  @Field(() => Int, { nullable: true })
+  timeLimit?: number;
+
+  @Field(() => Int)
+  attempts: number;
+
+  @Field(() => Float)
+  passingScore: number;
+
+  @Field()
+  showResults: boolean;
+
+  @Field()
+  randomize: boolean;
+
+  @Field()
+  isPublished: boolean;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+
+  @Field(() => [QuizQuestion], { nullable: true })
+  questions?: QuizQuestion[];
+
+  // Computed fields
+  @Field(() => Int, { nullable: true })
+  totalQuestions?: number;
+
+  @Field(() => Float, { nullable: true })
+  totalPoints?: number;
+
+  @Field(() => Int, { nullable: true })
+  attemptCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  averageScore?: number;
+}
+
+@ObjectType()
+export class Assignment {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field()
+  description: string;
+
+  @Field({ nullable: true })
+  instructions?: string;
+
+  @Field({ nullable: true })
+  dueDate?: Date;
+
+  @Field(() => Float)
+  points: number;
+
+  @Field(() => AssignmentType)
+  submissionType: AssignmentType;
+
+  @Field()
+  allowLateSubmission: boolean;
+
+  @Field(() => Int, { nullable: true })
+  maxFileSize?: number;
+
+  @Field()
+  isPublished: boolean;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+
+  // Computed fields
+  @Field(() => Int, { nullable: true })
+  submissionCount?: number;
+
+  @Field(() => Int, { nullable: true })
+  gradedCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  averageGrade?: number;
+}
+
+// ============================================
+// REVIEW & FEEDBACK ENTITIES
+// ============================================
+
+@ObjectType()
+export class Review {
+  @Field(() => ID)
+  id: string;
+
+  @Field(() => Int)
+  rating: number;
+
+  @Field({ nullable: true })
+  comment?: string;
+
+  @Field()
+  isVerified: boolean;
+
+  @Field(() => Int)
+  helpfulCount: number;
+
+  @Field(() => Int, { nullable: true })
+  courseQuality?: number;
+
+  @Field(() => Int, { nullable: true })
+  instructorRating?: number;
+
+  @Field(() => Int, { nullable: true })
+  difficultyRating?: number;
+
+  @Field(() => Int, { nullable: true })
+  valueForMoney?: number;
+
+  @Field(() => ReviewStatus)
+  status: ReviewStatus;
+
+  @Field(() => Int)
+  flaggedCount: number;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+
+  @Field(() => UserObject, { nullable: true })
+  user?: UserObject;
+}
+
+// ============================================
+// ANNOUNCEMENT ENTITY
+// ============================================
+
+@ObjectType()
+export class CourseAnnouncement {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field()
+  content: string;
+
+  @Field(() => AnnouncementPriority)
+  priority: AnnouncementPriority;
+
+  @Field()
+  publishAt: Date;
+
+  @Field({ nullable: true })
+  expiresAt?: Date;
+
+  @Field()
+  sendEmail: boolean;
+
+  @Field()
+  sendPush: boolean;
+
+  @Field()
+  createdAt: Date;
+
+  @Field()
+  updatedAt: Date;
+}
+
+// ============================================
+// MAIN COURSE ENTITY (Enhanced)
+// ============================================
 
 @ObjectType()
 export class Course {
@@ -181,7 +595,7 @@ export class Course {
   description: string;
 
   @Field({ nullable: true })
-  shortDescription?: string; // Changed from string | null to string | undefined
+  shortDescription?: string;
 
   @Field()
   category: string;
@@ -189,15 +603,20 @@ export class Course {
   @Field({ nullable: true })
   subcategory?: string;
 
-  @Field()
-  level: string;
+  @Field(() => CourseLevel)
+  level: CourseLevel;
 
+  // Enhanced media
   @Field({ nullable: true })
   thumbnail?: string;
 
   @Field({ nullable: true })
   trailer?: string;
 
+  @Field(() => [String])
+  galleryImages: string[];
+
+  // Enhanced pricing
   @Field(() => Float)
   price: number;
 
@@ -207,6 +626,13 @@ export class Course {
   @Field()
   currency: string;
 
+  @Field(() => Float, { nullable: true })
+  discountPercent?: number;
+
+  @Field({ nullable: true })
+  discountValidUntil?: Date;
+
+  // Enhanced content structure
   @Field(() => [String])
   objectives: string[];
 
@@ -217,40 +643,146 @@ export class Course {
   whatYouLearn: string[];
 
   @Field(() => [String])
+  requirements: string[];
+
+  // Enhanced SEO & Marketing
+  @Field({ nullable: true })
+  seoTitle?: string;
+
+  @Field({ nullable: true })
+  seoDescription?: string;
+
+  @Field(() => [String])
   seoTags: string[];
 
   @Field(() => [String])
   marketingTags: string[];
 
-  @Field()
-  status: string;
+  @Field(() => [String])
+  targetAudience: string[];
 
-  @Field()
-  enrollmentType: string;
+  // Course settings & status
+  @Field(() => CourseStatus)
+  status: CourseStatus;
+
+  @Field(() => EnrollmentType)
+  enrollmentType: EnrollmentType;
 
   @Field()
   language: string;
+
+  @Field(() => [String])
+  subtitleLanguages: string[];
 
   @Field()
   isPublic: boolean;
 
   @Field()
+  isFeatured: boolean;
+
+  // Certificates & completion
+  @Field()
   certificate: boolean;
 
+  @Field({ nullable: true })
+  certificateTemplate?: string;
+
+  @Field(() => Float)
+  passingGrade: number;
+
+  @Field()
+  allowRetakes: boolean;
+
+  @Field(() => Int, { nullable: true })
+  maxAttempts?: number;
+
+  // Duration & difficulty
+  @Field(() => Int)
+  estimatedHours: number;
+
+  @Field(() => Int)
+  estimatedMinutes: number;
+
+  @Field(() => Float)
+  difficulty: number;
+
+  @Field(() => CourseIntensity)
+  intensityLevel: CourseIntensity;
+
+  // AI & modern features
   @Field()
   hasAITutor: boolean;
 
   @Field({ nullable: true })
   aiPersonality?: string;
 
-  @Field(() => Float)
-  difficulty: number;
+  @Field()
+  hasAIQuizzes: boolean;
+
+  @Field()
+  hasInteractiveElements: boolean;
+
+  @Field()
+  hasLiveSessions: boolean;
+
+  @Field()
+  hasProjectWork: boolean;
+
+  // Content features
+  @Field()
+  hasDiscussions: boolean;
+
+  @Field()
+  hasAssignments: boolean;
+
+  @Field()
+  hasQuizzes: boolean;
+
+  @Field()
+  downloadableResources: boolean;
+
+  @Field()
+  offlineAccess: boolean;
+
+  @Field()
+  mobileOptimized: boolean;
+
+  // Scheduling & availability
+  @Field({ nullable: true })
+  enrollmentStartDate?: Date;
+
+  @Field({ nullable: true })
+  enrollmentEndDate?: Date;
+
+  @Field({ nullable: true })
+  courseStartDate?: Date;
+
+  @Field({ nullable: true })
+  courseEndDate?: Date;
+
+  // Capacity management
+  @Field(() => Int, { nullable: true })
+  maxStudents?: number;
 
   @Field(() => Int)
-  estimatedHours: number;
+  currentEnrollments: number;
 
+  @Field()
+  waitlistEnabled: boolean;
+
+  // Versioning
+  @Field()
+  version: string;
+
+  @Field({ nullable: true })
+  lastMajorUpdate?: Date;
+
+  // Analytics & performance
   @Field(() => Int)
   views: number;
+
+  @Field(() => Int)
+  uniqueViews: number;
 
   @Field(() => Float)
   avgRating: number;
@@ -258,6 +790,42 @@ export class Course {
   @Field(() => Int)
   totalRatings: number;
 
+  @Field(() => Float)
+  completionRate: number;
+
+  // Content counts
+  @Field(() => Int)
+  totalSections: number;
+
+  @Field(() => Int)
+  totalLessons: number;
+
+  @Field(() => Int)
+  totalQuizzes: number;
+
+  @Field(() => Int)
+  totalAssignments: number;
+
+  @Field(() => Int)
+  totalContentItems: number;
+
+  @Field(() => Int)
+  totalDiscussions: number;
+
+  @Field(() => Int)
+  totalAnnouncements: number;
+
+  // Enhanced settings and metadata
+  @Field(() => GraphQLJSON, { nullable: true })
+  settings?: any;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  metadata?: any;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  accessibility?: any;
+
+  // Timestamps
   @Field()
   createdAt: Date;
 
@@ -266,6 +834,9 @@ export class Course {
 
   @Field({ nullable: true })
   publishedAt?: Date;
+
+  @Field({ nullable: true })
+  archivedAt?: Date;
 
   @Field()
   instructorId: string;
@@ -280,20 +851,84 @@ export class Course {
   @Field(() => [ContentItem], { nullable: true })
   contentItems?: ContentItem[];
 
-  // Calculated fields
-  @Field(() => Int, { nullable: true })
-  totalLessons?: number;
+  @Field(() => [Quiz], { nullable: true })
+  quizzes?: Quiz[];
 
-  @Field(() => Int, { nullable: true })
-  totalDuration?: number;
+  @Field(() => [Assignment], { nullable: true })
+  assignments?: Assignment[];
 
+  @Field(() => [Review], { nullable: true })
+  reviews?: Review[];
+
+  @Field(() => [CourseAnnouncement], { nullable: true })
+  announcements?: CourseAnnouncement[];
+
+  // Computed/aggregated fields
   @Field(() => Int, { nullable: true })
   enrollmentCount?: number;
 
   @Field(() => Float, { nullable: true })
   completionPercentage?: number;
+
+  @Field(() => Int, { nullable: true })
+  publishedContent?: number;
+
+  @Field(() => Boolean, { nullable: true })
+  isBookmarked?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  isEnrolled?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  userProgress?: number;
+
+  @Field(() => Date, { nullable: true })
+  userLastAccessed?: Date;
+
+  // Course statistics
+  @Field(() => GraphQLJSON, { nullable: true })
+  statistics?: {
+    enrollments: {
+      total: number;
+      active: number;
+      completed: number;
+      dropped: number;
+    };
+    engagement: {
+      averageTimeSpent: number;
+      discussionParticipation: number;
+      assignmentSubmissions: number;
+      quizAttempts: number;
+    };
+    performance: {
+      averageGrade: number;
+      passRate: number;
+      retakeRate: number;
+    };
+    content: {
+      totalLessons: number;
+      totalQuizzes: number;
+      totalAssignments: number;
+      totalResources: number;
+    };
+  };
+
+  // Content organization (for enhanced content management)
+  @Field(() => GraphQLJSON, { nullable: true })
+  organizedContent?: {
+    contentByLecture: Record<string, any>;
+    summary: {
+      totalLectures: number;
+      totalContent: number;
+      contentTypes: Record<string, number>;
+      lectureBreakdown: Record<string, any>;
+    };
+  };
 }
 
+// ============================================
+// ENHANCED RESPONSE TYPES
+// ============================================
 
 @ObjectType()
 export class CourseCreationResponse {
@@ -306,51 +941,159 @@ export class CourseCreationResponse {
   @Field(() => Course, { nullable: true })
   course?: Course;
 
+  @Field(() => Int, { nullable: true })
+  completionPercentage?: number;
+
   @Field(() => [String], { nullable: true })
   errors?: string[];
 
-  // @Field(() => [String], { nullable: true })
-  // missingItems?: string[];
+  @Field(() => [String], { nullable: true })
+  warnings?: string[];
 
   @Field(() => [String], { nullable: true })
   nextSteps?: string[];
 
-  // @Field(() => [String], { nullable: true })
-  // recommendations?: string[];
+  @Field(() => GraphQLJSON, { nullable: true })
+  metadata?: any;
 
-  // @Field(() => Float, { nullable: true })
-  // completionPercentage?: number;
+  @Field(() => Boolean, { nullable: true })
+  readyForReview?: boolean;
 
-  // @Field(() => Boolean, { nullable: true })
-  // readyForReview?: boolean;
+  @Field(() => Boolean, { nullable: true })
+  isValid?: boolean;
 
-  // @Field(() => Boolean, { nullable: true })
-  // isBasicVersion?: boolean;
-
-  // @Field({ nullable: true })
-  // thumbnailUrl?: string;
-
-  // @Field({ nullable: true })
-  // trailerUrl?: string;
-
-  // @Field(() => Int, { nullable: true })
-  // fileSize?: number;
-
-  // @Field({ nullable: true })
-  // fileName?: string;
-
-  // @Field({ nullable: true })
-  // estimatedReviewTime?: string;
-
-  // @Field({ nullable: true })
-  // publishedAt?: Date;
-
-  // @Field({ nullable: true })
-  // courseUrl?: string;
-
-  // @Field({ nullable: true })
-  // deletedCourseTitle?: string;
-
-  // @Field(() => Boolean, { nullable: true })
-  // isValid?: boolean;
+  @Field(() => Float, { nullable: true })
+  validationScore?: number;
 }
+
+@ObjectType()
+export class CourseDraftResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  draftData?: any;
+
+  @Field(() => Int, { nullable: true })
+  currentStep?: number;
+
+  @Field(() => Int, { nullable: true })
+  completionScore?: number;
+
+  @Field(() => Int, { nullable: true })
+  version?: number;
+
+  @Field(() => Date, { nullable: true })
+  lastAutoSave?: Date;
+
+  @Field(() => Int, { nullable: true })
+  saveCount?: number;
+}
+
+@ObjectType()
+export class CourseAnalytics {
+  @Field(() => GraphQLJSON)
+  course: {
+    id: string;
+    title: string;
+    views: number;
+    uniqueViews: number;
+    avgRating: number;
+    totalRatings: number;
+  };
+
+  @Field(() => GraphQLJSON)
+  enrollments: {
+    total: number;
+    active: number;
+    completed: number;
+    completionRate: number;
+    averageProgress: number;
+  };
+
+  @Field(() => GraphQLJSON)
+  revenue: {
+    total: number;
+    currency: string;
+  };
+
+  @Field(() => GraphQLJSON)
+  engagement: {
+    totalDiscussions: number;
+    totalReviews: number;
+    averageTimeSpent: number;
+    retentionRate: number;
+  };
+
+  @Field(() => GraphQLJSON)
+  trends: {
+    enrollments: Record<string, { count: number; revenue: number }>;
+    completion: Record<string, number>;
+    engagement: Record<string, number>;
+  };
+
+  @Field(() => GraphQLJSON)
+  insights: {
+    topPerformingLessons: any[];
+    strugglingStudents: number;
+    recommendedImprovements: string[];
+    contentGaps: string[];
+  };
+
+  @Field(() => GraphQLJSON)
+  comparisons: {
+    categoryAverage: number;
+    industryBenchmark: number;
+    previousPeriod: number;
+  };
+}
+
+@ObjectType()
+export class CourseAnalyticsResponse {
+  @Field()
+  success: boolean;
+
+  @Field({ nullable: true })
+  message?: string;
+
+  @Field(() => CourseAnalytics, { nullable: true })
+  analytics?: CourseAnalytics;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}
+
+@ObjectType()
+export class CourseValidationResult {
+  @Field()
+  isValid: boolean;
+
+  @Field(() => [String])
+  errors: string[];
+
+  @Field(() => [String])
+  warnings: string[];
+
+  @Field(() => Int)
+  completionPercentage: number;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  validationDetails?: {
+    basicInfo: boolean;
+    content: boolean;
+    pricing: boolean;
+    settings: boolean;
+    accessibility: boolean;
+    seo: boolean;
+  };
+
+  @Field(() => [String], { nullable: true })
+  missingRequirements?: string[];
+
+  @Field(() => [String], { nullable: true })
+  recommendations?: string[];
+}
+

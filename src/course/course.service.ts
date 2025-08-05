@@ -405,7 +405,7 @@ export class CourseService {
         data: {
           title: resourceData.title,
           description: resourceData.description,
-          type: ContentType.LINK,
+          type: ContentType.RESOURCE,
           order: resourceData.order || 0,
           isPublished: true,
           courseId,
@@ -1112,7 +1112,6 @@ export class CourseService {
       [ContentType.TEXT]: 'text',
       [ContentType.ASSIGNMENT]: 'assignments',
       [ContentType.RESOURCE]: 'resources',
-      [ContentType.LINK]: 'resources',
       [ContentType.QUIZ]: 'quizzes',
     };
 
@@ -1382,7 +1381,7 @@ export class CourseService {
         data: {
           title: resourceData.title,
           description: resourceData.description,
-          type: ContentType.LINK,
+          type: ContentType.RESOURCE,
           order: resourceData.order || 0,
           isPublished: true,
           courseId,

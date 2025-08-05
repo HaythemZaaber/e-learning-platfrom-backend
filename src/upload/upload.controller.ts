@@ -211,17 +211,22 @@ export class UploadController {
     return this.uploadService.deleteContentItem(contentItemId, user.id);
   }
 
-  @Delete('file/*path')
+  @Delete('file')
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async deleteFile(
-    @Param('path') filePath: string,
+    @Body('data') data: { fileUrl: string },
     @GetUser() user: any,
   ) {
-    if (!filePath) {
-      throw new BadRequestException('File path is required');
+    console.log('data', data);
+    if (!data.fileUrl) {
+      throw new BadRequestException('File URL is required');
     }
+    
+    // Decode the base64 encoded file URL
+    //  const fileUrl = Buffer.from(encodedFileUrl, 'base64').toString('utf-8');
+    console.log('user.id', user.id);
 
-    return this.uploadService.deleteFile(filePath, user.id);
+    return this.uploadService.deleteFile(data.fileUrl, user.id);
   }
 
   // ============================================

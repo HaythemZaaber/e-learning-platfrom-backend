@@ -14,7 +14,7 @@ import {
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole, ContentType } from '../../generated/prisma';
+import { UserRole } from '../../generated/prisma';
 
 @Resolver(() => Course)
 @UseGuards(AuthGuard, RolesGuard)
@@ -207,7 +207,7 @@ export class CourseResolver {
   // COURSE QUERIES
   // ============================================
 
-  @Query(() => Course)
+  @Query(() => Course, { name: 'getCourse' })
   async getCourse(
     @Args('courseId') courseId: string,
     @Context() context?: any,
@@ -220,16 +220,60 @@ export class CourseResolver {
   async getCourses(
     @Args('filters', { nullable: true }) filters?: CourseFiltersInput,
   ) {
-    // Implementation for getting courses with filters
-    // This would include pagination, search, filtering logic
-    return [];
+    return this.courseService.getCourses(filters);
   }
 
-  @Query(() => [Course])
+  @Query(() => [Course], { name: 'getMyCourses' })
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getMyCourses(@Context() context: any) {
     const user = context.req.user;
-    // Implementation for getting instructor's courses
-    return [];
+    return this.courseService.getMyCourses(user.id);
+  }
+
+  @Query(() => Course)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async getMyCourseDetails(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getCourseWithContent(courseId, user.id);
+  }
+
+  @Query(() => Course)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async getMyCourseAnalytics(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getCourseAnalytics(courseId, user.id);
+  }
+
+  @Query(() => Course)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async getMyCourseEnrollmentTrend(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+    @Args('days', { nullable: true, defaultValue: 30 }) days?: number,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getEnrollmentTrend(courseId, user.id, days);
+  }
+
+  @Mutation(() => CourseCreationResponse)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async duplicateMyCourse(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    const result = await this.courseService.duplicateCourse(courseId, user.id);
+    return {
+      success: result.success,
+      message: result.message,
+      course: undefined, // We'll get the course details separately if needed
+      errors: [],
+    };
   }
 }

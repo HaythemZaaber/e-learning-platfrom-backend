@@ -103,13 +103,23 @@ export class UploadService {
   // ============================================
   // how will be the filePath should i send all the url file
 
-  async deleteFile(filePath: string, userId: string) {
+  async deleteFile(fileUrl: string, userId: string) {
     try {
+      const urlParts = fileUrl.split('/uploads/');
+      console.log('urlParts', urlParts);
+      if (urlParts.length < 2) {
+        throw new Error('Invalid file URL format');
+      }
+
+      const filePath = urlParts[1];
       // Verify the file exists and user has access
       const fullPath = path.join(this.uploadPath, filePath);
       if (!fs.existsSync(fullPath)) {
         throw new Error('File not found');
       }
+
+      // Get file size before deleting
+      const fileSize = fs.statSync(fullPath).size;
 
       // Check if file is associated with any content item
       const contentItems = await this.prisma.contentItem.findMany({
@@ -120,15 +130,13 @@ export class UploadService {
         }
       });
 
-      const contentItem = contentItems.find(item => 
-        item.contentData && 
-        typeof item.contentData === 'object' && 
-        'filePath' in item.contentData && 
-        (item.contentData.filePath as string).includes(filePath)
-      );
+      const contentItem = contentItems.find(item => item.fileUrl === fileUrl);
 
       if (contentItem) {
-        throw new Error('Cannot delete file that is associated with a content item. Delete the content item instead.');
+        await this.prisma.contentItem.delete({
+          where: { id: contentItem.id }
+        });
+
       }
 
       // Delete the file
@@ -140,7 +148,7 @@ export class UploadService {
         message: 'File deleted successfully',
         deletedFile: {
           path: filePath,
-          size: fs.statSync(fullPath).size
+          size: fileSize
         }
       };
     } catch (error) {

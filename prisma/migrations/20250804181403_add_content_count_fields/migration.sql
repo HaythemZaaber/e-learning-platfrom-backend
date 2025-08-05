@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "courses" ADD COLUMN     "totalAnnouncements" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalAssignments" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalContentItems" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalDiscussions" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalLessons" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalQuizzes" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalSections" INTEGER NOT NULL DEFAULT 0;

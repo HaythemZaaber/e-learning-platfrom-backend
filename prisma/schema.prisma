@@ -1,5 +1,5 @@
 // Enhanced E-Learning Platform Prisma Schema
-// Modern AI-powered learning management system
+// Comprehensive AI-powered learning management system with advanced features
 
 generator client {
   provider = "prisma-client-js"
@@ -29,6 +29,10 @@ model User {
   dateOfBirth   DateTime?
   gender        Gender?
   
+  // Enhanced user profile
+  timezone      String?          @default("UTC")
+  locale        String?          @default("en")
+  
   // Role Management
   role          UserRole  @default(VISITOR)
   isEmailVerified Boolean @default(false)
@@ -41,11 +45,23 @@ model User {
   qualifications     String[]         @default([])
   experience         Int?             // years of experience
   socialLinks        Json             @default("{}")
+  teachingRating     Float?           @default(0)
+  
+  // Learning preferences & analytics
+  learningStyle      LearningStyle?
+  preferredLanguages String[]         @default([])
+  skillTags          String[]         @default([])
   
   // Platform engagement
   lastLoginAt       DateTime?
   isActive          Boolean          @default(true)
   preferences       Json             @default("{}")
+  
+  // Gamification
+  totalPoints       Int              @default(0)
+  currentStreak     Int              @default(0)
+  longestStreak     Int              @default(0)
+  achievements      String[]         @default([])
   
   // Timestamps
   createdAt         DateTime         @default(now())
@@ -61,21 +77,30 @@ model User {
   certificates         Certificate[]
   discussions          Discussion[]
   notifications        Notification[]
-  courseDrafts         CourseDraft[]      // New: For saving drafts during creation
+  courseDrafts         CourseDraft[]
+  learningPaths        UserLearningPath[]
+  courseBookmarks      CourseBookmark[]
+  lessonNotes          LessonNote[]
+  quizAttempts         QuizAttempt[]
+  assignments          AssignmentSubmission[]
   
   @@map("users")
 }
 
-// New model for course drafts during creation process
 model CourseDraft {
   id               String    @id @default(cuid())
   instructorId     String
   instructor       User      @relation(fields: [instructorId], references: [id], onDelete: Cascade)
   
-  // Draft data - JSON to store flexible structure
+  // Draft data with version control
   draftData        Json      @default("{}")
-  currentStep      Int       @default(0)  // Which step user is on
-  completionScore  Int       @default(0)  // Completion percentage
+  currentStep      Int       @default(0)
+  completionScore  Int       @default(0)
+  version          Int       @default(1)
+  
+  // Auto-save tracking
+  lastAutoSave     DateTime?
+  saveCount        Int       @default(0)
   
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -83,26 +108,31 @@ model CourseDraft {
   @@map("course_drafts")
 }
 
-
-
 model InstructorApplication {
   id                String                    @id @default(cuid())
   userId            String                    @unique
   user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   // Application Details
-  motivation        String                    // Why they want to become instructor
+  motivation        String
   teachingExperience String
   portfolioUrl      String?
   resumeUrl         String?
-  identityDocument  String?                   // URL to uploaded ID
+  identityDocument  String?
   qualificationDocs String[]                  @default([])
+  sampleContent     String?                   // URL to sample teaching content
   
-  // Review Process
+  // Enhanced review process
   status            ApplicationStatus         @default(PENDING)
-  reviewedBy        String?                   // Admin user ID
+  reviewedBy        String?
   reviewNotes       String?
+  reviewScore       Int?                      // 1-10 rating
   reviewedAt        DateTime?
+  
+  // Interview process
+  interviewScheduled DateTime?
+  interviewNotes     String?
+  interviewScore     Int?
   
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
@@ -114,53 +144,116 @@ model Course {
   id             String         @id @default(cuid())
   title          String
   description    String
-  shortDescription String?       // For cards/previews
+  shortDescription String?
   category       String
   subcategory    String?
   level          CourseLevel    @default(BEGINNER)
+  
+  // Enhanced media
   thumbnail      String?
   trailer        String?        // Course preview video
-  price          Float          @default(0)
-  originalPrice  Float?         // For discount display
-  currency       String         @default("USD")
+  galleryImages  String[]       @default([])  // Additional course images
   
-  // Course Content
+  // Pricing & Monetization
+  price          Float          @default(0)
+  originalPrice  Float?
+  currency       String         @default("USD")
+  discountPercent Float?        @default(0)
+  discountValidUntil DateTime?
+  
+  // Course Content Structure
   objectives     String[]       @default([])
   prerequisites  String[]       @default([])
   whatYouLearn   String[]       @default([])
+  requirements   String[]       @default([])  // Technical requirements
   
-  // SEO & Marketing
-  seoTags        String[]       @default([])
+  // Enhanced SEO & Marketing
+  seoTitle       String?
   seoDescription String?
+  seoTags        String[]       @default([])
   marketingTags  String[]       @default([])
+  targetAudience String[]       @default([])
   
-  // Course Settings
+  // Course Settings & Features
   status         CourseStatus   @default(DRAFT)
   enrollmentType EnrollmentType @default(FREE)
   language       String         @default("en")
+  subtitleLanguages String[]    @default([])
   isPublic       Boolean        @default(true)
+  isFeatured     Boolean        @default(false)
+  
+  // Certificates & Completion
   certificate    Boolean        @default(false)
+  certificateTemplate String?
+  passingGrade   Float          @default(70)
+  allowRetakes   Boolean        @default(true)
+  maxAttempts    Int?
   
-  // Modern Features
-  hasAITutor     Boolean        @default(false)
-  aiPersonality  String?        // AI tutor personality type
-  difficulty     Float          @default(1.0) // 1.0-5.0 AI-calculated difficulty
+  // Duration & Difficulty
   estimatedHours Int           @default(0)
+  estimatedMinutes Int         @default(0)
+  difficulty     Float          @default(1.0) // 1.0-5.0
+  intensityLevel CourseIntensity @default(REGULAR)
   
-  // Course Settings (expanded) - Store all your frontend settings
-  settings       Json           @default("{}")  
+  // AI & Modern Features
+  hasAITutor     Boolean        @default(false)
+  aiPersonality  String?
+  hasAIQuizzes   Boolean        @default(false)
+  hasInteractiveElements Boolean @default(false)
+  hasLiveSessions Boolean       @default(false)
+  hasProjectWork Boolean        @default(false)
+  
+  // Content Organization
+  settings       Json           @default("{}")
+  metadata       Json           @default("{}")
   
   // Accessibility
   accessibility  Json           @default("{\"captions\": false, \"transcripts\": false, \"audioDescription\": false, \"signLanguage\": false}")
   
-  // Analytics
+  // Analytics & Performance
   views          Int            @default(0)
+  uniqueViews    Int            @default(0)
   avgRating      Float          @default(0)
   totalRatings   Int            @default(0)
+  completionRate Float          @default(0)
   
+  // Content Counts
+  totalSections  Int            @default(0)
+  totalLessons   Int            @default(0)
+  totalQuizzes   Int            @default(0)
+  totalAssignments Int          @default(0)
+  totalContentItems Int         @default(0)
+  totalDiscussions Int          @default(0)
+  totalAnnouncements Int        @default(0)
+  
+  // Advanced Features
+  hasDiscussions Boolean        @default(true)
+  hasAssignments Boolean        @default(false)
+  hasQuizzes     Boolean        @default(false)
+  downloadableResources Boolean @default(true)
+  offlineAccess  Boolean        @default(false)
+  mobileOptimized Boolean       @default(true)
+  
+  // Scheduling & Availability
+  enrollmentStartDate DateTime?
+  enrollmentEndDate   DateTime?
+  courseStartDate     DateTime?
+  courseEndDate       DateTime?
+  
+  // Capacity Management
+  maxStudents    Int?
+  currentEnrollments Int         @default(0)
+  waitlistEnabled Boolean       @default(false)
+  
+  // Versioning
+  version        String         @default("1.0")
+  lastMajorUpdate DateTime?
+  
+  // Timestamps
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   publishedAt    DateTime?
+  archivedAt     DateTime?
 
   // Relationships
   instructorId   String
@@ -172,8 +265,13 @@ model Course {
   aiInteractions AIInteraction[]
   certificates   Certificate[]
   discussions    Discussion[]
-  contentItems   ContentItem[]  // Direct relation to content items
-
+  contentItems   ContentItem[]
+  learningPaths  CourseLearningPath[]
+  bookmarks      CourseBookmark[]
+  quizzes        Quiz[]
+  assignments    Assignment[]
+  announcements  CourseAnnouncement[]
+  
   @@map("courses")
 }
 
@@ -182,7 +280,12 @@ model Section {
   title       String
   description String?
   order       Int      @default(0)
-  isLocked    Boolean  @default(false) // For progressive unlocking
+  isLocked    Boolean  @default(false)
+  
+  // Enhanced section features
+  estimatedDuration Int @default(0) // in minutes
+  isRequired  Boolean  @default(true)
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -199,18 +302,25 @@ model Lesson {
   title         String
   description   String?
   type          LessonType
-  content       String?    // Rich text content for text lessons
+  content       String?    // Rich text content
   
-  // Lesson Properties
+  // Enhanced lesson properties
   duration      Int        @default(0) // in seconds
   order         Int        @default(0)
   isPreview     Boolean    @default(false)
   isInteractive Boolean    @default(false)
+  isRequired    Boolean    @default(true)
   
-  // AI Features
+  // Video-specific fields
+  videoUrl      String?
+  videoProvider VideoProvider?
+  videoDuration Int?       // in seconds
+  
+  // AI & Advanced Features
   hasAIQuiz     Boolean    @default(false)
-  aiSummary     String?    // AI-generated lesson summary
-  transcription String?    // Auto-generated transcription
+  aiSummary     String?
+  transcription String?
+  autoTranscript Boolean   @default(false)
   
   // Accessibility
   captions      String?    // VTT file URL
@@ -218,6 +328,11 @@ model Lesson {
   
   // Lesson settings and metadata
   settings      Json       @default("{}")
+  metadata      Json       @default("{}")
+  
+  // Download & Offline
+  downloadable  Boolean    @default(false)
+  offlineContent String?   // Offline package URL
   
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -227,26 +342,63 @@ model Lesson {
   section      Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   progress     Progress[]
   discussions  Discussion[]
-  contentItem  ContentItem?  // One-to-one: Each lesson has exactly one content item
-
+  contentItem  ContentItem?
+  notes        LessonNote[]
+  
   @@map("lessons")
 }
 
-// New model to handle all types of content uniformly
 model ContentItem {
   id           String      @id @default(cuid())
   title        String
   description  String?
   type         ContentType
   
-  // File information (for uploaded content)
+  // File information
   fileUrl      String?
   fileName     String?
   fileSize     Int?        // in bytes
   mimeType     String?
   
-  // Content data (for text, assignments, etc.)
+  // Enhanced content data
   contentData  Json        @default("{}")
+  
+  // Versioning
+  version      String      @default("1.0")
+  checksum     String?     // For file integrity
+  
+  // Metadata
+  isPublished  Boolean     @default(false)
+  order        Int         @default(0)
+  
+  // Access control
+  isDownloadable Boolean   @default(true)
+  requiresAuth Boolean     @default(false)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  courseId     String?
+  course       Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId     String?     @unique
+  lesson       Lesson?     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@map("content_items")
+}
+
+model Quiz {
+  id           String      @id @default(cuid())
+  title        String
+  description  String?
+  instructions String?
+  
+  // Quiz settings
+  timeLimit    Int?        // in minutes
+  attempts     Int         @default(1)
+  passingScore Float       @default(70)
+  showResults  Boolean     @default(true)
+  randomize    Boolean     @default(false)
   
   // Metadata
   isPublished  Boolean     @default(false)
@@ -256,12 +408,124 @@ model ContentItem {
   updatedAt    DateTime    @updatedAt
   
   // Relationships
-  courseId     String?
-  course       Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  lessonId     String?     @unique  // One-to-one relationship with lesson
-  lesson       Lesson?     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  courseId     String
+  course       Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions    QuizQuestion[]
+  quizAttempts QuizAttempt[] @relation("QuizAttempts")
   
-  @@map("content_items")
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id           String      @id @default(cuid())
+  question     String
+  type         QuestionType
+  options      Json        @default("[]") // Array of options
+  correctAnswer Json       @default("{}")
+  explanation  String?
+  points       Float       @default(1)
+  order        Int         @default(0)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  quizId       String
+  quiz         Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  
+  @@map("quiz_questions")
+}
+
+model QuizAttempt {
+  id           String      @id @default(cuid())
+  score        Float       @default(0)
+  totalPoints  Float       @default(0)
+  percentage   Float       @default(0)
+  passed       Boolean     @default(false)
+  timeSpent    Int         @default(0) // in seconds
+  answers      Json        @default("{}")
+  
+  startedAt    DateTime    @default(now())
+  completedAt  DateTime?
+  
+  // Relationships
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizId       String
+  quiz         Quiz        @relation("QuizAttempts", fields: [quizId], references: [id], onDelete: Cascade)
+  
+  @@map("quiz_attempts")
+}
+
+model Assignment {
+  id           String      @id @default(cuid())
+  title        String
+  description  String
+  instructions String?
+  
+  // Assignment settings
+  dueDate      DateTime?
+  points       Float       @default(100)
+  submissionType AssignmentType @default(TEXT)
+  allowLateSubmission Boolean @default(false)
+  maxFileSize  Int?        // in MB
+  
+  // Metadata
+  isPublished  Boolean     @default(false)
+  order        Int         @default(0)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  courseId     String
+  course       Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions  AssignmentSubmission[]
+  
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id           String      @id @default(cuid())
+  content      String?
+  fileUrls     String[]    @default([])
+  status       SubmissionStatus @default(DRAFT)
+  
+  // Grading
+  grade        Float?
+  feedback     String?
+  gradedBy     String?     // Instructor user ID
+  gradedAt     DateTime?
+  
+  submittedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  
+  @@map("assignment_submissions")
+}
+
+model LessonNote {
+  id           String      @id @default(cuid())
+  content      String
+  timestamp    Int?        // Video timestamp if applicable
+  isPrivate    Boolean     @default(true)
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relationships
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId     String
+  lesson       Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@map("lesson_notes")
 }
 
 model Enrollment {
@@ -270,18 +534,28 @@ model Enrollment {
   completedAt    DateTime?
   status         EnrollmentStatus @default(ACTIVE)
   progress       Float            @default(0) // 0-100
-  currentLessonId String?         // Track current lesson
+  currentLessonId String?
   
-  // Payment Info (if paid course)
+  // Enhanced enrollment features
+  enrollmentSource EnrollmentSource @default(DIRECT)
+  completedLessons Int             @default(0)
+  totalLessons     Int             @default(0)
+  
+  // Payment Info
   paymentStatus  PaymentStatus    @default(FREE)
-  paymentId      String?          // Stripe/payment provider ID
+  paymentId      String?
   amountPaid     Float?
+  discountApplied Float?          @default(0)
   
   // Learning Analytics
   totalTimeSpent Int              @default(0) // in minutes
   streakDays     Int              @default(0)
   lastAccessedAt DateTime?
-
+  
+  // Certificates
+  certificateEarned Boolean        @default(false)
+  certificateEarnedAt DateTime?
+  
   // Relationships
   userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -297,12 +571,16 @@ model Progress {
   completed   Boolean   @default(false)
   completedAt DateTime?
   timeSpent   Int       @default(0) // in seconds
-  attempts    Int       @default(0) // For quizzes/assignments
-  score       Float?    // For assessments
+  attempts    Int       @default(0)
+  score       Float?
+  
+  // Enhanced progress tracking
+  watchTime   Int       @default(0) // in seconds for videos
+  interactions Json      @default("{}") // Track interactions
   
   // AI Insights
   difficultyRating Float? // User's perceived difficulty (1-5)
-  aiRecommendations String? // AI suggestions for improvement
+  aiRecommendations String?
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -323,13 +601,18 @@ model Review {
   id        String   @id @default(cuid())
   rating    Int      @default(1) // 1-5 stars
   comment   String?
-  isVerified Boolean @default(false) // Verified purchase
+  isVerified Boolean @default(false)
   helpfulCount Int   @default(0)
   
-  // Review Details
+  // Enhanced review details
   courseQuality    Int? // 1-5
   instructorRating Int? // 1-5
   difficultyRating Int? // 1-5
+  valueForMoney    Int? // 1-5
+  
+  // Review status
+  status    ReviewStatus @default(PUBLISHED)
+  flaggedCount Int      @default(0)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -344,14 +627,112 @@ model Review {
   @@map("reviews")
 }
 
-// AI Features
+model CourseBookmark {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  // Relationships
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, courseId])
+  @@map("course_bookmarks")
+}
+
+model LearningPath {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  category    String
+  level       CourseLevel
+  
+  // Path properties
+  estimatedDuration Int    // in hours
+  totalCourses     Int    @default(0)
+  
+  // Metadata
+  isPublished Boolean @default(false)
+  isFeatured  Boolean @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  courses     CourseLearningPath[]
+  users       UserLearningPath[]
+  
+  @@map("learning_paths")
+}
+
+model CourseLearningPath {
+  id        String   @id @default(cuid())
+  order     Int      @default(0)
+  isRequired Boolean @default(true)
+  
+  // Relationships
+  pathId    String
+  path      LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@unique([pathId, courseId])
+  @@map("course_learning_paths")
+}
+
+model UserLearningPath {
+  id          String   @id @default(cuid())
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  progress    Float    @default(0) // 0-100
+  
+  // Relationships
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pathId      String
+  path        LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, pathId])
+  @@map("user_learning_paths")
+}
+
+model CourseAnnouncement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  priority  AnnouncementPriority @default(NORMAL)
+  
+  // Scheduling
+  publishAt DateTime @default(now())
+  expiresAt DateTime?
+  
+  // Targeting
+  sendEmail Boolean  @default(false)
+  sendPush  Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relationships
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@map("course_announcements")
+}
+
+// AI Features (keeping existing models with enhancements)
 model AIInteraction {
   id            String          @id @default(cuid())
   type          AIInteractionType
   query         String
   response      String
   context       Json            @default("{}")
-  isHelpful     Boolean?        // User feedback
+  isHelpful     Boolean?
+  
+  // Enhanced AI features
+  confidence    Float?          // AI confidence score
+  processingTime Int?           // in milliseconds
   
   createdAt     DateTime        @default(now())
   
@@ -366,14 +747,20 @@ model AIInteraction {
 
 model Certificate {
   id            String    @id @default(cuid())
-  certificateId String    @unique // Public certificate ID
-  templateUrl   String    // Certificate template/design
+  certificateId String    @unique
+  templateUrl   String
   issueDate     DateTime  @default(now())
+  expiryDate    DateTime? // For certificates that expire
   isVerified    Boolean   @default(true)
   
-  // Certificate Data
-  completionScore Float?  // Final score
-  completionTime  Int     // Time taken to complete (hours)
+  // Enhanced certificate data
+  completionScore Float?
+  completionTime  Int     // hours
+  grade          String?  // Letter grade
+  
+  // Verification
+  verificationCode String @unique
+  isPublic         Boolean @default(false)
   
   // Relationships
   userId        String
@@ -392,6 +779,11 @@ model Discussion {
   isResolved  Boolean        @default(false)
   isPinned    Boolean        @default(false)
   upvotes     Int            @default(0)
+  downvotes   Int            @default(0)
+  
+  // Enhanced discussion features
+  tags        String[]       @default([])
+  isAnonymous Boolean        @default(false)
   
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -403,7 +795,7 @@ model Discussion {
   course      Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
   lessonId    String?
   lesson      Lesson?        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  parentId    String?        // For replies
+  parentId    String?
   parent      Discussion?    @relation("DiscussionReplies", fields: [parentId], references: [id])
   replies     Discussion[]   @relation("DiscussionReplies")
   
@@ -418,7 +810,12 @@ model Notification {
   isRead    Boolean          @default(false)
   data      Json             @default("{}")
   
+  // Enhanced notifications
+  priority  NotificationPriority @default(NORMAL)
+  actionUrl String?
+  
   createdAt DateTime         @default(now())
+  expiresAt DateTime?
   
   // Relationships
   userId    String
@@ -427,13 +824,13 @@ model Notification {
   @@map("notifications")
 }
 
-// Enums
+// Enhanced Enums
 enum UserRole {
-  VISITOR      // Just signed up, limited access
-  STUDENT      // Can enroll in courses
-  INSTRUCTOR   // Can create and manage courses
-  ADMIN        // Full platform access
-  PARENT       // For minor students
+  VISITOR
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+  SUPER_ADMIN
 }
 
 enum Gender {
@@ -443,13 +840,22 @@ enum Gender {
   PREFER_NOT_TO_SAY
 }
 
+enum LearningStyle {
+  VISUAL
+  AUDITORY
+  READING_WRITING
+  KINESTHETIC
+  MULTIMODAL
+}
+
 enum InstructorStatus {
-  NOT_APPLIED    // Default for students
-  PENDING        // Application submitted
-  UNDER_REVIEW   // Being reviewed by admin
-  APPROVED       // Can create courses
-  REJECTED       // Application denied
-  SUSPENDED      // Temporarily disabled
+  NOT_APPLIED
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+  PROBATION
 }
 
 enum ApplicationStatus {
@@ -458,6 +864,7 @@ enum ApplicationStatus {
   APPROVED
   REJECTED
   REQUIRES_MORE_INFO
+  INTERVIEW_SCHEDULED
 }
 
 enum CourseLevel {
@@ -468,12 +875,20 @@ enum CourseLevel {
   ALL_LEVELS
 }
 
+enum CourseIntensity {
+  LIGHT
+  REGULAR
+  INTENSIVE
+  BOOTCAMP
+}
+
 enum CourseStatus {
   DRAFT
   UNDER_REVIEW
   PUBLISHED
   ARCHIVED
   SUSPENDED
+  COMING_SOON
 }
 
 enum EnrollmentType {
@@ -481,6 +896,15 @@ enum EnrollmentType {
   PAID
   SUBSCRIPTION
   INVITATION_ONLY
+  WAITLIST
+}
+
+enum EnrollmentSource {
+  DIRECT
+  REFERRAL
+  PROMOTION
+  BUNDLE
+  LEARNING_PATH
 }
 
 enum LessonType {
@@ -493,9 +917,18 @@ enum LessonType {
   INTERACTIVE
   LIVE_SESSION
   AR_VR
+  SCORM
 }
 
-// New enum for unified content handling
+enum VideoProvider {
+  YOUTUBE
+  VIMEO
+  WISTIA
+  SELF_HOSTED
+  AWS_S3
+  CLOUDINARY
+}
+
 enum ContentType {
   VIDEO
   AUDIO
@@ -504,9 +937,34 @@ enum ContentType {
   QUIZ
   ASSIGNMENT
   RESOURCE
-  LINK
   IMAGE
   ARCHIVE
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SINGLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_BLANK
+  ESSAY
+  MATCHING
+  ORDERING
+  NUMERIC
+}
+
+enum AssignmentType {
+  TEXT
+  FILE_UPLOAD
+  URL_SUBMISSION
+  PEER_REVIEW
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  GRADED
+  RETURNED
+  LATE
 }
 
 enum EnrollmentStatus {
@@ -515,6 +973,7 @@ enum EnrollmentStatus {
   CANCELLED
   SUSPENDED
   REFUNDED
+  EXPIRED
 }
 
 enum PaymentStatus {
@@ -523,6 +982,14 @@ enum PaymentStatus {
   PAID
   FAILED
   REFUNDED
+  PARTIAL_REFUND
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  PENDING
+  FLAGGED
+  HIDDEN
 }
 
 enum AIInteractionType {
@@ -533,6 +1000,7 @@ enum AIInteractionType {
   RECOMMENDATION
   TUTORING
   CODE_REVIEW
+  CONTENT_ANALYSIS
 }
 
 enum DiscussionType {
@@ -541,6 +1009,7 @@ enum DiscussionType {
   ANNOUNCEMENT
   GENERAL
   BUG_REPORT
+  FEATURE_REQUEST
 }
 
 enum NotificationType {
@@ -552,4 +1021,20 @@ enum NotificationType {
   INSTRUCTOR_APPROVED
   SYSTEM_ANNOUNCEMENT
   AI_RECOMMENDATION
+  ENROLLMENT_CONFIRMATION
+  PAYMENT_CONFIRMATION
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
