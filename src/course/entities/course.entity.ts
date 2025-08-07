@@ -11,7 +11,7 @@ import {
   CourseLevel,
   EnrollmentType,
   ContentType,
-  LessonType,
+  LectureType,
   CourseIntensity,
   VideoProvider,
   QuestionType,
@@ -51,9 +51,9 @@ registerEnumType(ContentType, {
   description: 'The type of content item',
 });
 
-registerEnumType(LessonType, {
-  name: 'LessonType',
-  description: 'The type of lesson',
+registerEnumType(LectureType, {
+  name: 'LectureType',
+  description: 'The type of lecture',
 });
 
 registerEnumType(CourseIntensity, {
@@ -215,7 +215,7 @@ export class ContentItem {
 }
 
 @ObjectType()
-export class Lesson {
+export class Lecture {
   @Field(() => ID)
   id: string;
 
@@ -225,8 +225,8 @@ export class Lesson {
   @Field({ nullable: true })
   description?: string;
 
-  @Field(() => LessonType)
-  type: LessonType;
+  @Field(() => LectureType)
+  type: LectureType;
 
   @Field({ nullable: true })
   content?: string;
@@ -332,12 +332,12 @@ export class Section {
   @Field()
   updatedAt: Date;
 
-  @Field(() => [Lesson], { nullable: true })
-  lessons?: Lesson[];
+  @Field(() => [Lecture], { nullable: true })
+  lectures?: Lecture[];
 
   // Computed fields
   @Field(() => Int, { nullable: true })
-  totalLessons?: number;
+  totalLectures?: number;
 
   @Field(() => Int, { nullable: true })
   totalDuration?: number;
@@ -680,6 +680,16 @@ export class Course {
   @Field()
   isFeatured: boolean;
 
+  @Field()
+  isBestseller: boolean;
+
+  @Field()
+  isTrending: boolean;
+
+  @Field()
+  isNew: boolean;
+
+
   // Certificates & completion
   @Field()
   certificate: boolean;
@@ -724,6 +734,9 @@ export class Course {
 
   @Field()
   hasLiveSessions: boolean;
+
+  @Field()
+  hasRecordings: boolean;
 
   @Field()
   hasProjectWork: boolean;
@@ -798,7 +811,7 @@ export class Course {
   totalSections: number;
 
   @Field(() => Int)
-  totalLessons: number;
+  totalLectures: number;
 
   @Field(() => Int)
   totalQuizzes: number;
@@ -906,7 +919,7 @@ export class Course {
       retakeRate: number;
     };
     content: {
-      totalLessons: number;
+      totalLectures: number;
       totalQuizzes: number;
       totalAssignments: number;
       totalResources: number;
@@ -1037,7 +1050,7 @@ export class CourseAnalytics {
 
   @Field(() => GraphQLJSON)
   insights: {
-    topPerformingLessons: any[];
+    topPerformingLectures: any[];
     strugglingStudents: number;
     recommendedImprovements: string[];
     contentGaps: string[];
@@ -1097,3 +1110,53 @@ export class CourseValidationResult {
   recommendations?: string[];
 }
 
+@ObjectType()
+export class SocialLinks {
+  @Field()
+  facebook: string;
+
+  @Field()
+  twitter: string;
+
+  @Field()
+  linkedin: string;
+
+  @Field()
+  whatsapp: string;
+
+  @Field()
+  telegram: string;
+
+  @Field()
+  email: string;
+}
+
+@ObjectType()
+export class CourseShareData {
+  @Field()
+  courseUrl: string;
+
+  @Field(() => SocialLinks)
+  socialLinks: SocialLinks;
+
+  @Field()
+  embedCode: string;
+
+  @Field({ nullable: true })
+  qrCode?: string;
+}
+
+@ObjectType()
+export class CourseShareResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => CourseShareData, { nullable: true })
+  shareData?: CourseShareData;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}

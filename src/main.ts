@@ -3,14 +3,16 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { config } from 'dotenv';
+config();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  
+
   // Configure payload size limits
   app.use(require('express').json({ limit: '10mb' }));
   app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
-  
+
   // Enable CORS
   app.enableCors({
     origin: ['http://localhost:3000', 'https://your-frontend-domain.com'],
@@ -38,6 +40,7 @@ async function bootstrap() {
     prefix: '/uploads/',
   });
 
-  await app.listen(process.env.PORT ?? 3001);
+  
+  await app.listen(3001);
 }
 bootstrap();

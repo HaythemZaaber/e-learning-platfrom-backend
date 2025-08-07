@@ -15,6 +15,8 @@ import {
   CourseCreationResponse,
   CourseDraftResponse,
   CourseSettingsInput,
+  PaginationInput,
+  PaginatedCoursesResponse,
 } from './dto/course-creation.dto';
 import {
   CourseStatus,
@@ -23,7 +25,7 @@ import {
   EnrollmentType,
   CourseLevel,
   ContentType,
-  LessonType,
+  LectureType,
   Prisma,
 } from '../../generated/prisma';
 import { UploadService } from '../upload/upload.service';
@@ -42,6 +44,207 @@ export class CourseService {
   // ENHANCED COURSE CREATION WITH ORGANIZED CONTENT
   // ============================================
 
+  /**
+   * Calculate and determine field values from CreateCourseInput before creating the course
+   * This method pre-processes the input to derive calculated fields
+   */
+  private calculateDerivedFieldsFromInput(input: CreateCourseInput): {
+    totalSections: number;
+    totalLectures: number;
+    totalContentItems: number;
+    estimatedHours: number;
+    estimatedMinutes: number;
+    difficulty: number;
+    hasDiscussions: boolean;
+    hasAssignments: boolean;
+    hasQuizzes: boolean;
+    hasLiveSessions: boolean;
+    hasRecordings: boolean;
+    downloadableResources: boolean;
+    offlineAccess: boolean;
+    mobileOptimized: boolean;
+    completionRate: number;
+    avgRating: number;
+    totalRatings: number;
+    views: number;
+    uniqueViews: number;
+    currentEnrollments: number;
+    version: string;
+    status: CourseStatus;
+    enrollmentType: EnrollmentType;
+    language: string;
+    isPublic: boolean;
+    certificate: boolean;
+    accessibility: any;
+    settings: any;
+    metadata: any;
+  } {
+    // Calculate content counts
+    const totalSections = input.sections?.length || 0;
+    const totalLectures = input.sections?.reduce((total, section) => 
+      total + (section.lectures?.length || 0), 0) || 0;
+    const totalContentItems = (input.sections?.reduce((total, section) => 
+      total + (section.lectures?.reduce((lectureTotal, lecture) => 
+        lectureTotal + (lecture.contentItem ? 1 : 0), 0) || 0), 0) || 0) + 
+      (input.additionalContent?.length || 0);
+
+    // Calculate estimated duration
+    const totalDurationMinutes = input.sections?.reduce((total, section) => 
+      total + (section.lectures?.reduce((lectureTotal, lecture) => {
+        // If duration is explicitly set and greater than 0, use it
+        if (lecture.duration && lecture.duration > 0) {
+          return lectureTotal + lecture.duration;
+        }
+        
+        // Otherwise, estimate duration based on lecture type and content
+        let estimatedDuration = 0;
+        
+        switch (lecture.type) {
+          case 'VIDEO':
+            // Estimate 5-15 minutes for video content
+            estimatedDuration = lecture.contentItem?.type === 'QUIZ' ? 10 : 15;
+            break;
+          case 'TEXT':
+            // Estimate based on content length (roughly 200 words per minute reading)
+            const wordCount = lecture.content?.split(/\s+/).length || 0;
+            estimatedDuration = Math.max(3, Math.ceil(wordCount / 200));
+            break;
+          case 'AUDIO':
+            // Estimate 8-12 minutes for audio content
+            estimatedDuration = 10;
+            break;
+          case 'QUIZ':
+            // Estimate 5-10 minutes for quiz completion
+            estimatedDuration = 8;
+            break;
+          case 'ASSIGNMENT':
+            // Estimate 15-30 minutes for assignments
+            estimatedDuration = 20;
+            break;
+          default:
+            // Default 5 minutes for other types
+            estimatedDuration = 5;
+        }
+        
+        return lectureTotal + estimatedDuration;
+      }, 0) || 0), 0) || 0;
+    const estimatedHours = Math.floor(totalDurationMinutes / 60);
+    const estimatedMinutes = totalDurationMinutes % 60;
+
+    // Calculate difficulty based on level and content complexity
+    const difficultyMap = {
+      [CourseLevel.BEGINNER]: 1.0,
+      [CourseLevel.INTERMEDIATE]: 2.5,
+      [CourseLevel.ADVANCED]: 4.0,
+      [CourseLevel.EXPERT]: 5.0,
+    };
+    const baseDifficulty = difficultyMap[input.level] || 1.0;
+    const contentComplexity = totalLectures > 20 ? 0.5 : totalLectures > 10 ? 0.3 : 0.1;
+    const difficulty = Math.min(5.0, baseDifficulty + contentComplexity);
+
+    // Determine feature flags based on content
+    const hasDiscussions = input.settings?.communication?.discussionForum ?? true;
+    const hasAssignments = input.sections?.some(section => 
+      section.lectures?.some(lecture => 
+        lecture.contentItem?.type === ContentType.ASSIGNMENT)) || false;
+    const hasQuizzes = input.sections?.some(section => 
+      section.lectures?.some(lecture => 
+        lecture.contentItem?.type === ContentType.QUIZ)) || false;
+    const hasAIQuizzes = input.sections?.some(section => 
+      section.lectures?.some(lecture => 
+        lecture.contentItem?.type === ContentType.QUIZ && 
+        lecture.settings?.hasAIQuiz)) || false;
+    const hasInteractiveElements = input.sections?.some(section => 
+      section.lectures?.some(lecture => 
+        lecture.settings?.isInteractive || 
+        lecture.contentItem?.type === ContentType.QUIZ)) || false;
+    const hasProjectWork = input.sections?.some(section => 
+      section.lectures?.some(lecture => 
+        lecture.contentItem?.type === ContentType.ASSIGNMENT)) || false;
+
+    // Determine live sessions and recordings
+    const hasLiveSessions = input.hasLiveSessions ?? false;
+    const hasRecordings = input.hasRecordings ?? false;
+
+    // Determine content access settings
+    const downloadableResources = input.settings?.content?.downloadableResources ?? true;
+    const offlineAccess = input.settings?.content?.offlineAccess ?? false;
+    const mobileOptimized = input.settings?.content?.mobileOptimized ?? true;
+
+    // Initialize analytics fields
+    const completionRate = 0; // Will be calculated after enrollments
+    const avgRating = 0;
+    const totalRatings = 0;
+    const views = 0;
+    const uniqueViews = 0;
+    const currentEnrollments = 0;
+
+    // Set version and status
+    const version = "1.0";
+    const status = CourseStatus.DRAFT;
+    const enrollmentType = input.settings?.enrollmentType || EnrollmentType.FREE;
+    const language = input.settings?.language || 'en';
+    const isPublic = input.settings?.isPublic ?? true;
+    const certificate = input.settings?.certificate ?? false;
+
+    // Set accessibility settings
+    const accessibility = input.settings?.accessibility || {
+      captions: false,
+      transcripts: false,
+      audioDescription: false,
+      signLanguage: false,
+    };
+
+    // Set settings and metadata
+    const settings = input.settings || {};
+    const metadata = {
+      createdAt: new Date().toISOString(),
+      totalSections,
+      totalLectures,
+      totalContentItems,
+      estimatedDuration: `${estimatedHours}h ${estimatedMinutes}m`,
+      difficulty,
+      features: {
+        hasDiscussions,
+        hasAssignments,
+        hasQuizzes,
+        
+      },
+    };
+
+    return {
+      totalSections,
+      totalLectures,
+      totalContentItems,
+      estimatedHours,
+      estimatedMinutes,
+      difficulty,
+      hasDiscussions,
+      hasAssignments,
+      hasQuizzes,
+      hasLiveSessions,
+      hasRecordings,
+      downloadableResources,
+      offlineAccess,
+      mobileOptimized,
+      completionRate,
+      avgRating,
+      totalRatings,
+      views,
+      uniqueViews,
+      currentEnrollments,
+      version,
+      status,
+      enrollmentType,
+      language,
+      isPublic,
+      certificate,
+      accessibility,
+      settings,
+      metadata,
+    };
+  }
+
   async createCourse(
     instructorId: string,
     input: CreateCourseInput,
@@ -53,6 +256,9 @@ export class CourseService {
       // Validate and sanitize input
       const sanitizedInput = this.sanitizeCourseInput(input);
 
+      // Calculate derived fields from input
+      const derivedFields = this.calculateDerivedFieldsFromInput(sanitizedInput);
+
       // Validate pricing logic
       this.validatePricing(
         sanitizedInput.price,
@@ -62,7 +268,7 @@ export class CourseService {
 
       // Use database transaction for complex operations
       const result = await this.prisma.$transaction(async (prisma) => {
-        // 1. Create the main course
+        // 1. Create the main course with calculated fields
         const course = await prisma.course.create({
           data: {
             title: sanitizedInput.title,
@@ -82,25 +288,42 @@ export class CourseService {
             seoTags: sanitizedInput.seoTags,
             marketingTags: sanitizedInput.marketingTags,
             instructorId,
-            status: CourseStatus.DRAFT,
-            enrollmentType:
-              sanitizedInput.settings?.enrollmentType || EnrollmentType.FREE,
-            language: sanitizedInput.settings?.language || 'en',
-            isPublic: sanitizedInput.settings?.isPublic ?? true,
-            certificate: sanitizedInput.settings?.certificate ?? false,
-            settings: sanitizedInput.settings || {},
-            accessibility: sanitizedInput.settings?.accessibility || {
-              captions: false,
-              transcripts: false,
-              audioDescription: false,
-            },
-            views: 0,
-            avgRating: 0,
-            totalRatings: 0,
+            
+            // Calculated fields from input
+            status: derivedFields.status,
+            enrollmentType: derivedFields.enrollmentType,
+            language: derivedFields.language,
+            isPublic: derivedFields.isPublic,
+            certificate: derivedFields.certificate,
+            totalSections: derivedFields.totalSections,
+            totalLectures: derivedFields.totalLectures,
+            totalContentItems: derivedFields.totalContentItems,
+            estimatedHours: derivedFields.estimatedHours,
+            estimatedMinutes: derivedFields.estimatedMinutes,
+            difficulty: derivedFields.difficulty,
+            hasDiscussions: derivedFields.hasDiscussions,
+            hasAssignments: derivedFields.hasAssignments,
+            hasQuizzes: derivedFields.hasQuizzes,
+            hasLiveSessions: derivedFields.hasLiveSessions,
+            hasRecordings: derivedFields.hasRecordings,
+            
+            downloadableResources: derivedFields.downloadableResources,
+            offlineAccess: derivedFields.offlineAccess,
+            mobileOptimized: derivedFields.mobileOptimized,
+            completionRate: derivedFields.completionRate,
+            avgRating: derivedFields.avgRating,
+            totalRatings: derivedFields.totalRatings,
+            views: derivedFields.views,
+            uniqueViews: derivedFields.uniqueViews,
+            currentEnrollments: derivedFields.currentEnrollments,
+            version: derivedFields.version,
+            accessibility: derivedFields.accessibility,
+            settings: derivedFields.settings,
+            metadata: derivedFields.metadata,
           },
         });
 
-        // 2. Create sections and lessons
+        // 2. Create sections and lectures
         const sectionMap = new Map<string, string>(); // frontend ID -> backend ID
         const lectureMap = new Map<string, string>(); // frontend ID -> backend ID
 
@@ -118,10 +341,10 @@ export class CourseService {
             // Map frontend section ID to backend ID
             sectionMap.set(sectionInput.id, section.id);
 
-            // Create lessons for this section
+            // Create lectures for this section
             if (sectionInput.lectures && sectionInput.lectures.length > 0) {
               for (const [lectureIndex, lectureInput] of sectionInput.lectures.entries()) {
-                const lesson = await prisma.lesson.create({
+                const lecture = await prisma.lecture.create({
                   data: {
                     title: lectureInput.title,
                     description: lectureInput.description,
@@ -137,11 +360,11 @@ export class CourseService {
                 });
 
                 // Map frontend lecture ID to backend ID
-                lectureMap.set(lectureInput.id, lesson.id);
+                lectureMap.set(lectureInput.id, lecture.id);
 
-                // Create content item for this lesson if provided
+                // Create content item for this lecture if provided
                 if (lectureInput.contentItem) {
-                  console.log(`Creating content item for lesson ${lesson.id}:`, lectureInput.contentItem);
+                  console.log(`Creating content item for lecture ${lecture.id}:`, lectureInput.contentItem);
                   const contentItem = await prisma.contentItem.create({
                     data: {
                       title: lectureInput.contentItem.title,
@@ -155,12 +378,12 @@ export class CourseService {
                       order: lectureInput.contentItem.order || 0,
                       isPublished: true,
                       courseId: course.id,
-                      lessonId: lesson.id,
+                      lectureId: lecture.id,
                     },
                   });
                   console.log(`Created content item:`, contentItem);
                 } else {
-                  console.log(`No content item provided for lesson ${lesson.id}`);
+                  console.log(`No content item provided for lecture ${lecture.id}`);
                 }
               }
             }
@@ -194,8 +417,6 @@ export class CourseService {
           console.log('No additional content items provided');
         }
 
-
-
         // Return the complete course with all relations
         const result = await prisma.course.findUnique({
           where: { id: course.id },
@@ -207,8 +428,6 @@ export class CourseService {
 
       // Convert null values to undefined for GraphQL compatibility
       const courseWithUndefined = this.convertNullsToUndefined(result);
-
-      
 
       const response = {
         success: true,
@@ -297,7 +516,7 @@ export class CourseService {
       title: string;
       content: string;
       description?: string;
-      lessonId?: string;
+      lectureId?: string;
       order?: number;
     },
   ): Promise<CourseCreationResponse> {
@@ -312,7 +531,7 @@ export class CourseService {
           order: contentData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: contentData.lessonId,
+          lectureId: contentData.lectureId,
           contentData: {
             textContent: contentData.content,
             createdAt: new Date().toISOString(),
@@ -345,7 +564,7 @@ export class CourseService {
       instructions?: string;
       dueDate?: string;
       points?: number;
-      lessonId?: string;
+      lectureId?: string;
       order?: number;
     },
   ): Promise<CourseCreationResponse> {
@@ -360,7 +579,7 @@ export class CourseService {
           order: assignmentData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: assignmentData.lessonId,
+          lectureId: assignmentData.lectureId,
           contentData: {
             instructions: assignmentData.instructions,
             dueDate: assignmentData.dueDate,
@@ -394,7 +613,7 @@ export class CourseService {
       url: string;
       description?: string;
       resourceType: string;
-      lessonId?: string;
+      lectureId?: string;
       order?: number;
     },
   ): Promise<CourseCreationResponse> {
@@ -409,7 +628,7 @@ export class CourseService {
           order: resourceData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: resourceData.lessonId,
+          lectureId: resourceData.lectureId,
           contentData: {
             url: resourceData.url,
             resourceType: resourceData.resourceType,
@@ -454,10 +673,11 @@ export class CourseService {
         );
       }
 
-      // Use database transaction for complex operations
-      const result = await this.prisma.$transaction(async (prisma) => {
-        // 1. Update the main course
-        const course = await prisma.course.update({
+      // Use database transaction for complex operations with increased timeout
+      const result = await this.prisma.$transaction(
+        async (prisma) => {
+          // 1. Update the main course
+          const course = await prisma.course.update({
           where: { id: courseId },
           data: {
             title: sanitizedInput.title,
@@ -480,6 +700,8 @@ export class CourseService {
             language: sanitizedInput.settings?.language,
             isPublic: sanitizedInput.settings?.isPublic,
             certificate: sanitizedInput.settings?.certificate,
+            hasLiveSessions: sanitizedInput.hasLiveSessions,
+            hasRecordings: sanitizedInput.hasRecordings,
             settings: sanitizedInput.settings || {},
             accessibility: sanitizedInput.settings?.accessibility || {
               captions: false,
@@ -490,13 +712,13 @@ export class CourseService {
           },
         });
 
-        // 2. Handle sections and lessons updates if provided
+        // 2. Handle sections and lectures updates if provided
         if (sanitizedInput.sections && sanitizedInput.sections.length > 0) {
           // Get existing sections to track what needs to be updated/deleted
           const existingSections = await prisma.section.findMany({
             where: { courseId },
             include: {
-              lessons: {
+              lectures: {
                 include: {
                   contentItem: true,
                 },
@@ -507,10 +729,10 @@ export class CourseService {
 
           // Create maps for efficient lookup
           const existingSectionMap = new Map(existingSections.map(s => [s.id, s]));
-          const existingLessonMap = new Map();
+          const existingLectureMap = new Map();
           existingSections.forEach(section => {
-            section.lessons.forEach(lesson => {
-              existingLessonMap.set(lesson.id, lesson);
+            section.lectures.forEach(lecture => {
+              existingLectureMap.set(lecture.id, lecture);
             });
           });
 
@@ -540,14 +762,14 @@ export class CourseService {
               });
             }
 
-            // Handle lessons for this section
+            // Handle lectures for this section
             if (sectionInput.lectures && sectionInput.lectures.length > 0) {
               for (const [lectureIndex, lectureInput] of sectionInput.lectures.entries()) {
-                let lesson;
+                let lecture;
                 
-                if (existingLessonMap.has(lectureInput.id)) {
-                  // Update existing lesson
-                  lesson = await prisma.lesson.update({
+                if (existingLectureMap.has(lectureInput.id)) {
+                  // Update existing lecture
+                  lecture = await prisma.lecture.update({
                     where: { id: lectureInput.id },
                     data: {
                       title: lectureInput.title,
@@ -560,8 +782,8 @@ export class CourseService {
                     },
                   });
                 } else {
-                  // Create new lesson
-                  lesson = await prisma.lesson.create({
+                  // Create new lecture
+                  lecture = await prisma.lecture.create({
                     data: {
                       title: lectureInput.title,
                       description: lectureInput.description,
@@ -577,11 +799,11 @@ export class CourseService {
                   });
                 }
 
-                // Handle content item for this lesson
+                // Handle content item for this lecture
                 if (lectureInput.contentItem) {
-                  // Check if lesson already has a content item
+                  // Check if lecture already has a content item
                   const existingContentItem = await prisma.contentItem.findFirst({
-                    where: { lessonId: lesson.id },
+                    where: { lectureId: lecture.id },
                   });
 
                   if (existingContentItem) {
@@ -616,7 +838,7 @@ export class CourseService {
                         order: lectureInput.contentItem.order || 0,
                         isPublished: true,
                         courseId: course.id,
-                        lessonId: lesson.id,
+                        lectureId: lecture.id,
                       },
                     });
                   }
@@ -625,28 +847,28 @@ export class CourseService {
             }
           }
 
-          // Delete sections and lessons that are no longer in the input
+          // Delete sections and lectures that are no longer in the input
           const inputSectionIds = new Set(sanitizedInput.sections.map(s => s.id));
-          const inputLessonIds = new Set();
+          const inputLectureIds = new Set();
           sanitizedInput.sections.forEach(section => {
             section.lectures.forEach(lecture => {
-              inputLessonIds.add(lecture.id);
+              inputLectureIds.add(lecture.id);
             });
           });
 
-          // Delete lessons that are no longer in input
+          // Delete lectures that are no longer in input
           for (const existingSection of existingSections) {
-            for (const lesson of existingSection.lessons) {
-              if (!inputLessonIds.has(lesson.id)) {
+            for (const lecture of existingSection.lectures) {
+              if (!inputLectureIds.has(lecture.id)) {
                 // Delete content item first (if exists)
-                if (lesson.contentItem) {
+                if (lecture.contentItem) {
                   await prisma.contentItem.delete({
-                    where: { id: lesson.contentItem.id },
+                    where: { id: lecture.contentItem.id },
                   });
                 }
-                // Delete lesson
-                await prisma.lesson.delete({
-                  where: { id: lesson.id },
+                // Delete lecture
+                await prisma.lecture.delete({
+                  where: { id: lecture.id },
                 });
               }
             }
@@ -668,7 +890,7 @@ export class CourseService {
           const existingCourseContent = await prisma.contentItem.findMany({
             where: {
               courseId,
-              lessonId: null, // Course-level content items only
+              lectureId: null, // Course-level content items only
             },
             orderBy: { order: 'asc' },
           });
@@ -727,17 +949,23 @@ export class CourseService {
           }
         }
 
-        // Return the complete updated course with all relations
-        const result = await prisma.course.findUnique({
-          where: { id: course.id },
-          include: this.getCourseIncludeOptions(),
-        });
+        // Recalculate course duration after all updates
+        await this.recalculateCourseDurationWithPrisma(prisma, course.id);
 
-        return result;
+        // Return just the course ID to avoid heavy query in transaction
+        return { id: course.id };
+      }, {
+        timeout: 30000, // 30 seconds timeout
+      });
+
+      // Fetch the complete updated course data outside the transaction
+      const completeCourse = await this.prisma.course.findUnique({
+        where: { id: result.id },
+        include: this.getCourseIncludeOptions(),
       });
 
       // Convert null values to undefined for GraphQL compatibility
-      const courseWithUndefined = this.convertNullsToUndefined(result);
+      const courseWithUndefined = this.convertNullsToUndefined(completeCourse);
 
       return {
         success: true,
@@ -792,11 +1020,20 @@ export class CourseService {
         include: this.getCourseIncludeOptions(),
       });
 
+      // Recalculate course duration after basic info update
+      await this.recalculateCourseDuration(courseId);
+
+      // Get the updated course with recalculated duration
+      const finalCourse = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: this.getCourseIncludeOptions(),
+      });
+
       return {
         success: true,
         message: 'Course basic information updated successfully',
-        course: this.convertNullsToUndefined(updatedCourse),
-        completionPercentage: this.calculateCourseCompletionPercentage(updatedCourse),
+        course: this.convertNullsToUndefined(finalCourse),
+        completionPercentage: this.calculateCourseCompletionPercentage(finalCourse),
         errors: [],
       };
     } catch (error) {
@@ -864,6 +1101,12 @@ export class CourseService {
       if (settings.marketing !== undefined) {
         updateData.settings = { ...updateData.settings, marketing: settings.marketing };
       }
+      if (settings.hasLiveSessions !== undefined) {
+        updateData.hasLiveSessions = settings.hasLiveSessions;
+      }
+      if (settings.hasRecordings !== undefined) {
+        updateData.hasRecordings = settings.hasRecordings;
+      }
 
       const updatedCourse = await this.prisma.course.update({
         where: { id: courseId },
@@ -871,11 +1114,20 @@ export class CourseService {
         include: this.getCourseIncludeOptions(),
       });
 
+      // Recalculate course duration after settings update
+      await this.recalculateCourseDuration(courseId);
+
+      // Get the updated course with recalculated duration
+      const finalCourse = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: this.getCourseIncludeOptions(),
+      });
+
       return {
         success: true,
         message: 'Course settings updated successfully',
-        course: this.convertNullsToUndefined(updatedCourse),
-        completionPercentage: this.calculateCourseCompletionPercentage(updatedCourse),
+        course: this.convertNullsToUndefined(finalCourse),
+        completionPercentage: this.calculateCourseCompletionPercentage(finalCourse),
         errors: [],
       };
     } catch (error) {
@@ -1029,7 +1281,7 @@ export class CourseService {
           ...this.getCourseIncludeOptions(),
           sections: {
             include: {
-              lessons: {
+              lectures: {
                 include: {
                   contentItem: true, // One-to-one relationship
                 },
@@ -1050,8 +1302,30 @@ export class CourseService {
         throw new ForbiddenException('Access denied to private course');
       }
 
+      // Recalculate duration to ensure it's up-to-date
+      await this.recalculateCourseDuration(courseId);
+
+      // Get the updated course with recalculated duration
+      const updatedCourse = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          ...this.getCourseIncludeOptions(),
+          sections: {
+            include: {
+              lectures: {
+                include: {
+                  contentItem: true, // One-to-one relationship
+                },
+                orderBy: { order: 'asc' },
+              },
+            },
+            orderBy: { order: 'asc' },
+          },
+        },
+      });
+
       // Organize content by lecture for easier frontend consumption
-      const organizedCourse = this.organizeCourseContentByLecture(course);
+      const organizedCourse = this.organizeCourseContentByLecture(updatedCourse);
 
       return this.convertNullsToUndefined(organizedCourse);
     } catch (error) {
@@ -1062,19 +1336,19 @@ export class CourseService {
   private organizeCourseContentByLecture(course: any) {
     const contentByLecture: Record<string, any> = {};
 
-    // Organize content items by lesson
+    // Organize content items by lecture
     course.sections?.forEach((section: any) => {
-      section.lessons?.forEach((lesson: any) => {
-        if (!contentByLecture[lesson.id]) {
-          contentByLecture[lesson.id] = {
-            contentItem: null, // Single content item per lesson
+      section.lectures?.forEach((lecture: any) => {
+        if (!contentByLecture[lecture.id]) {
+          contentByLecture[lecture.id] = {
+            contentItem: null, // Single content item per lecture
           };
         }
 
-        // Each lesson has exactly one content item
-        if (lesson.contentItem) {
-          const item = lesson.contentItem;
-          contentByLecture[lesson.id].contentItem = {
+        // Each lecture has exactly one content item
+        if (lecture.contentItem) {
+          const item = lecture.contentItem;
+          contentByLecture[lecture.id].contentItem = {
             id: item.id,
             title: item.title,
             description: item.description,
@@ -1169,7 +1443,7 @@ export class CourseService {
       await this.verifyCourseOwnership(courseId, instructorId);
 
       // Verify lecture belongs to course
-      const lecture = await this.prisma.lesson.findFirst({
+      const lecture = await this.prisma.lecture.findFirst({
         where: {
           id: lectureId,
           section: {
@@ -1203,7 +1477,7 @@ export class CourseService {
           order: metadata.order || 0,
           isPublished: true,
           courseId,
-          lessonId: lectureId,
+          lectureId: lectureId,
           contentData: {
             uploadedAt: uploadResult.fileInfo.uploadedAt,
             filePath: uploadResult.fileInfo.filePath,
@@ -1239,7 +1513,7 @@ export class CourseService {
       await this.verifyCourseOwnership(courseId, instructorId);
 
       // Verify lecture belongs to course
-      const lecture = await this.prisma.lesson.findFirst({
+      const lecture = await this.prisma.lecture.findFirst({
         where: {
           id: lectureId,
           section: {
@@ -1260,13 +1534,25 @@ export class CourseService {
           order: contentData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: lectureId,
+          lectureId: lectureId,
           contentData: {
             textContent: contentData.content,
             createdAt: new Date().toISOString(),
           },
         },
       });
+
+      // Update lecture content and recalculate duration
+      await this.prisma.lecture.update({
+        where: { id: lectureId },
+        data: { 
+          content: contentData.content,
+          type: 'TEXT'
+        }
+      });
+
+      // Recalculate lecture duration
+      await this.updateLectureDuration(lectureId);
 
       return {
         success: true,
@@ -1301,7 +1587,7 @@ export class CourseService {
       await this.verifyCourseOwnership(courseId, instructorId);
 
       // Verify lecture belongs to course
-      const lecture = await this.prisma.lesson.findFirst({
+      const lecture = await this.prisma.lecture.findFirst({
         where: {
           id: lectureId,
           section: {
@@ -1322,7 +1608,7 @@ export class CourseService {
           order: assignmentData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: lectureId,
+          lectureId: lectureId,
           contentData: {
             instructions: assignmentData.instructions,
             dueDate: assignmentData.dueDate,
@@ -1331,6 +1617,18 @@ export class CourseService {
           },
         },
       });
+
+      // Update lecture type and recalculate duration
+      await this.prisma.lecture.update({
+        where: { id: lectureId },
+        data: { 
+          type: 'ASSIGNMENT',
+          content: assignmentData.description
+        }
+      });
+
+      // Recalculate lecture duration
+      await this.updateLectureDuration(lectureId);
 
       return {
         success: true,
@@ -1364,7 +1662,7 @@ export class CourseService {
       await this.verifyCourseOwnership(courseId, instructorId);
 
       // Verify lecture belongs to course
-      const lecture = await this.prisma.lesson.findFirst({
+      const lecture = await this.prisma.lecture.findFirst({
         where: {
           id: lectureId,
           section: {
@@ -1385,7 +1683,7 @@ export class CourseService {
           order: resourceData.order || 0,
           isPublished: true,
           courseId,
-          lessonId: lectureId,
+          lectureId: lectureId,
           contentData: {
             url: resourceData.url,
             resourceType: resourceData.resourceType,
@@ -1393,6 +1691,18 @@ export class CourseService {
           },
         },
       });
+
+      // Update lecture type and recalculate duration
+      await this.prisma.lecture.update({
+        where: { id: lectureId },
+        data: { 
+          type: 'RESOURCE',
+          content: resourceData.description || resourceData.title
+        }
+      });
+
+      // Recalculate lecture duration
+      await this.updateLectureDuration(lectureId);
 
       return {
         success: true,
@@ -1446,14 +1756,14 @@ export class CourseService {
       if (!course.sections || course.sections.length === 0) {
         validation.errors.push('At least one section is required');
       } else {
-        // Calculate total lessons across all sections
-        const totalLessons = course.sections.reduce(
-          (total: number, section: any) => total + (section.lessons?.length || 0),
+        // Calculate total lectures across all sections
+        const totalLectures = course.sections.reduce(
+          (total: number, section: any) => total + (section.lectures?.length || 0),
           0
         );
 
-        if (totalLessons === 0) {
-          validation.errors.push('At least one lesson is required');
+        if (totalLectures === 0) {
+          validation.errors.push('At least one lecture is required');
         }
 
         
@@ -1532,6 +1842,67 @@ export class CourseService {
         errors: [error.message || 'An unexpected error occurred while publishing course'],
       };
 
+    }
+  }
+
+  async unpublishCourse(
+    courseId: string,
+    instructorId: string,
+  ): Promise<CourseCreationResponse> {
+    try {
+      const course = await this.verifyCourseOwnership(courseId, instructorId);
+
+      // Check if course is currently published
+      if (course.status !== CourseStatus.PUBLISHED) {
+        return {
+          success: false,
+          message: 'Course is not currently published',
+          course: null,
+          completionPercentage: 0,
+          errors: ['Course must be published to unpublish it'],
+        };
+      }
+
+      // Check if course has active enrollments
+      const enrollmentCount = await this.prisma.enrollment.count({
+        where: { courseId },
+      });
+
+      if (enrollmentCount > 0) {
+        return {
+          success: false,
+          message: 'Cannot unpublish course with active enrollments',
+          course: null,
+          completionPercentage: 0,
+          errors: ['Course has active enrollments and cannot be unpublished'],
+        };
+      }
+
+      const unpublishedCourse = await this.prisma.course.update({
+        where: { id: courseId },
+        data: {
+          status: CourseStatus.DRAFT,
+          publishedAt: null,
+          updatedAt: new Date(),
+        },
+        include: this.getCourseIncludeOptions(),
+      });
+
+      return {
+        success: true,
+        message: 'Course unpublished successfully. It is now in draft mode.',
+        course: this.convertNullsToUndefined(unpublishedCourse),
+        completionPercentage: this.calculateCourseCompletionPercentage(unpublishedCourse),
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to unpublish course',
+        course: null,
+        completionPercentage: 0,
+        errors: [error.message || 'An unexpected error occurred while unpublishing course'],
+      };
     }
   }
 
@@ -1683,16 +2054,19 @@ export class CourseService {
       instructor: {
         select: {
           id: true,
+          email: true,
           firstName: true,
           lastName: true,
           profileImage: true,
+          title: true,
+          bio: true,
           instructorBio: true,
           expertise: true,
         },
       },
       sections: {
         include: {
-          lessons: {
+          lectures: {
             include: {
               contentItem: true, // One-to-one relationship
             },
@@ -1703,7 +2077,7 @@ export class CourseService {
       },
       contentItems: {
         where: {
-          lessonId: null, // Course-level content items only
+          lectureId: null, // Course-level content items only
         },
         orderBy: { order: 'asc' },
       },
@@ -1737,11 +2111,11 @@ export class CourseService {
 
     // Content Structure (15 points)
     if (course.sections && course.sections.length > 0) completionScore += 10;
-    const totalLessons = course.sections?.reduce(
-      (total: number, section: any) => total + (section.lessons?.length || 0),
+    const totalLectures = course.sections?.reduce(
+      (total: number, section: any) => total + (section.lectures?.length || 0),
       0,
     ) || 0;
-    if (totalLessons > 0) completionScore += 5;
+    if (totalLectures > 0) completionScore += 5;
 
     // Content Items (10 points) - Enhanced with organized content
     if (course.organizedContent?.summary?.totalContent > 0) {
@@ -1773,9 +2147,20 @@ export class CourseService {
           contentItems: {
             orderBy: { order: 'asc' as SortOrder },
           },
+          instructor: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+              bio: true,
+              expertise: true,
+            },
+          },
           sections: {
             include: {
-              lessons: {
+              lectures: {
                 include: {
                   contentItem: true, // One-to-one relationship
                 },
@@ -1796,7 +2181,32 @@ export class CourseService {
         throw new ForbiddenException('Access denied to private course');
       }
 
-      return this.convertNullsToUndefined(course);
+      // Recalculate duration to ensure it's up-to-date
+      await this.recalculateCourseDuration(courseId);
+
+      // Get the updated course with recalculated duration
+      const updatedCourse = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          ...this.getCourseIncludeOptions(),
+          contentItems: {
+            orderBy: { order: 'asc' as SortOrder },
+          },
+          sections: {
+            include: {
+              lectures: {
+                include: {
+                  contentItem: true, // One-to-one relationship
+                },
+                orderBy: { order: 'asc' as SortOrder },
+              },
+            },
+            orderBy: { order: 'asc' as SortOrder },
+          },
+        },
+      });
+
+      return this.convertNullsToUndefined(updatedCourse);
     } catch (error) {
       throw new BadRequestException(`Failed to get course: ${error.message}`);
     }
@@ -1845,6 +2255,158 @@ export class CourseService {
     }
   }
 
+  async getAllCourses(
+    filters?: CourseFiltersInput,
+    pagination?: PaginationInput,
+  ): Promise<PaginatedCoursesResponse> {
+    try {
+      const page = pagination?.page || 1;
+      const limit = pagination?.limit || 10;
+      const skip = (page - 1) * limit;
+
+      const where: Prisma.CourseWhereInput = {
+        // isPublic: true,
+        status: CourseStatus.PUBLISHED,
+      };
+
+      // Apply comprehensive filters
+      if (filters) {
+        // Search filter
+        if (filters.search) {
+          where.OR = [
+            { title: { contains: filters.search, mode: 'insensitive' } },
+            { description: { contains: filters.search, mode: 'insensitive' } },
+            { shortDescription: { contains: filters.search, mode: 'insensitive' } },
+          ];
+        }
+
+        // Categories filter
+        if (filters.categories && filters.categories.length > 0) {
+          where.category = { in: filters.categories };
+        }
+
+        // Price range filter
+        if (filters.priceRange) {
+          where.price = {
+            gte: filters.priceRange.min,
+            lte: filters.priceRange.max,
+          };
+        }
+
+        // Levels filter
+        if (filters.levels && filters.levels.length > 0) {
+          where.level = { in: filters.levels };
+        }
+
+        // Duration filter (based on estimated hours)
+        if (filters.durations && filters.durations.length > 0) {
+          const durationConditions = filters.durations.map(duration => {
+            switch (duration) {
+              case '0-2':
+                return { estimatedHours: { gte: 0, lte: 2 } };
+              case '2-5':
+                return { estimatedHours: { gte: 2, lte: 5 } };
+              case '5-10':
+                return { estimatedHours: { gte: 5, lte: 10 } };
+              case '10+':
+                return { estimatedHours: { gte: 10 } };
+              default:
+                return {};
+            }
+          });
+          where.OR = durationConditions;
+        }
+
+        // Ratings filter
+        if (filters.ratings && filters.ratings.length > 0) {
+          const ratingConditions = filters.ratings.map(rating => ({
+            avgRating: { gte: rating },
+          }));
+          where.OR = ratingConditions;
+        }
+
+        // Featured courses filter
+        if (filters.showFeatured) {
+          where.isFeatured = true;
+        }
+
+        // Individual filters (for backward compatibility)
+        if (filters.category) {
+          where.category = filters.category;
+        }
+        if (filters.level) {
+          where.level = filters.level;
+        }
+        if (filters.enrollmentType) {
+          where.enrollmentType = filters.enrollmentType;
+        }
+        if (filters.tags && filters.tags.length > 0) {
+          where.seoTags = {
+            hasSome: filters.tags,
+          };
+        }
+      }
+
+      // Determine sort order
+      let orderBy: Prisma.CourseOrderByWithRelationInput = { createdAt: 'desc' };
+      if (filters?.sortBy) {
+        switch (filters.sortBy) {
+          case 'newest':
+            orderBy = { createdAt: 'desc' };
+            break;
+          case 'oldest':
+            orderBy = { createdAt: 'asc' };
+            break;
+          case 'price_low':
+            orderBy = { price: 'asc' };
+            break;
+          case 'price_high':
+            orderBy = { price: 'desc' };
+            break;
+          case 'rating':
+            orderBy = { avgRating: 'desc' };
+            break;
+          case 'popular':
+            orderBy = { views: 'desc' };
+            break;
+          case 'featured':
+            orderBy = { isFeatured: 'desc' };
+            break;
+          default:
+            orderBy = { createdAt: 'desc' };
+        }
+      }
+
+      // Get total count for pagination
+      const total = await this.prisma.course.count({ where });
+
+      // Get courses with pagination
+      const courses = await this.prisma.course.findMany({
+        where,
+        include: this.getCourseIncludeOptions(),
+        orderBy,
+        skip,
+        take: limit,
+      });
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      return {
+        courses: courses.map((course) => this.convertNullsToUndefined(course)) as any,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage,
+        hasPreviousPage,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get all courses: ${error.message}`);
+    }
+  }
+
   async getMyCourses(instructorId: string) {
     try {
       await this.verifyInstructorPermissions(instructorId);
@@ -1859,6 +2421,57 @@ export class CourseService {
     } catch (error) {
       throw new BadRequestException(
         `Failed to get instructor courses: ${error.message}`,
+      );
+    }
+  }
+
+  async getFeaturedCourses(limit: number = 6) {
+    try {
+      const courses = await this.prisma.course.findMany({
+        where: {
+          isPublic: true,
+          status: CourseStatus.PUBLISHED,
+          isFeatured: true,
+        },
+        include: this.getCourseIncludeOptions(),
+        orderBy: [
+          { avgRating: 'desc' },
+          { currentEnrollments: 'desc' },
+          { createdAt: 'desc' },
+        ],
+        take: limit,
+      });
+
+      return courses.map((course) => this.convertNullsToUndefined(course));
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to get featured courses: ${error.message}`,
+      );
+    }
+  }
+
+  async getTrendingCourses(limit: number = 6) {
+    try {
+      const courses = await this.prisma.course.findMany({
+        where: {
+          isPublic: true,
+          status: CourseStatus.PUBLISHED,
+          isTrending: true,
+        },
+        include: this.getCourseIncludeOptions(),
+        orderBy: [
+          { currentEnrollments: 'desc' },
+          { views: 'desc' },
+          { avgRating: 'desc' },
+          { createdAt: 'desc' },
+        ],
+        take: limit,
+      });
+
+      return courses.map((course) => this.convertNullsToUndefined(course));
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to get trending courses: ${error.message}`,
       );
     }
   }
@@ -1881,9 +2494,40 @@ export class CourseService {
         );
       }
 
+      // Get course details for file cleanup
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          thumbnail: true,
+          trailer: true,
+          instructorId: true,
+        },
+      });
+
+      // Delete the course (this will cascade delete related content)
       await this.prisma.course.delete({
         where: { id: courseId },
       });
+
+      // Clean up associated files if they exist
+      if (course) {
+        try {
+          if (course.thumbnail) {
+            await this.uploadService.deleteCourseThumbnail(
+              course.thumbnail,
+              instructorId,
+              { courseId }
+            );
+          }
+          // Note: Trailer cleanup would need to be implemented in upload service
+          // if (course.trailer) {
+          //   await this.uploadService.deleteCourseTrailer(course.trailer, instructorId);
+          // }
+        } catch (error) {
+          console.error('Failed to clean up course files:', error);
+          // Continue with course deletion even if file cleanup fails
+        }
+      }
 
       return {
         success: true,
@@ -2046,6 +2690,11 @@ export class CourseService {
         },
       });
 
+      // Recalculate course duration if content item is associated with a lecture
+      if (contentItem.lectureId) {
+        await this.updateLectureDuration(contentItem.lectureId);
+      }
+
       return {
         success: true,
         message: 'Content item updated successfully',
@@ -2076,6 +2725,11 @@ export class CourseService {
       await this.prisma.contentItem.delete({
         where: { id: contentItemId },
       });
+
+      // Recalculate course duration if content item was associated with a lecture
+      if (contentItem.lectureId) {
+        await this.updateLectureDuration(contentItem.lectureId);
+      }
 
       return {
         success: true,
@@ -2124,6 +2778,9 @@ export class CourseService {
         },
       });
 
+      // Recalculate course duration after section update
+      await this.recalculateCourseDuration(section.courseId);
+
       return {
         success: true,
         message: 'Section updated successfully',
@@ -2155,6 +2812,9 @@ export class CourseService {
         where: { id: sectionId },
       });
 
+      // Recalculate course duration after section deletion
+      await this.recalculateCourseDuration(section.courseId);
+
       return {
         success: true,
         message: 'Section deleted successfully',
@@ -2170,13 +2830,136 @@ export class CourseService {
   // LESSON MANAGEMENT METHODS
   // ============================================
 
-  async updateLesson(
-    lessonId: string,
+  /**
+   * Calculate estimated duration for a lecture based on its type and content
+   */
+  private calculateLectureDuration(lecture: any): number {
+    // If duration is explicitly set and greater than 0, use it
+    if (lecture.duration && lecture.duration > 0) {
+      return lecture.duration;
+    }
+    
+    // Otherwise, estimate duration based on lecture type and content
+    let estimatedDuration = 0;
+    
+    switch (lecture.type) {
+      case 'VIDEO':
+        // Estimate 5-15 minutes for video content
+        estimatedDuration = lecture.contentItem?.type === 'QUIZ' ? 10 : 15;
+        break;
+      case 'TEXT':
+        // Estimate based on content length (roughly 200 words per minute reading)
+        const wordCount = lecture.content?.split(/\s+/).length || 0;
+        estimatedDuration = Math.max(3, Math.ceil(wordCount / 200));
+        break;
+      case 'AUDIO':
+        // Estimate 8-12 minutes for audio content
+        estimatedDuration = 10;
+        break;
+      case 'QUIZ':
+        // Estimate 5-10 minutes for quiz completion
+        estimatedDuration = 8;
+        break;
+      case 'ASSIGNMENT':
+        // Estimate 15-30 minutes for assignments
+        estimatedDuration = 20;
+        break;
+      default:
+        // Default 5 minutes for other types
+        estimatedDuration = 5;
+    }
+    
+    return estimatedDuration;
+  }
+
+  /**
+   * Update lecture duration and recalculate course total duration
+   */
+  private async updateLectureDuration(lectureId: string): Promise<void> {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: lectureId },
+      include: { 
+        contentItem: true,
+        section: { include: { course: true } }
+      }
+    });
+
+    if (!lecture) return;
+
+    const calculatedDuration = this.calculateLectureDuration(lecture);
+    
+    // Update the lecture duration if it's different
+    if (lecture.duration !== calculatedDuration) {
+      await this.prisma.lecture.update({
+        where: { id: lectureId },
+        data: { duration: calculatedDuration }
+      });
+    }
+
+    // Recalculate course total duration
+    await this.recalculateCourseDuration(lecture.section.courseId);
+  }
+
+  /**
+   * Recalculate total course duration based on all lectures
+   */
+  private async recalculateCourseDuration(courseId: string): Promise<void> {
+    return this.recalculateCourseDurationWithPrisma(this.prisma, courseId);
+  }
+
+  private async recalculateCourseDurationWithPrisma(prisma: any, courseId: string): Promise<void> {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: {
+        sections: {
+          include: {
+            lectures: {
+              include: { contentItem: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!course) return;
+
+    let totalDurationMinutes = 0;
+    
+    for (const section of course.sections) {
+      for (const lecture of section.lectures) {
+        totalDurationMinutes += this.calculateLectureDuration(lecture);
+      }
+    }
+
+    const estimatedHours = Math.floor(totalDurationMinutes / 60);
+    const estimatedMinutes = totalDurationMinutes % 60;
+
+    // Count total content items (both lecture-associated and course-level)
+    const totalContentItems = course.sections.reduce((total, section) => {
+      const lectureContentItems = section.lectures.reduce((lectureTotal, lecture) => {
+        return lectureTotal + (lecture.contentItem ? 1 : 0);
+      }, 0);
+      return total + lectureContentItems;
+    }, 0);
+
+    // Update course with new duration and content count
+    await prisma.course.update({
+      where: { id: courseId },
+      data: {
+        estimatedHours,
+        estimatedMinutes,
+        totalContentItems
+      }
+    });
+  }
+
+  async updateLecture(
+    lectureId: string,
     instructorId: string,
     updateData: {
       title?: string;
       description?: string;
-      type?: LessonType;
+      type?: LectureType;
       content?: string;
       duration?: number;
       order?: number;
@@ -2186,65 +2969,73 @@ export class CourseService {
     },
   ) {
     try {
-      const lesson = await this.prisma.lesson.findUnique({
-        where: { id: lessonId },
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
         include: { section: { include: { course: true } } },
       });
 
-      if (!lesson) {
-        throw new NotFoundException('Lesson not found');
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
       }
 
-      if (lesson.section.course.instructorId !== instructorId) {
-        throw new ForbiddenException('You do not have permission to update this lesson');
+      if (lecture.section.course.instructorId !== instructorId) {
+        throw new ForbiddenException('You do not have permission to update this lecture');
       }
 
-      const updatedLesson = await this.prisma.lesson.update({
-        where: { id: lessonId },
+      const updatedLecture = await this.prisma.lecture.update({
+        where: { id: lectureId },
         data: {
           ...updateData,
           updatedAt: new Date(),
         },
       });
 
+      // Recalculate duration if content was updated
+      if (updateData.content || updateData.type) {
+        await this.updateLectureDuration(lectureId);
+      }
+
       return {
         success: true,
-        message: 'Lesson updated successfully',
-        lesson: updatedLesson,
+        message: 'Lecture updated successfully',
+        lecture: updatedLecture,
       };
     } catch (error) {
       throw new BadRequestException(
-        `Failed to update lesson: ${error.message}`,
+        `Failed to update lecture: ${error.message}`,
       );
     }
   }
 
-  async deleteLesson(lessonId: string, instructorId: string) {
+  async deleteLecture(lectureId: string, instructorId: string) {
     try {
-      const lesson = await this.prisma.lesson.findUnique({
-        where: { id: lessonId },
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
         include: { section: { include: { course: true } } },
       });
 
-      if (!lesson) {
-        throw new NotFoundException('Lesson not found');
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
       }
 
-      if (lesson.section.course.instructorId !== instructorId) {
-        throw new ForbiddenException('You do not have permission to delete this lesson');
+      if (lecture.section.course.instructorId !== instructorId) {
+        throw new ForbiddenException('You do not have permission to delete this lecture');
       }
 
-      await this.prisma.lesson.delete({
-        where: { id: lessonId },
+      await this.prisma.lecture.delete({
+        where: { id: lectureId },
       });
+
+      // Recalculate course duration after lecture deletion
+      await this.recalculateCourseDuration(lecture.section.courseId);
 
       return {
         success: true,
-        message: 'Lesson deleted successfully',
+        message: 'Lecture deleted successfully',
       };
     } catch (error) {
       throw new BadRequestException(
-        `Failed to delete lesson: ${error.message}`,
+        `Failed to delete lecture: ${error.message}`,
       );
     }
   }
@@ -2260,7 +3051,7 @@ export class CourseService {
         include: {
           sections: {
             include: {
-              lessons: {
+              lectures: {
                 include: {
                   contentItem: true, // One-to-one relationship
                 },
@@ -2288,8 +3079,8 @@ export class CourseService {
           category: originalCourse.category,
           subcategory: originalCourse.subcategory,
           level: originalCourse.level,
-          thumbnail: originalCourse.thumbnail,
-          trailer: originalCourse.trailer,
+          thumbnail: originalCourse.thumbnail, // Will be copied if exists
+          trailer: originalCourse.trailer, // Will be copied if exists
           price: originalCourse.price,
           originalPrice: originalCourse.originalPrice,
           currency: originalCourse.currency,
@@ -2309,10 +3100,21 @@ export class CourseService {
           views: 0,
           avgRating: 0,
           totalRatings: 0,
+          totalLectures: originalCourse.totalLectures,
+          totalSections: originalCourse.totalSections,
+          estimatedHours: originalCourse.estimatedHours,
+          estimatedMinutes: originalCourse.estimatedMinutes,
+          difficulty: originalCourse.difficulty,
+          hasDiscussions: originalCourse.hasDiscussions,
+          
         },
       });
 
-      // Duplicate sections and lessons
+      // Note: File copying (thumbnails, trailers) would need to be implemented
+      // in the upload service. For now, we'll use the original URLs.
+      // TODO: Implement copyCourseThumbnail and copyCourseTrailer methods in UploadService
+
+      // Duplicate sections and lectures
       for (const section of originalCourse.sections) {
         const duplicatedSection = await this.prisma.section.create({
           data: {
@@ -2324,44 +3126,44 @@ export class CourseService {
           },
         });
 
-        // Duplicate lessons
-        for (const lesson of section.lessons) {
-          const duplicatedLesson = await this.prisma.lesson.create({
+        // Duplicate lectures
+        for (const lecture of section.lectures) {
+          const duplicatedLecture = await this.prisma.lecture.create({
             data: {
-              title: lesson.title,
-              description: lesson.description,
-              type: lesson.type,
-              content: lesson.content,
-              duration: lesson.duration,
-              order: lesson.order,
-              isPreview: lesson.isPreview,
-              isInteractive: lesson.isInteractive,
-              hasAIQuiz: lesson.hasAIQuiz,
-              aiSummary: lesson.aiSummary,
-              transcription: lesson.transcription,
-              captions: lesson.captions,
-              transcript: lesson.transcript,
-              settings: lesson.settings as any,
+              title: lecture.title,
+              description: lecture.description,
+              type: lecture.type,
+              content: lecture.content,
+              duration: lecture.duration,
+              order: lecture.order,
+              isPreview: lecture.isPreview,
+              isInteractive: lecture.isInteractive,
+              hasAIQuiz: lecture.hasAIQuiz,
+              aiSummary: lecture.aiSummary,
+              transcription: lecture.transcription,
+              captions: lecture.captions,
+              transcript: lecture.transcript,
+              settings: lecture.settings as any,
               sectionId: duplicatedSection.id,
             },
           });
 
                   // Duplicate content item (one-to-one relationship)
-        if (lesson.contentItem) {
+        if (lecture.contentItem) {
           await this.prisma.contentItem.create({
             data: {
-              title: lesson.contentItem.title,
-              description: lesson.contentItem.description,
-              type: lesson.contentItem.type,
-              fileUrl: lesson.contentItem.fileUrl,
-              fileName: lesson.contentItem.fileName,
-              fileSize: lesson.contentItem.fileSize,
-              mimeType: lesson.contentItem.mimeType,
-              contentData: lesson.contentItem.contentData as any,
-              order: lesson.contentItem.order,
-              isPublished: lesson.contentItem.isPublished,
+              title: lecture.contentItem.title,
+              description: lecture.contentItem.description,
+              type: lecture.contentItem.type,
+              fileUrl: lecture.contentItem.fileUrl,
+              fileName: lecture.contentItem.fileName,
+              fileSize: lecture.contentItem.fileSize,
+              mimeType: lecture.contentItem.mimeType,
+              contentData: lecture.contentItem.contentData as any,
+              order: lecture.contentItem.order,
+              isPublished: lecture.contentItem.isPublished,
               courseId: duplicatedCourse.id,
-              lessonId: duplicatedLesson.id,
+              lectureId: duplicatedLecture.id,
             },
           });
         }
@@ -2369,23 +3171,23 @@ export class CourseService {
       }
 
       // Duplicate course-level content items
-      for (const contentItem of originalCourse.contentItems) {
-        await this.prisma.contentItem.create({
-          data: {
-            title: contentItem.title,
-            description: contentItem.description,
-            type: contentItem.type,
-            fileUrl: contentItem.fileUrl,
-            fileName: contentItem.fileName,
-            fileSize: contentItem.fileSize,
-            mimeType: contentItem.mimeType,
-            contentData: contentItem.contentData as any,
-            order: contentItem.order,
-            isPublished: contentItem.isPublished,
-            courseId: duplicatedCourse.id,
-          },
-        });
-      }
+      // for (const contentItem of originalCourse.contentItems) {
+      //   await this.prisma.contentItem.create({
+      //     data: {
+      //       title: contentItem.title,
+      //       description: contentItem.description,
+      //       type: contentItem.type,
+      //       fileUrl: contentItem.fileUrl,
+      //       fileName: contentItem.fileName,
+      //       fileSize: contentItem.fileSize,
+      //       mimeType: contentItem.mimeType,
+      //       contentData: contentItem.contentData as any,
+      //       order: contentItem.order,
+      //       isPublished: contentItem.isPublished,
+      //       courseId: duplicatedCourse.id,
+      //     },
+      //   });
+      // }
 
       return {
         success: true,
@@ -2397,6 +3199,210 @@ export class CourseService {
       throw new BadRequestException(
         `Failed to duplicate course: ${error.message}`,
       );
+    }
+  }
+
+  // ============================================
+  // COURSE SHARING FUNCTIONALITY
+  // ============================================
+
+
+
+  // ============================================
+  // COURSE SOCIAL MEDIA SHARING FUNCTIONALITY
+  // ============================================
+
+  async getCourseShareLinks(
+    courseId: string,
+    instructorId?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    shareData: {
+      courseUrl: string;
+      socialLinks: {
+        facebook: string;
+        twitter: string;
+        linkedin: string;
+        whatsapp: string;
+        telegram: string;
+        email: string;
+      };
+      embedCode: string;
+      qrCode?: string;
+    } | undefined;
+    errors?: string[];
+  }> {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          instructor: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          shareData: undefined,
+          errors: ['Course not found'],
+        };
+      }
+
+      // Check if course is public or user has access
+      if (!course.isPublic && course.instructorId !== instructorId) {
+        return {
+          success: false,
+          message: 'Access denied',
+          shareData: undefined,
+          errors: ['You do not have permission to share this course'],
+        };
+      }
+
+      // Create course URL
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const courseUrl = `${baseUrl}/course/${courseId}`;
+
+      // Prepare share text
+      const shareText = `${course.title} by ${course.instructor?.firstName || 'Instructor'} ${course.instructor?.lastName || ''}`;
+      const shareDescription = course.shortDescription || course.description.substring(0, 100) + '...';
+
+      // Generate social media links
+      const socialLinks = {
+        facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(courseUrl)}&quote=${encodeURIComponent(shareText)}`,
+        twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(courseUrl)}&text=${encodeURIComponent(shareText)}&hashtags=elearning,education`,
+        linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(courseUrl)}`,
+        whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText} - ${courseUrl}`)}`,
+        telegram: `https://t.me/share/url?url=${encodeURIComponent(courseUrl)}&text=${encodeURIComponent(shareText)}`,
+        email: `mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareDescription}\n\n${courseUrl}`)}`,
+      };
+
+      // Generate embed code for websites
+      const embedCode = `<iframe src="${baseUrl}/embed/course/${courseId}" width="100%" height="400" frameborder="0" allowfullscreen></iframe>`;
+
+      return {
+        success: true,
+        message: 'Share links generated successfully',
+        shareData: {
+          courseUrl,
+          socialLinks,
+          embedCode,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to generate share links',
+        shareData: undefined,
+        errors: [error.message || 'An unexpected error occurred'],
+      };
+    }
+  }
+
+  async copyCourseShareLink(
+    courseId: string,
+    instructorId?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    shareUrl?: string;
+    errors?: string[];
+  }> {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+      });
+
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          errors: ['Course not found'],
+        };
+      }
+
+      // Check if course is public or user has access
+      if (!course.isPublic && course.instructorId !== instructorId) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You do not have permission to share this course'],
+        };
+      }
+
+      // Create course URL
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const shareUrl = `${baseUrl}/course/${courseId}`;
+
+      return {
+        success: true,
+        message: 'Course URL copied to clipboard',
+        shareUrl,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to copy course URL',
+        errors: [error.message || 'An unexpected error occurred'],
+      };
+    }
+  }
+
+  async generateCourseQRCode(
+    courseId: string,
+    instructorId?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    qrCodeUrl?: string;
+    errors?: string[];
+  }> {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+      });
+
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          errors: ['Course not found'],
+        };
+      }
+
+      // Check if course is public or user has access
+      if (!course.isPublic && course.instructorId !== instructorId) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You do not have permission to share this course'],
+        };
+      }
+
+      // Create course URL
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const courseUrl = `${baseUrl}/course/${courseId}`;
+
+      // Generate QR code URL using a QR code service
+      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(courseUrl)}`;
+
+      return {
+        success: true,
+        message: 'QR code generated successfully',
+        qrCodeUrl,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to generate QR code',
+        errors: [error.message || 'An unexpected error occurred'],
+      };
     }
   }
 }

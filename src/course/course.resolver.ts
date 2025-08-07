@@ -1,7 +1,11 @@
 import { Resolver, Mutation, Query, Args, Context } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { CourseService } from './course.service';
-import { Course, CourseCreationResponse } from './entities/course.entity';
+import {
+  Course,
+  CourseCreationResponse,
+  CourseShareResponse,
+} from './entities/course.entity';
 import {
   CreateCourseInput,
   UpdateCourseInput,
@@ -10,6 +14,8 @@ import {
   SaveCourseDraftInput,
   CourseFiltersInput,
   CourseDraftResponse,
+  PaginationInput,
+  PaginatedCoursesResponse,
 } from './dto/course-creation.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -94,7 +100,7 @@ export class CourseResolver {
     @Args('title') title: string,
     @Args('content') content: string,
     @Args('description', { nullable: true }) description?: string,
-    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('lectureId', { nullable: true }) lectureId?: string,
     @Args('order', { nullable: true }) order?: number,
     @Context() context?: any,
   ) {
@@ -103,7 +109,7 @@ export class CourseResolver {
       title,
       content,
       description,
-      lessonId,
+      lectureId,
       order,
     });
   }
@@ -117,7 +123,7 @@ export class CourseResolver {
     @Args('instructions', { nullable: true }) instructions?: string,
     @Args('dueDate', { nullable: true }) dueDate?: string,
     @Args('points', { nullable: true }) points?: number,
-    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('lectureId', { nullable: true }) lectureId?: string,
     @Args('order', { nullable: true }) order?: number,
     @Context() context?: any,
   ) {
@@ -128,7 +134,7 @@ export class CourseResolver {
       instructions,
       dueDate,
       points,
-      lessonId,
+      lectureId,
       order,
     });
   }
@@ -141,7 +147,7 @@ export class CourseResolver {
     @Args('url') url: string,
     @Args('resourceType') resourceType: string,
     @Args('description', { nullable: true }) description?: string,
-    @Args('lessonId', { nullable: true }) lessonId?: string,
+    @Args('lectureId', { nullable: true }) lectureId?: string,
     @Args('order', { nullable: true }) order?: number,
     @Context() context?: any,
   ) {
@@ -151,7 +157,7 @@ export class CourseResolver {
       url,
       description,
       resourceType,
-      lessonId,
+      lectureId,
       order,
     });
   }
@@ -175,18 +181,24 @@ export class CourseResolver {
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourseBasicInfo(
     @Args('courseId') courseId: string,
-    @Args('basicInfo', { type: () => UpdateCourseBasicInfoInput }) basicInfo: UpdateCourseBasicInfoInput,
+    @Args('basicInfo', { type: () => UpdateCourseBasicInfoInput })
+    basicInfo: UpdateCourseBasicInfoInput,
     @Context() context: any,
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
-    return this.courseService.updateCourseBasicInfo(courseId, user.id, basicInfo);
+    return this.courseService.updateCourseBasicInfo(
+      courseId,
+      user.id,
+      basicInfo,
+    );
   }
 
   @Mutation(() => CourseCreationResponse)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourseSettings(
     @Args('courseId') courseId: string,
-    @Args('settings', { type: () => UpdateCourseSettingsInput }) settings: UpdateCourseSettingsInput,
+    @Args('settings', { type: () => UpdateCourseSettingsInput })
+    settings: UpdateCourseSettingsInput,
     @Context() context: any,
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
@@ -201,6 +213,153 @@ export class CourseResolver {
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
     return this.courseService.publishCourse(courseId, user.id);
+  }
+
+  @Mutation(() => CourseCreationResponse, { name: 'unpublishCourse' })
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async unpublishCourse(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    return this.courseService.unpublishCourse(courseId, user.id);
+  }
+
+  @Mutation(() => CourseCreationResponse, { name: 'deleteCourse' })
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async deleteCourse(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    const result = await this.courseService.deleteCourse(courseId, user.id);
+    return {
+      success: result.success,
+      message: result.message,
+      course: undefined,
+      completionPercentage: 0,
+      errors: [],
+    };
+  }
+
+  @Mutation(() => CourseCreationResponse, { name: 'duplicateCourse' })
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  async duplicateCourse(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseCreationResponse> {
+    const user = context.req.user;
+    const result = await this.courseService.duplicateCourse(courseId, user.id);
+
+    return {
+      success: result.success,
+      message: result.message,
+      course: undefined,
+      completionPercentage: 0,
+      errors: [],
+    };
+  }
+
+  // ============================================
+  // COURSE SOCIAL MEDIA SHARING
+  // ============================================
+
+  @Query(() => CourseShareResponse, { name: 'getCourseShareLinks' })
+  async getCourseShareLinks(
+    @Args('courseId') courseId: string,
+    @Context() context?: any,
+  ): Promise<CourseShareResponse> {
+    const user = context?.req?.user;
+    const result = await this.courseService.getCourseShareLinks(
+      courseId,
+      user?.id,
+    );
+
+    return {
+      success: result.success,
+      message: result.message,
+      shareData: result.shareData
+        ? {
+            courseUrl: result.shareData.courseUrl,
+            socialLinks: {
+              facebook: result.shareData.socialLinks.facebook,
+              twitter: result.shareData.socialLinks.twitter,
+              linkedin: result.shareData.socialLinks.linkedin,
+              whatsapp: result.shareData.socialLinks.whatsapp,
+              telegram: result.shareData.socialLinks.telegram,
+              email: result.shareData.socialLinks.email,
+            },
+            embedCode: result.shareData.embedCode,
+            qrCode: result.shareData.qrCode,
+          }
+        : undefined,
+      errors: result.errors,
+    };
+  }
+
+  @Query(() => CourseShareResponse, { name: 'copyCourseShareLink' })
+  async copyCourseShareLink(
+    @Args('courseId') courseId: string,
+    @Context() context?: any,
+  ): Promise<CourseShareResponse> {
+    const user = context?.req?.user;
+    const result = await this.courseService.copyCourseShareLink(
+      courseId,
+      user?.id,
+    );
+
+    return {
+      success: result.success,
+      message: result.message,
+      shareData: result.shareUrl
+        ? {
+            courseUrl: result.shareUrl,
+            socialLinks: {
+              facebook: '',
+              twitter: '',
+              linkedin: '',
+              whatsapp: '',
+              telegram: '',
+              email: '',
+            },
+            embedCode: '',
+          }
+        : undefined,
+      errors: result.errors,
+    };
+  }
+
+  @Query(() => CourseShareResponse, { name: 'generateCourseQRCode' })
+  async generateCourseQRCode(
+    @Args('courseId') courseId: string,
+    @Context() context?: any,
+  ): Promise<CourseShareResponse> {
+    const user = context?.req?.user;
+    const result = await this.courseService.generateCourseQRCode(
+      courseId,
+      user?.id,
+    );
+
+    return {
+      success: result.success,
+      message: result.message,
+      shareData: result.qrCodeUrl
+        ? {
+            courseUrl: '',
+            socialLinks: {
+              facebook: '',
+              twitter: '',
+              linkedin: '',
+              whatsapp: '',
+              telegram: '',
+              email: '',
+            },
+            embedCode: '',
+            qrCode: result.qrCodeUrl,
+          }
+        : undefined,
+      errors: result.errors,
+    };
   }
 
   // ============================================
@@ -223,6 +382,14 @@ export class CourseResolver {
     return this.courseService.getCourses(filters);
   }
 
+  @Query(() => PaginatedCoursesResponse, { name: 'getAllCourses' })
+  async getAllCourses(
+    @Args('filters', { nullable: true }) filters?: CourseFiltersInput,
+    @Args('pagination', { nullable: true }) pagination?: PaginationInput,
+  ) {
+    return this.courseService.getAllCourses(filters, pagination);
+  }
+
   @Query(() => [Course], { name: 'getMyCourses' })
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getMyCourses(@Context() context: any) {
@@ -230,50 +397,17 @@ export class CourseResolver {
     return this.courseService.getMyCourses(user.id);
   }
 
-  @Query(() => Course)
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async getMyCourseDetails(
-    @Args('courseId') courseId: string,
-    @Context() context: any,
+  @Query(() => [Course], { name: 'getFeaturedCourses' })
+  async getFeaturedCourses(
+    @Args('limit', { nullable: true }) limit?: number,
   ) {
-    const user = context.req.user;
-    return this.courseService.getCourseWithContent(courseId, user.id);
+    return this.courseService.getFeaturedCourses(limit);
   }
 
-  @Query(() => Course)
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async getMyCourseAnalytics(
-    @Args('courseId') courseId: string,
-    @Context() context: any,
+  @Query(() => [Course], { name: 'getTrendingCourses' })
+  async getTrendingCourses(
+    @Args('limit', { nullable: true }) limit?: number,
   ) {
-    const user = context.req.user;
-    return this.courseService.getCourseAnalytics(courseId, user.id);
-  }
-
-  @Query(() => Course)
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async getMyCourseEnrollmentTrend(
-    @Args('courseId') courseId: string,
-    @Context() context: any,
-    @Args('days', { nullable: true, defaultValue: 30 }) days?: number,
-  ) {
-    const user = context.req.user;
-    return this.courseService.getEnrollmentTrend(courseId, user.id, days);
-  }
-
-  @Mutation(() => CourseCreationResponse)
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
-  async duplicateMyCourse(
-    @Args('courseId') courseId: string,
-    @Context() context: any,
-  ): Promise<CourseCreationResponse> {
-    const user = context.req.user;
-    const result = await this.courseService.duplicateCourse(courseId, user.id);
-    return {
-      success: result.success,
-      message: result.message,
-      course: undefined, // We'll get the course details separately if needed
-      errors: [],
-    };
+    return this.courseService.getTrendingCourses(limit);
   }
 }

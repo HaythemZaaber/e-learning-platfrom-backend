@@ -32,6 +32,22 @@ export class UserResolver {
       createdAt: new Date(user.createdAt),
       updatedAt: new Date(user.updatedAt),
       clerkId: user.clerkId,
+      isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
+      instructorStatus: user.instructorStatus,
+      expertise: user.expertise,
+      qualifications: user.qualifications,
+      preferredLanguages: user.preferredLanguages,
+      skillTags: user.skillTags,
+      isActive: user.isActive,
+      totalPoints: user.totalPoints,
+      totalCourses: user.totalCourses || undefined,
+      totalStudents: user.totalStudents || undefined,
+      rating: user.rating || undefined,
+      lastLoginAt: user.lastLoginAt || undefined,
+      currentStreak: user.currentStreak || 0,
+      longestStreak: user.longestStreak || 0,
+      achievements: user.achievements || [],
     };
     return userObject;
   }

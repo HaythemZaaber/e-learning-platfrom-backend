@@ -25,8 +25,6 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('No token provided');
     }
 
-    
-
     try {
       const sessionToken = await this.clerkService.verifyToken(token);
       console.log('Session token:', sessionToken);

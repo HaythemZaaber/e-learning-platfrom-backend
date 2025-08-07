@@ -14,9 +14,10 @@ import {
   CourseLevel,
   EnrollmentType,
   ContentType,
-  LessonType,
+  LectureType,
 } from '../../../generated/prisma';
 import GraphQLJSON from 'graphql-type-json';
+import { Course } from '../entities/course.entity';
 
 // ==============================================
 // CONTENT CREATION DTOs
@@ -86,13 +87,14 @@ export class LectureInput {
   @IsString()
   status?: string;
 
-  @Field(() => LessonType)
-  @IsEnum(LessonType)
-  type: LessonType;
+  @Field(() => LectureType)
+  @IsEnum(LectureType)
+  type: LectureType;
 
-  @Field(() => Int, { defaultValue: 0 })
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
   @IsNumber()
-  duration: number;
+  duration?: number;
 
   @Field({ nullable: true })
   @IsOptional()
@@ -448,6 +450,16 @@ export class CreateCourseInput {
   @ValidateNested({ each: true })
   @Type(() => ContentItemInput)
   additionalContent: ContentItemInput[];
+
+  @Field({ defaultValue: false })
+  @IsOptional()
+  @IsBoolean()
+  hasLiveSessions?: boolean;
+
+  @Field({ defaultValue: false })
+  @IsOptional()
+  @IsBoolean()
+  hasRecordings?: boolean;
 }
 
 // ==============================================
@@ -576,6 +588,16 @@ export class UpdateCourseInput {
   @ValidateNested({ each: true })
   @Type(() => ContentItemInput)
   additionalContent?: ContentItemInput[];
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasLiveSessions?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasRecordings?: boolean;
 }
 
 @InputType()
@@ -665,6 +687,16 @@ export class UpdateCourseBasicInfoInput {
   @IsArray()
   @IsString({ each: true })
   marketingTags?: string[];
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasLiveSessions?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasRecordings?: boolean;
 }
 
 @InputType()
@@ -741,6 +773,16 @@ export class UpdateCourseSettingsInput {
   @ValidateNested()
   @Type(() => MarketingSettingsInput)
   marketing?: MarketingSettingsInput;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasLiveSessions?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  hasRecordings?: boolean;
 }
 
 // ==============================================
@@ -748,11 +790,73 @@ export class UpdateCourseSettingsInput {
 // ==============================================
 
 @InputType()
+export class PaginationInput {
+  @Field(() => Int, { defaultValue: 1 })
+  @IsNumber()
+  page: number;
+
+  @Field(() => Int, { defaultValue: 10 })
+  @IsNumber()
+  limit: number;
+}
+
+@InputType()
+export class PriceRangeInput {
+  @Field(() => Float, { defaultValue: 0 })
+  @IsNumber()
+  min: number;
+
+  @Field(() => Float, { defaultValue: 200 })
+  @IsNumber()
+  max: number;
+}
+
+@InputType()
 export class CourseFiltersInput {
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
   search?: string;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
+  @Field(() => PriceRangeInput, { nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PriceRangeInput)
+  priceRange?: PriceRangeInput;
+
+  @Field(() => [CourseLevel], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(CourseLevel, { each: true })
+  levels?: CourseLevel[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  durations?: string[];
+
+  @Field(() => [Float], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  ratings?: number[];
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  showFeatured?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
 
   @Field({ nullable: true })
   @IsOptional()
@@ -774,6 +878,30 @@ export class CourseFiltersInput {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+@ObjectType()
+export class PaginatedCoursesResponse {
+  @Field(() => [Course])
+  courses: Course[];
+
+  @Field(() => Int)
+  total: number;
+
+  @Field(() => Int)
+  page: number;
+
+  @Field(() => Int)
+  limit: number;
+
+  @Field(() => Int)
+  totalPages: number;
+
+  @Field(() => Boolean)
+  hasNextPage: boolean;
+
+  @Field(() => Boolean)
+  hasPreviousPage: boolean;
 }
 
 @ObjectType()

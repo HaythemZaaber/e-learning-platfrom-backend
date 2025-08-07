@@ -63,7 +63,7 @@ export class UserService {
       const user = await this.prisma.user.findUnique({
         where: { clerkId },
       });
-      return user
+      return user;
     } catch (error) {
       this.logger.error('Error finding user by clerkId:', error);
       throw error;

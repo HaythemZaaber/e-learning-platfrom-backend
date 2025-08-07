@@ -9,6 +9,7 @@ import { AppService } from './app.service';
 import { WebhookModule } from './webhooks/webhook.module';
 import { CourseModule } from './course/course.module';
 import { UploadModule } from './upload/upload.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -22,6 +23,10 @@ import { UploadModule } from './upload/upload.module';
       }),
       playground: true,
       // graphiql: true,
+    }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env', // optional if your .env is in the root
     }),
     AuthModule,
     UploadModule,

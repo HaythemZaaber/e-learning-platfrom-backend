@@ -18,18 +18,20 @@ export class UploadService {
     file: Express.Multer.File,
     metadata: {
       type: ContentType;
-    }
+    },
   ) {
     try {
       // Create organized folder structure: Uploads/{contentType}/
       const contentTypeFolder = metadata.type.toLowerCase();
       const folderPath = `${contentTypeFolder}`;
       const fileName = `${Date.now()}-${this.sanitizeFileName(file.originalname)}`;
-      
+
       const uploadResult = this.uploadFile(file, fileName, folderPath);
-      
-      const file_url = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/uploads') + 
-                      '/' + uploadResult.path.replace(/\\/g, '/');
+
+      const file_url =
+        (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/uploads') +
+        '/' +
+        uploadResult.path.replace(/\\/g, '/');
 
       return {
         success: true,
@@ -40,7 +42,7 @@ export class UploadService {
           mimetype: file.mimetype,
           uploadedAt: new Date().toISOString(),
           filePath: uploadResult.path,
-        }
+        },
       };
     } catch (error) {
       throw new Error(`Direct upload failed: ${error.message}`);
@@ -57,12 +59,12 @@ export class UploadService {
         where: {
           id: contentItemId,
           course: {
-            instructorId: userId
-          }
+            instructorId: userId,
+          },
         },
         include: {
-          course: true
-        }
+          course: true,
+        },
       });
 
       if (!contentItem) {
@@ -70,8 +72,15 @@ export class UploadService {
       }
 
       // Delete the physical file
-      if (contentItem.contentData && typeof contentItem.contentData === 'object' && 'filePath' in contentItem.contentData) {
-        const filePath = path.join(this.uploadPath, contentItem.contentData.filePath as string);
+      if (
+        contentItem.contentData &&
+        typeof contentItem.contentData === 'object' &&
+        'filePath' in contentItem.contentData
+      ) {
+        const filePath = path.join(
+          this.uploadPath,
+          contentItem.contentData.filePath as string,
+        );
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
           console.log(`File deleted: ${filePath}`);
@@ -80,7 +89,7 @@ export class UploadService {
 
       // Delete the database record
       await this.prisma.contentItem.delete({
-        where: { id: contentItemId }
+        where: { id: contentItemId },
       });
 
       return {
@@ -89,8 +98,8 @@ export class UploadService {
         deletedItem: {
           id: contentItem.id,
           title: contentItem.title,
-          fileName: contentItem.fileName
-        }
+          fileName: contentItem.fileName,
+        },
       };
     } catch (error) {
       console.error('Delete content item error:', error);
@@ -125,18 +134,17 @@ export class UploadService {
       const contentItems = await this.prisma.contentItem.findMany({
         where: {
           course: {
-            instructorId: userId
-          }
-        }
+            instructorId: userId,
+          },
+        },
       });
 
-      const contentItem = contentItems.find(item => item.fileUrl === fileUrl);
+      const contentItem = contentItems.find((item) => item.fileUrl === fileUrl);
 
       if (contentItem) {
         await this.prisma.contentItem.delete({
-          where: { id: contentItem.id }
+          where: { id: contentItem.id },
         });
-
       }
 
       // Delete the file
@@ -148,8 +156,8 @@ export class UploadService {
         message: 'File deleted successfully',
         deletedFile: {
           path: filePath,
-          size: fileSize
-        }
+          size: fileSize,
+        },
       };
     } catch (error) {
       console.error('Delete file error:', error);
@@ -165,32 +173,32 @@ export class UploadService {
       const contentItems = await this.prisma.contentItem.findMany({
         where: {
           course: {
-            instructorId: userId
-          }
+            instructorId: userId,
+          },
         },
         include: {
           course: {
             select: {
               id: true,
-              title: true
-            }
+              title: true,
+            },
           },
-          lesson: {
+          lecture: {
             select: {
               id: true,
-              title: true
-            }
-          }
+              title: true,
+            },
+          },
         },
         orderBy: {
-          createdAt: 'desc'
-        }
+          createdAt: 'desc',
+        },
       });
 
       return {
         success: true,
         contentItems,
-        count: contentItems.length
+        count: contentItems.length,
       };
     } catch (error) {
       console.error('Get user content items error:', error);
@@ -201,7 +209,11 @@ export class UploadService {
   // ============================================
   // UTILITY METHODS
   // ============================================
-  uploadFile(file: Express.Multer.File, fileName?: string, folderPath?: string) {
+  uploadFile(
+    file: Express.Multer.File,
+    fileName?: string,
+    folderPath?: string,
+  ) {
     try {
       if (!fs.existsSync(this.uploadPath)) {
         fs.mkdirSync(this.uploadPath, { recursive: true });
@@ -284,7 +296,7 @@ export class UploadService {
       courseId?: string;
       isDraft?: boolean;
       isUnsaved?: boolean;
-    } = {}
+    } = {},
   ) {
     try {
       // Extract file path from URL
@@ -305,8 +317,8 @@ export class UploadService {
           message: 'Thumbnail deleted successfully (file was already removed)',
           deletedFile: {
             path: filePath,
-            url: thumbnailUrl
-          }
+            url: thumbnailUrl,
+          },
         };
       }
 
@@ -314,14 +326,14 @@ export class UploadService {
       if (options.isUnsaved) {
         fs.unlinkSync(fullPath);
         console.log(`Unsaved thumbnail deleted: ${fullPath}`);
-        
+
         return {
           success: true,
           message: 'Unsaved thumbnail deleted successfully',
           deletedFile: {
             path: filePath,
-            url: thumbnailUrl
-          }
+            url: thumbnailUrl,
+          },
         };
       }
 
@@ -331,8 +343,8 @@ export class UploadService {
           where: {
             id: options.courseId,
             instructorId: userId,
-            status: 'DRAFT'
-          }
+            status: 'DRAFT',
+          },
         });
 
         if (!draftCourse) {
@@ -343,7 +355,7 @@ export class UploadService {
         const courseDrafts = await this.prisma.courseDraft.findMany({
           where: {
             instructorId: userId,
-          }
+          },
         });
 
         // Update each draft to remove thumbnail from draftData
@@ -352,12 +364,12 @@ export class UploadService {
           if (draftData && typeof draftData === 'object') {
             // Remove thumbnail from draftData
             delete draftData.thumbnail;
-            
+
             await this.prisma.courseDraft.update({
               where: { id: draft.id },
               data: {
-                draftData: draftData
-              }
+                draftData: draftData,
+              },
             });
           }
         }
@@ -369,7 +381,7 @@ export class UploadService {
         // Update the course to remove thumbnail reference
         await this.prisma.course.update({
           where: { id: options.courseId },
-          data: { thumbnail: null }
+          data: { thumbnail: null },
         });
 
         return {
@@ -377,8 +389,8 @@ export class UploadService {
           message: 'Draft course thumbnail deleted successfully',
           deletedFile: {
             path: filePath,
-            url: thumbnailUrl
-          }
+            url: thumbnailUrl,
+          },
         };
       }
 
@@ -387,8 +399,8 @@ export class UploadService {
         const course = await this.prisma.course.findFirst({
           where: {
             id: options.courseId,
-            instructorId: userId
-          }
+            instructorId: userId,
+          },
         });
 
         if (!course) {
@@ -400,7 +412,7 @@ export class UploadService {
           // Update the course to remove thumbnail reference
           await this.prisma.course.update({
             where: { id: options.courseId },
-            data: { thumbnail: null }
+            data: { thumbnail: null },
           });
         }
 
@@ -413,8 +425,8 @@ export class UploadService {
           message: 'Course thumbnail deleted successfully',
           deletedFile: {
             path: filePath,
-            url: thumbnailUrl
-          }
+            url: thumbnailUrl,
+          },
         };
       }
 
@@ -427,10 +439,9 @@ export class UploadService {
         message: 'Thumbnail deleted successfully',
         deletedFile: {
           path: filePath,
-          url: thumbnailUrl
-        }
+          url: thumbnailUrl,
+        },
       };
-
     } catch (error) {
       console.error('Delete course thumbnail error:', error);
       throw new Error(`Failed to delete course thumbnail: ${error.message}`);
@@ -445,37 +456,40 @@ export class UploadService {
       // Get all courses for this user
       const userCourses = await this.prisma.course.findMany({
         where: { instructorId: userId },
-        select: { id: true, thumbnail: true }
+        select: { id: true, thumbnail: true },
       });
 
       // Create a set of valid thumbnail URLs
       const validThumbnails = new Set(
-        userCourses
-          .map(course => course.thumbnail)
-          .filter(Boolean)
+        userCourses.map((course) => course.thumbnail).filter(Boolean),
       );
 
       // Scan uploads directory for orphaned thumbnail files
       const thumbnailFiles: string[] = [];
-      
+
       const scanDirectory = (dir: string) => {
         if (!fs.existsSync(dir)) return;
-        
+
         const items = fs.readdirSync(dir);
         for (const item of items) {
           const fullPath = path.join(dir, item);
           const stat = fs.statSync(fullPath);
-          
+
           if (stat.isDirectory()) {
             scanDirectory(fullPath);
           } else if (stat.isFile()) {
             // Check if it's an image file (potential thumbnail)
             const ext = path.extname(item).toLowerCase();
-            if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
+            if (
+              ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)
+            ) {
               const relativePath = path.relative(this.uploadPath, fullPath);
-              const fileUrl = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/uploads') + 
-                             '/' + relativePath.replace(/\\/g, '/');
-              
+              const fileUrl =
+                (process.env.BACKEND_ASSETS_LINK ||
+                  'http://localhost:3001/uploads') +
+                '/' +
+                relativePath.replace(/\\/g, '/');
+
               // If this file URL is not in valid thumbnails, it's orphaned
               if (!validThumbnails.has(fileUrl)) {
                 thumbnailFiles.push(fullPath);
@@ -503,12 +517,13 @@ export class UploadService {
         success: true,
         message: `Cleanup completed. Deleted ${deletedFiles.length} orphaned thumbnail files.`,
         deletedFiles,
-        totalFound: thumbnailFiles.length
+        totalFound: thumbnailFiles.length,
       };
-
     } catch (error) {
       console.error('Cleanup orphaned thumbnails error:', error);
-      throw new Error(`Failed to cleanup orphaned thumbnails: ${error.message}`);
+      throw new Error(
+        `Failed to cleanup orphaned thumbnails: ${error.message}`,
+      );
     }
   }
 }

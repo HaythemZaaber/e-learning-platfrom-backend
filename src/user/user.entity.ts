@@ -1,21 +1,19 @@
-import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
-import { UserRole } from '../../generated/prisma';
-
-registerEnumType(UserRole, {
-  name: 'UserRole',
-  description: 'The role of the user',
-});
+import { ObjectType, Field, ID, Float, Int } from '@nestjs/graphql';
+import { UserRole, Gender, LearningStyle, InstructorStatus } from '../../generated/prisma';
 
 @ObjectType()
 export class UserObject {
   @Field(() => ID)
   id: string;
 
-  @Field()
-  clerkId: string;
+  @Field({ nullable: true })
+  clerkId?: string;
 
-  @Field()
-  email: string;
+  @Field({ nullable: true })
+  email?: string;
+
+  @Field({ nullable: true })
+  username?: string;
 
   @Field({ nullable: true })
   firstName?: string;
@@ -25,6 +23,9 @@ export class UserObject {
 
   @Field({ nullable: true })
   profileImage?: string;
+
+  @Field({ nullable: true })
+  bio?: string;
 
   @Field({ nullable: true })
   phone?: string;
@@ -44,12 +45,87 @@ export class UserObject {
   @Field({ nullable: true })
   country?: string;
 
-  @Field(() => UserRole)
-  role: UserRole;
+  @Field({ nullable: true })
+  dateOfBirth?: Date;
 
-  @Field(() => Date, {nullable: true})
-  createdAt: Date | null;
+  @Field(() => Gender, { nullable: true })
+  gender?: Gender;
 
-  @Field(() => Date, {nullable: true})
-  updatedAt: Date | null;
+  @Field({ nullable: true })
+  timezone?: string;
+
+  @Field({ nullable: true })
+  locale?: string;
+
+  @Field(() => UserRole, { nullable: true })
+  role?: UserRole;
+
+  @Field({ nullable: true })
+  title?: string;
+
+  @Field({ nullable: true })
+  isEmailVerified?: boolean;
+
+  @Field({ nullable: true })
+  isPhoneVerified?: boolean;
+
+  @Field(() => InstructorStatus, { nullable: true })
+  instructorStatus?: InstructorStatus;
+
+  @Field({ nullable: true })
+  instructorBio?: string;
+
+  @Field(() => [String], { nullable: true })
+  expertise?: string[];
+
+  @Field(() => [String], { nullable: true })
+  qualifications?: string[];
+
+  @Field(() => Int, { nullable: true })
+  experience?: number;
+
+  @Field(() => Float, { nullable: true })
+  teachingRating?: number;
+
+  @Field(() => Int, { nullable: true })
+  totalStudents?: number;
+
+  @Field(() => Int, { nullable: true })
+  totalCourses?: number;
+
+  @Field(() => LearningStyle, { nullable: true })
+  learningStyle?: LearningStyle;
+
+  @Field(() => [String], { nullable: true })
+  preferredLanguages?: string[];
+
+  @Field(() => [String], { nullable: true })
+  skillTags?: string[];
+
+  @Field({ nullable: true })
+  lastLoginAt?: Date;
+
+  @Field({ nullable: true })
+  isActive?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  rating?: number;
+
+  @Field(() => Int, { nullable: true })
+  totalPoints?: number;
+
+  @Field(() => Int, { nullable: true })
+  currentStreak?: number;
+
+  @Field(() => Int, { nullable: true })
+  longestStreak?: number;
+
+  @Field(() => [String], { nullable: true })
+  achievements?: string[];
+
+  @Field({ nullable: true })
+  createdAt?: Date;
+
+  @Field({ nullable: true })
+  updatedAt?: Date;
 }

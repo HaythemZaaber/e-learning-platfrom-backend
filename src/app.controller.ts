@@ -1,4 +1,9 @@
-import { Controller, Get, Headers, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Headers,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { ClerkService } from './auth/clerk.service';
 
@@ -35,12 +40,14 @@ export class AppController {
       return {
         success: true,
         sessionToken,
-        user: user ? {
-          id: user.id,
-          email: user.emailAddresses?.[0]?.emailAddress,
-          firstName: user.firstName,
-          lastName: user.lastName,
-        } : null,
+        user: user
+          ? {
+              id: user.id,
+              email: user.emailAddresses?.[0]?.emailAddress,
+              firstName: user.firstName,
+              lastName: user.lastName,
+            }
+          : null,
       };
     } catch (error) {
       console.error('Debug error:', error);

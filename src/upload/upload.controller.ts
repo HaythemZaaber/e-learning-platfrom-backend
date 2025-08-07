@@ -36,7 +36,8 @@ export class UploadController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
-          fileType: /^(video\/mp4|video\/webm|video\/quicktime|video\/x-msvideo)$/i,
+          fileType:
+            /^(video\/mp4|video\/webm|video\/quicktime|video\/x-msvideo)$/i,
         })
         .addMaxSizeValidator({
           maxSize: 1024 * 1024 * 500, // 500MB
@@ -62,7 +63,8 @@ export class UploadController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
-          fileType: /^(image\/jpeg|image\/png|image\/gif|image\/webp|image\/bmp)$/i,
+          fileType:
+            /^(image\/jpeg|image\/png|image\/gif|image\/webp|image\/bmp)$/i,
         })
         .addMaxSizeValidator({
           maxSize: 1024 * 1024 * 10, // 10MB
@@ -88,7 +90,8 @@ export class UploadController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
-          fileType: /^(application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain)$/i,
+          fileType:
+            /^(application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain)$/i,
         })
         .addMaxSizeValidator({
           maxSize: 1024 * 1024 * 50, // 50MB
@@ -97,7 +100,6 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-    
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -124,7 +126,6 @@ export class UploadController {
     )
     file: Express.Multer.File,
     @Body('title') title: string,
-   
   ) {
     if (!title) {
       throw new BadRequestException('Title is required');
@@ -142,7 +143,8 @@ export class UploadController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
-          fileType: /^(application\/zip|application\/x-rar-compressed|application\/x-7z-compressed|application\/x-tar|application\/gzip)$/i,
+          fileType:
+            /^(application\/zip|application\/x-rar-compressed|application\/x-7z-compressed|application\/x-tar|application\/gzip)$/i,
         })
         .addMaxSizeValidator({
           maxSize: 1024 * 1024 * 100, // 100MB
@@ -221,7 +223,7 @@ export class UploadController {
     if (!data.fileUrl) {
       throw new BadRequestException('File URL is required');
     }
-    
+
     // Decode the base64 encoded file URL
     //  const fileUrl = Buffer.from(encodedFileUrl, 'base64').toString('utf-8');
     console.log('user.id', user.id);
@@ -244,7 +246,7 @@ export class UploadController {
     }
 
     return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
-      isUnsaved: true
+      isUnsaved: true,
     });
   }
 
@@ -265,7 +267,7 @@ export class UploadController {
 
     return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
       courseId,
-      isDraft: true
+      isDraft: true,
     });
   }
 
@@ -285,7 +287,7 @@ export class UploadController {
     }
 
     return this.uploadService.deleteCourseThumbnail(thumbnailUrl, user.id, {
-      courseId
+      courseId,
     });
   }
 
@@ -328,10 +330,16 @@ export class UploadController {
     @Body('fileName') fileName?: string,
     @Body('folderPath') folderPath?: string,
   ) {
-    const uploadResult = this.uploadService.uploadFile(file, fileName, folderPath);
-    
-    const file_url = (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/public') +
-                    '/' + uploadResult.path.replace(/\\/g, '/');
+    const uploadResult = this.uploadService.uploadFile(
+      file,
+      fileName,
+      folderPath,
+    );
+
+    const file_url =
+      (process.env.BACKEND_ASSETS_LINK || 'http://localhost:3001/public') +
+      '/' +
+      uploadResult.path.replace(/\\/g, '/');
 
     return {
       file_url,
@@ -341,6 +349,4 @@ export class UploadController {
       uploadedAt: new Date().toISOString(),
     };
   }
-
-  
 }
