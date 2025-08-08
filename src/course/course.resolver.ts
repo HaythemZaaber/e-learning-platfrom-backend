@@ -5,6 +5,12 @@ import {
   Course,
   CourseCreationResponse,
   CourseShareResponse,
+  CoursePreview,
+  LecturePreview,
+  CourseProgress,
+  LectureAnalytics,
+  CourseNavigation,
+  CourseAnalyticsResponse,
 } from './entities/course.entity';
 import {
   CreateCourseInput,
@@ -21,6 +27,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../../generated/prisma';
+import { GraphQLJSON } from 'graphql-type-json';
 
 @Resolver(() => Course)
 @UseGuards(AuthGuard, RolesGuard)
@@ -409,5 +416,408 @@ export class CourseResolver {
     @Args('limit', { nullable: true }) limit?: number,
   ) {
     return this.courseService.getTrendingCourses(limit);
+  }
+
+  // ============================================
+  // COURSE PREVIEW AND LECTURE QUERIES
+  // ============================================
+
+  @Query(() => CoursePreview, { name: 'getCoursePreview' })
+  async getCoursePreview(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context?.req?.user;
+    return this.courseService.getCoursePreview(courseId, user?.id);
+  }
+
+  @Query(() => LecturePreview, { name: 'getLecturePreview' })
+  async getLecturePreview(
+    @Args('courseId') courseId: string,
+    @Args('lectureId') lectureId: string,
+    @Context() context: any,
+  ) {
+    const user = context?.req?.user;
+    return this.courseService.getLecturePreview(courseId, lectureId, user?.id);
+  }
+
+  @Query(() => CourseProgress, { name: 'getCourseProgress' })
+  async getCourseProgress(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getCourseProgress(courseId, user.id);
+  }
+
+  @Query(() => LectureAnalytics, { name: 'getLectureAnalytics' })
+  async getLectureAnalytics(
+    @Args('lectureId') lectureId: string,
+  ) {
+    return this.courseService.getLectureAnalytics(lectureId);
+  }
+
+  @Query(() => CourseNavigation, { name: 'getCourseNavigation' })
+  async getCourseNavigation(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context?.req?.user;
+    return this.courseService.getCourseNavigation(courseId, user?.id);
+  }
+
+  @Query(() => CourseAnalyticsResponse, { name: 'courseAnalytics' })
+  async getCourseAnalytics(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getCourseAnalytics(courseId, user.id);
+  }
+
+  // ============================================
+  // LECTURE TRACKING AND INTERACTIONS
+  // ============================================
+
+  @Mutation(() => GraphQLJSON, { name: 'trackLectureView' })
+  async trackLectureView(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.trackLectureView(lectureId, courseId, user.id);
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'markLectureComplete' })
+  async markLectureComplete(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('progress') progress: number,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.markLectureComplete(lectureId, courseId, user.id, progress);
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'updateLectureProgress' })
+  async updateLectureProgress(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('progress') progress: number,
+    @Args('timeSpent') timeSpent: number,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.updateLectureProgress(lectureId, courseId, user.id, progress, timeSpent);
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'trackLectureInteraction' })
+  async trackLectureInteraction(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('interactionType') interactionType: string,
+    @Context() context: any,
+    @Args('metadata', { nullable: true, type: () => GraphQLJSON }) metadata?: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.trackLectureInteraction(lectureId, courseId, user.id, interactionType, metadata);
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'submitLectureQuiz' })
+  async submitLectureQuiz(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('answers', { type: () => [GraphQLJSON] }) answers: any[],
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement quiz submission logic
+    return {
+      success: true,
+      message: 'Quiz submitted successfully',
+      score: 85,
+      totalQuestions: 10,
+      correctAnswers: 8,
+      feedback: 'Great job!',
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'downloadLectureResource' })
+  async downloadLectureResource(
+    @Args('resourceId') resourceId: string,
+    @Args('lectureId') lectureId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement resource download logic
+    return {
+      success: true,
+      message: 'Resource download started',
+      downloadUrl: `https://example.com/download/${resourceId}`,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'toggleLectureBookmark' })
+  async toggleLectureBookmark(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement bookmark toggle logic
+    return {
+      success: true,
+      message: 'Bookmark toggled successfully',
+      isBookmarked: true,
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'addLectureNote' })
+  async addLectureNote(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('content') content: string,
+    @Context() context: any,
+    @Args('timestamp', { nullable: true }) timestamp?: number,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement note creation logic
+    return {
+      success: true,
+      message: 'Note added successfully',
+      note: {
+        id: 'note-123',
+        content,
+        timestamp,
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'updateLectureNote' })
+  async updateLectureNote(
+    @Args('noteId') noteId: string,
+    @Args('content') content: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement note update logic
+    return {
+      success: true,
+      message: 'Note updated successfully',
+      note: {
+        id: noteId,
+        content,
+        timestamp: 120.5,
+        updatedAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'deleteLectureNote' })
+  async deleteLectureNote(
+    @Args('noteId') noteId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement note deletion logic
+    return {
+      success: true,
+      message: 'Note deleted successfully',
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'rateLecture' })
+  async rateLecture(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('rating') rating: number,
+    @Context() context: any,
+    @Args('feedback', { nullable: true }) feedback?: string,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement lecture rating logic
+    return {
+      success: true,
+      message: 'Lecture rated successfully',
+      rating: {
+        id: 'rating-123',
+        rating,
+        feedback,
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'reportLectureIssue' })
+  async reportLectureIssue(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('issueType') issueType: string,
+    @Args('description') description: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement issue reporting logic
+    return {
+      success: true,
+      message: 'Issue reported successfully',
+      report: {
+        id: 'report-123',
+        issueType,
+        description,
+        status: 'PENDING',
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'requestLectureAccess' })
+  async requestLectureAccess(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+    @Args('reason', { nullable: true }) reason?: string,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement access request logic
+    return {
+      success: true,
+      message: 'Access request submitted successfully',
+      request: {
+        id: 'request-123',
+        status: 'PENDING',
+        reason,
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'shareLecture' })
+  async shareLecture(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('platform') platform: string,
+    @Context() context: any,
+    @Args('message', { nullable: true }) message?: string,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement lecture sharing logic
+    return {
+      success: true,
+      message: 'Lecture shared successfully',
+      shareUrl: `https://example.com/share/${lectureId}`,
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'getLectureTranscript' })
+  async getLectureTranscript(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement transcript generation logic
+    return {
+      success: true,
+      message: 'Transcript generated successfully',
+      transcript: {
+        id: 'transcript-123',
+        content: 'This is the transcript content...',
+        language: 'en',
+        timestamps: {},
+        accuracy: 0.95,
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'generateLectureSummary' })
+  async generateLectureSummary(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement summary generation logic
+    return {
+      success: true,
+      message: 'Summary generated successfully',
+      summary: {
+        id: 'summary-123',
+        content: 'This is the lecture summary...',
+        keyPoints: ['Point 1', 'Point 2', 'Point 3'],
+        difficulty: 3.5,
+        estimatedReadingTime: 5,
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'createLectureDiscussion' })
+  async createLectureDiscussion(
+    @Args('lectureId') lectureId: string,
+    @Args('courseId') courseId: string,
+    @Args('title') title: string,
+    @Args('content') content: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement discussion creation logic
+    return {
+      success: true,
+      message: 'Discussion created successfully',
+      discussion: {
+        id: 'discussion-123',
+        title,
+        content,
+        author: {
+          id: user.id,
+          username: user.username,
+          profileImage: user.profileImage,
+        },
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
+  }
+
+  @Mutation(() => GraphQLJSON, { name: 'replyToLectureDiscussion' })
+  async replyToLectureDiscussion(
+    @Args('discussionId') discussionId: string,
+    @Args('content') content: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    // TODO: Implement discussion reply logic
+    return {
+      success: true,
+      message: 'Reply posted successfully',
+      reply: {
+        id: 'reply-123',
+        content,
+        author: {
+          id: user.id,
+          username: user.username,
+          profileImage: user.profileImage,
+        },
+        createdAt: new Date(),
+      },
+      errors: [],
+    };
   }
 }

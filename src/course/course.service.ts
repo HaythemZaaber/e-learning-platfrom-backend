@@ -3405,4 +3405,691 @@ export class CourseService {
       };
     }
   }
+
+  // ============================================
+  // COURSE PREVIEW AND LECTURE FUNCTIONALITY
+  // ============================================
+
+  async getCoursePreview(courseId: string, userId?: string) {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          instructor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              email: true,
+              profileImage: true,
+              instructorBio: true,
+              expertise: true,
+            },
+          },
+          sections: {
+            include: {
+              lectures: {
+                include: {
+                  contentItem: true,
+                },
+                orderBy: { order: 'asc' },
+              },
+            },
+            orderBy: { order: 'asc' },
+          },
+          reviews: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  profileImage: true,
+                },
+              },
+            },
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+          },
+          enrollments: userId ? {
+            where: { userId },
+            take: 1,
+          } : undefined,
+        },
+      });
+
+      if (!course) {
+        throw new NotFoundException('Course not found');
+      }
+
+      // Check if user is enrolled
+      let enrollment: any = null;
+      let progress: any = null;
+      if (userId) {
+        enrollment = course.enrollments?.[0] || null;
+        if (enrollment) {
+          progress = await this.getCourseProgress(courseId, userId);
+        }
+      }
+
+      const result = {
+        ...course,
+        enrollment: enrollment ? {
+          id: enrollment.id,
+          status: enrollment.status,
+          progress: enrollment.progress,
+          currentLessonId: enrollment.currentLectureId,
+          lastAccessedAt: enrollment.lastAccessedAt,
+          completedAt: enrollment.completedAt,
+        } : undefined,
+        progress: progress || undefined,
+      };
+
+      return result;
+    } catch (error) {
+      throw new BadRequestException(`Failed to get course preview: ${error.message}`);
+    }
+  }
+
+  async getLecturePreview(courseId: string, lectureId: string, userId?: string) {
+    try {
+      const lecture = await this.prisma.lecture.findFirst({
+        where: {
+          id: lectureId,
+          section: {
+            courseId: courseId,
+          },
+        },
+        include: {
+          contentItem: true,
+          section: {
+            include: {
+              course: {
+                include: {
+                  instructor: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      username: true,
+                      profileImage: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
+      }
+
+      // Get navigation info
+      const [previousLecture, nextLecture] = await Promise.all([
+        this.getPreviousLecture(lectureId, courseId),
+        this.getNextLecture(lectureId, courseId),
+      ]);
+
+      // Check if user has completed this lecture
+      let isCompleted = false;
+      if (userId) {
+        const progress = await this.prisma.progress.findUnique({
+          where: {
+            userId_courseId_lectureId: {
+              userId,
+              courseId,
+              lectureId,
+            },
+          },
+        });
+        isCompleted = progress?.completed || false;
+      }
+
+      return {
+        ...lecture,
+        isCompleted,
+        isLocked: this.isLectureLocked(lecture, userId),
+        previousLecture,
+        nextLecture,
+        course: {
+          id: lecture.section.course.id,
+          title: lecture.section.course.title,
+          instructor: lecture.section.course.instructor,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get lecture preview: ${error.message}`);
+    }
+  }
+
+  async getCourseProgress(courseId: string, userId: string) {
+    try {
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+      });
+
+      if (!enrollment) {
+        throw new NotFoundException('User not enrolled in this course');
+      }
+
+      const progress = await this.prisma.progress.findMany({
+        where: {
+          userId,
+          course: { id: courseId },
+        },
+        include: {
+          lecture: {
+            include: {
+              section: true,
+            },
+          },
+        },
+      });
+
+      const totalLectures = await this.prisma.lecture.count({
+        where: {
+          section: { courseId },
+        },
+      });
+
+      const completedLectures = progress.filter(p => p.completed).length;
+      const completedSections = new Set(
+        progress.filter(p => p.completed && p.lecture).map(p => p.lecture!.sectionId)
+      ).size;
+
+      const totalTimeSpent = progress.reduce((sum, p) => sum + p.timeSpent, 0);
+      const watchTime = progress.reduce((sum, p) => sum + (p.watchTime || 0), 0);
+
+      const lastWatchedLecture = progress
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .find(p => p.timeSpent > 0)?.lectureId;
+
+      return {
+        completedLectures,
+        totalLectures,
+        completedSections,
+        lastWatchedLecture,
+        timeSpent: Math.round(totalTimeSpent / 60), // Convert to minutes
+        completionPercentage: totalLectures > 0 ? (completedLectures / totalLectures) * 100 : 0,
+        certificateEarned: enrollment.certificateEarned || false,
+        watchTime,
+        interactions: {}, // TODO: Implement interactions tracking
+        currentLessonId: enrollment.currentLectureId,
+        streakDays: enrollment.streakDays || 0,
+        lastAccessedAt: enrollment.lastAccessedAt,
+        difficultyRating: null, // TODO: Implement difficulty rating
+        aiRecommendations: null, // TODO: Implement AI recommendations
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get course progress: ${error.message}`);
+    }
+  }
+
+  async getLectureAnalytics(lectureId: string) {
+    try {
+      const progress = await this.prisma.progress.findMany({
+        where: { lectureId },
+      });
+
+      const totalViews = progress.length;
+      const uniqueViews = new Set(progress.map(p => p.userId)).size;
+      const averageWatchTime = progress.length > 0 
+        ? progress.reduce((sum, p) => sum + (p.watchTime || 0), 0) / progress.length 
+        : 0;
+      const completionRate = progress.length > 0 
+        ? (progress.filter(p => p.completed).length / progress.length) * 100 
+        : 0;
+
+      // TODO: Implement more sophisticated analytics
+      const engagementRate = completionRate * 0.8; // Placeholder calculation
+
+      return {
+        totalViews,
+        uniqueViews,
+        averageWatchTime,
+        completionRate,
+        engagementRate,
+        dropOffPoints: [], // TODO: Implement drop-off analysis
+        popularSegments: [], // TODO: Implement segment analysis
+        userInteractions: [], // TODO: Implement interaction tracking
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get lecture analytics: ${error.message}`);
+    }
+  }
+
+  async getCourseNavigation(courseId: string, userId?: string) {
+    try {
+      const sections = await this.prisma.section.findMany({
+        where: { courseId },
+        include: {
+          lectures: {
+            include: {
+              contentItem: true,
+            },
+            orderBy: { order: 'asc' },
+          },
+        },
+        orderBy: { order: 'asc' },
+      });
+
+      let progress: any = null;
+      let currentSection: string | null = null;
+      let currentLecture: string | null = null;
+
+      if (userId) {
+        progress = await this.getCourseProgress(courseId, userId);
+        
+        // Find current lecture
+        const enrollment = await this.prisma.enrollment.findUnique({
+          where: {
+            userId_courseId: { userId, courseId },
+          },
+        });
+
+        if (enrollment?.currentLectureId) {
+          const currentLectureData = await this.prisma.lecture.findUnique({
+            where: { id: enrollment.currentLectureId },
+            include: { section: true },
+          });
+
+          if (currentLectureData) {
+            currentSection = currentLectureData.sectionId;
+            currentLecture = enrollment.currentLectureId;
+          }
+        }
+      }
+
+      // Add computed fields to sections
+      const sectionsWithComputed = sections.map(section => ({
+        ...section,
+        totalLectures: section.lectures.length,
+        totalDuration: section.lectures.reduce((sum, lecture) => sum + lecture.duration, 0),
+        completionRate: 0, // TODO: Calculate based on user progress
+      }));
+
+      return {
+        sections: sectionsWithComputed,
+        currentSection,
+        currentLecture,
+        progress,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get course navigation: ${error.message}`);
+    }
+  }
+
+  // ============================================
+  // LECTURE TRACKING AND INTERACTIONS
+  // ============================================
+
+  async trackLectureView(lectureId: string, courseId: string, userId: string) {
+    try {
+      // Verify user is enrolled
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (!enrollment) {
+        throw new ForbiddenException('User not enrolled in this course');
+      }
+
+      // Update or create progress record
+      await this.prisma.progress.upsert({
+        where: {
+          userId_courseId_lectureId: { userId, courseId, lectureId },
+        },
+        update: {
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          lectureId,
+          courseId,
+          completed: false,
+          timeSpent: 0,
+          watchTime: 0,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Lecture view tracked successfully',
+        errors: [],
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to track lecture view: ${error.message}`);
+    }
+  }
+
+  async markLectureComplete(lectureId: string, courseId: string, userId: string, progress: number) {
+    try {
+      // Verify user is enrolled
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (!enrollment) {
+        throw new ForbiddenException('User not enrolled in this course');
+      }
+
+      // Update progress
+      const progressRecord = await this.prisma.progress.upsert({
+        where: {
+          userId_courseId_lectureId: { userId, courseId, lectureId },
+        },
+        update: {
+          completed: progress >= 100,
+          completedAt: progress >= 100 ? new Date() : null,
+          progress: progress / 100,
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          lectureId,
+          courseId,
+          completed: progress >= 100,
+          completedAt: progress >= 100 ? new Date() : null,
+          progress: progress / 100,
+          timeSpent: 0,
+          watchTime: 0,
+        },
+      });
+
+      // Update enrollment progress
+      const totalLectures = await this.prisma.lecture.count({
+        where: {
+          section: { courseId },
+        },
+      });
+
+      const completedLectures = await this.prisma.progress.count({
+        where: {
+          userId,
+          courseId,
+          completed: true,
+        },
+      });
+
+      const overallProgress = totalLectures > 0 ? (completedLectures / totalLectures) * 100 : 0;
+
+      await this.prisma.enrollment.update({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+        data: {
+          progress: overallProgress,
+          currentLectureId: lectureId,
+          lastAccessedAt: new Date(),
+          completedLectures,
+          totalLectures,
+        },
+      });
+
+      const updatedProgress = await this.getCourseProgress(courseId, userId);
+
+      return {
+        success: true,
+        message: 'Lecture progress updated successfully',
+        progress: updatedProgress,
+        errors: [],
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to mark lecture complete: ${error.message}`);
+    }
+  }
+
+  async updateLectureProgress(lectureId: string, courseId: string, userId: string, progress: number, timeSpent: number) {
+    try {
+      // Verify user is enrolled
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (!enrollment) {
+        throw new ForbiddenException('User not enrolled in this course');
+      }
+
+      // Update progress
+      await this.prisma.progress.upsert({
+        where: {
+          userId_courseId_lectureId: { userId, courseId, lectureId },
+        },
+        update: {
+          completed: progress >= 100,
+          completedAt: progress >= 100 ? new Date() : null,
+          progress: progress / 100,
+          timeSpent: Math.round(timeSpent * 60), // Convert to seconds
+          watchTime: Math.round(timeSpent * 60), // Convert to seconds
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          lectureId,
+          courseId,
+          completed: progress >= 100,
+          completedAt: progress >= 100 ? new Date() : null,
+          progress: progress / 100,
+          timeSpent: Math.round(timeSpent * 60),
+          watchTime: Math.round(timeSpent * 60),
+        },
+      });
+
+      // Update enrollment
+      await this.prisma.enrollment.update({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+        data: {
+          currentLectureId: lectureId,
+          lastAccessedAt: new Date(),
+          totalTimeSpent: {
+            increment: Math.round(timeSpent),
+          },
+        },
+      });
+
+      const updatedProgress = await this.getCourseProgress(courseId, userId);
+
+      return {
+        success: true,
+        message: 'Lecture progress updated successfully',
+        progress: updatedProgress,
+        errors: [],
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to update lecture progress: ${error.message}`);
+    }
+  }
+
+  async trackLectureInteraction(lectureId: string, courseId: string, userId: string, interactionType: string, metadata?: any) {
+    try {
+      // Verify user is enrolled
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (!enrollment) {
+        throw new ForbiddenException('User not enrolled in this course');
+      }
+
+      // Update progress with interaction
+      await this.prisma.progress.upsert({
+        where: {
+          userId_courseId_lectureId: { userId, courseId, lectureId },
+        },
+        update: {
+          interactions: {
+            ...metadata,
+            [interactionType]: {
+              count: { increment: 1 },
+              lastInteraction: new Date(),
+            },
+          },
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          lectureId,
+          courseId,
+          interactions: {
+            [interactionType]: {
+              count: 1,
+              lastInteraction: new Date(),
+            },
+          },
+          completed: false,
+          timeSpent: 0,
+          watchTime: 0,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Lecture interaction tracked successfully',
+        errors: [],
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to track lecture interaction: ${error.message}`);
+    }
+  }
+
+  // ============================================
+  // UTILITY METHODS
+  // ============================================
+
+  private async getPreviousLecture(lectureId: string, courseId: string) {
+    const currentLecture = await this.prisma.lecture.findUnique({
+      where: { id: lectureId },
+      include: { section: true },
+    });
+
+    if (!currentLecture) return null;
+
+    const previousLecture = await this.prisma.lecture.findFirst({
+      where: {
+        section: { courseId },
+        order: { lt: currentLecture.order },
+        sectionId: currentLecture.sectionId,
+      },
+      orderBy: { order: 'desc' },
+      take: 1,
+    });
+
+    if (previousLecture) {
+      return {
+        id: previousLecture.id,
+        title: previousLecture.title,
+        type: previousLecture.type,
+        isLocked: this.isLectureLocked(previousLecture),
+        isCompleted: false, // TODO: Check user completion
+      };
+    }
+
+    // Check previous section
+    const previousSection = await this.prisma.section.findFirst({
+      where: {
+        courseId,
+        order: { lt: currentLecture.section.order },
+      },
+      orderBy: { order: 'desc' },
+      take: 1,
+      include: {
+        lectures: {
+          orderBy: { order: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (previousSection?.lectures?.[0]) {
+      return {
+        id: previousSection.lectures[0].id,
+        title: previousSection.lectures[0].title,
+        type: previousSection.lectures[0].type,
+        isLocked: this.isLectureLocked(previousSection.lectures[0]),
+        isCompleted: false,
+      };
+    }
+
+    return null;
+  }
+
+  private async getNextLecture(lectureId: string, courseId: string) {
+    const currentLecture = await this.prisma.lecture.findUnique({
+      where: { id: lectureId },
+      include: { section: true },
+    });
+
+    if (!currentLecture) return null;
+
+    const nextLecture = await this.prisma.lecture.findFirst({
+      where: {
+        section: { courseId },
+        order: { gt: currentLecture.order },
+        sectionId: currentLecture.sectionId,
+      },
+      orderBy: { order: 'asc' },
+      take: 1,
+    });
+
+    if (nextLecture) {
+      return {
+        id: nextLecture.id,
+        title: nextLecture.title,
+        type: nextLecture.type,
+        isLocked: this.isLectureLocked(nextLecture),
+        isCompleted: false,
+      };
+    }
+
+    // Check next section
+    const nextSection = await this.prisma.section.findFirst({
+      where: {
+        courseId,
+        order: { gt: currentLecture.section.order },
+      },
+      orderBy: { order: 'asc' },
+      take: 1,
+      include: {
+        lectures: {
+          orderBy: { order: 'asc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (nextSection?.lectures?.[0]) {
+      return {
+        id: nextSection.lectures[0].id,
+        title: nextSection.lectures[0].title,
+        type: nextSection.lectures[0].type,
+        isLocked: this.isLectureLocked(nextSection.lectures[0]),
+        isCompleted: false,
+      };
+    }
+
+    return null;
+  }
+
+  private isLectureLocked(lecture: any, userId?: string): boolean {
+    // TODO: Implement proper locking logic based on course settings
+    return false;
+  }
 }

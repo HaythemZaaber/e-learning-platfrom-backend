@@ -8,6 +8,9 @@ import {
   IsEnum,
   ValidateNested,
   IsUrl,
+  IsNotEmpty,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -941,4 +944,268 @@ export class CourseDraftResponse {
 
   @Field(() => Int, { nullable: true })
   completionScore?: number;
+}
+
+@InputType()
+export class QuizAnswerInput {
+  @Field()
+  @IsString()
+  questionId: string;
+
+  @Field(() => GraphQLJSON)
+  @IsNotEmpty()
+  answer: any;
+}
+
+@InputType()
+export class LectureInteractionInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field()
+  @IsString()
+  interactionType: string;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  @IsOptional()
+  metadata?: any;
+}
+
+@InputType()
+export class LectureProgressInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field(() => Float)
+  @IsNumber()
+  progress: number;
+
+  @Field(() => Float)
+  @IsNumber()
+  timeSpent: number;
+}
+
+@InputType()
+export class LectureCompletionInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field(() => Float)
+  @IsNumber()
+  progress: number;
+}
+
+@InputType()
+export class LectureViewInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+}
+
+@InputType()
+export class ResourceDownloadInput {
+  @Field()
+  @IsString()
+  resourceId: string;
+
+  @Field()
+  @IsString()
+  lectureId: string;
+}
+
+@InputType()
+export class LectureBookmarkInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+}
+
+@InputType()
+export class LectureNoteInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field()
+  @IsString()
+  content: string;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  timestamp?: number;
+}
+
+@InputType()
+export class NoteUpdateInput {
+  @Field()
+  @IsString()
+  noteId: string;
+
+  @Field()
+  @IsString()
+  content: string;
+}
+
+@InputType()
+export class NoteDeleteInput {
+  @Field()
+  @IsString()
+  noteId: string;
+}
+
+@InputType()
+export class LectureRatingInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field(() => Int)
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  rating: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  feedback?: string;
+}
+
+@InputType()
+export class LectureIssueInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field()
+  @IsString()
+  issueType: string;
+
+  @Field()
+  @IsString()
+  description: string;
+}
+
+@InputType()
+export class LectureAccessInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+@InputType()
+export class LectureShareInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field()
+  @IsString()
+  platform: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  message?: string;
+}
+
+@InputType()
+export class LectureTranscriptInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+}
+
+@InputType()
+export class LectureSummaryInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+}
+
+@InputType()
+export class LectureDiscussionInput {
+  @Field()
+  @IsString()
+  lectureId: string;
+
+  @Field()
+  @IsString()
+  courseId: string;
+
+  @Field()
+  @IsString()
+  title: string;
+
+  @Field()
+  @IsString()
+  content: string;
+}
+
+@InputType()
+export class DiscussionReplyInput {
+  @Field()
+  @IsString()
+  discussionId: string;
+
+  @Field()
+  @IsString()
+  content: string;
 }

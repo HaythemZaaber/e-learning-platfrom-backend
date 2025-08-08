@@ -6,6 +6,8 @@ generator client {
   output   = "../generated/prisma"
 }
 
+/// @seed="ts-node prisma/seed.ts"
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -67,6 +69,13 @@ model User {
   longestStreak Int      @default(0)
   achievements  String[] @default([])
 
+  // Analytics fields
+  totalTimeSpent        Int       @default(0) // in minutes
+  totalCoursesEnrolled  Int       @default(0)
+  totalCoursesCompleted Int       @default(0)
+  averageCompletionRate Float     @default(0)
+  lastActivityAt        DateTime?
+
   // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -87,6 +96,9 @@ model User {
   lectureNotes          LectureNote[]
   quizAttempts          QuizAttempt[]
   assignments           AssignmentSubmission[]
+  lectureRatings        LectureRating[]
+  lectureIssues         LectureIssue[]
+  lectureAccessRequests LectureAccessRequest[]
 
   @@map("users")
 }
@@ -272,20 +284,19 @@ model Course {
   quizzes        Quiz[]
   assignments    Assignment[]
   announcements  CourseAnnouncement[]
+  analytics      CourseAnalytics?
 
   @@map("courses")
 }
 
 model Section {
-  id          String  @id @default(cuid())
-  title       String
-  description String?
-  order       Int     @default(0)
-  isLocked    Boolean @default(false)
-
-  // Enhanced section features
-  estimatedDuration Int     @default(0) // in minutes
+  id                String  @id @default(cuid())
+  title             String
+  description       String?
+  order             Int     @default(0)
+  isLocked          Boolean @default(false)
   isRequired        Boolean @default(true)
+  estimatedDuration Int     @default(0) // in minutes
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -311,6 +322,8 @@ model Lecture {
   isPreview     Boolean @default(false)
   isInteractive Boolean @default(false)
   isRequired    Boolean @default(true)
+  isLocked      Boolean @default(false)
+  isCompleted   Boolean @default(false)
 
   // Video-specific fields
   videoUrl      String?
@@ -335,46 +348,46 @@ model Lecture {
   downloadable   Boolean @default(false)
   offlineContent String? // Offline package URL
 
+  // Status tracking
+  status String? // "draft", "published", "archived"
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relationships
-  sectionId   String
-  section     Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  progress    Progress[]
-  discussions Discussion[]
-  contentItem ContentItem?
-  notes       LectureNote[]
+  sectionId      String
+  section        Section                @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress       Progress[]
+  discussions    Discussion[]
+  contentItem    ContentItem?
+  notes          LectureNote[]
+  resources      LectureResource[]
+  ratings        LectureRating[]
+  issues         LectureIssue[]
+  accessRequests LectureAccessRequest[]
+  transcripts    LectureTranscript[]
+  summaries      LectureSummary[]
+  analytics      LectureAnalytics?
 
   @@map("lectures")
 }
 
 model ContentItem {
-  id          String      @id @default(cuid())
-  title       String
-  description String?
-  type        ContentType
-
-  // File information
-  fileUrl  String?
-  fileName String?
-  fileSize Int? // in bytes
-  mimeType String?
-
-  // Enhanced content data
-  contentData Json @default("{}")
-
-  // Versioning
-  version  String  @default("1.0")
-  checksum String? // For file integrity
-
-  // Metadata
-  isPublished Boolean @default(false)
-  order       Int     @default(0)
-
-  // Access control
-  isDownloadable Boolean @default(true)
-  requiresAuth   Boolean @default(false)
+  id             String      @id @default(cuid())
+  title          String
+  description    String?
+  type           ContentType
+  fileUrl        String?
+  fileName       String?
+  fileSize       Int? // in bytes
+  mimeType       String?
+  contentData    Json        @default("{}")
+  version        String?
+  checksum       String?
+  order          Int         @default(0)
+  isPublished    Boolean     @default(false)
+  isDownloadable Boolean     @default(true)
+  requiresAuth   Boolean     @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -557,6 +570,16 @@ model Enrollment {
   certificateEarned   Boolean   @default(false)
   certificateEarnedAt DateTime?
 
+  // Additional fields from GraphQL queries
+  type                 EnrollmentType   @default(FREE)
+  source               EnrollmentSource @default(DIRECT)
+  amount               Float            @default(0)
+  currency             String           @default("USD")
+  paidAt               DateTime?
+  expiresAt            DateTime?
+  notes                String?
+  completionPercentage Float            @default(0)
+
   // Relationships
   userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -568,33 +591,45 @@ model Enrollment {
 }
 
 model Progress {
-  id          String    @id @default(cuid())
-  completed   Boolean   @default(false)
-  completedAt DateTime?
-  timeSpent   Int       @default(0) // in seconds
-  attempts    Int       @default(0)
-  score       Float?
+  id        String  @id @default(cuid())
+  userId    String
+  courseId  String
+  lectureId String?
+  sectionId String?
 
-  // Enhanced progress tracking
-  watchTime    Int  @default(0) // in seconds for videos
-  interactions Json @default("{}") // Track interactions
+  // Progress tracking
+  progress  Float   @default(0) // 0.0-1.0
+  completed Boolean @default(false)
+  watchTime Int     @default(0) // in seconds
+  timeSpent Int     @default(0) // in minutes
 
-  // AI Insights
-  difficultyRating  Float? // User's perceived difficulty (1-5)
-  aiRecommendations String?
+  // Additional tracking
+  lastWatchedAt DateTime?
+  completedAt   DateTime?
+  streakDays    Int       @default(0)
+
+  // Interaction tracking
+  interactions      Json    @default("{}") // Track user interactions
+  difficultyRating  Float? // User's rating of difficulty
+  aiRecommendations String? // AI-generated recommendations
+
+  // Certificate tracking
+  certificateEarned   Boolean   @default(false)
+  certificateIssuedAt DateTime?
+
+  // Current position
+  currentLessonId String? // ID of current lesson
+  currentTime     Int     @default(0) // Current position in video/audio (seconds)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relationships
-  userId    String
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId  String
-  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  lectureId String
-  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lecture Lecture? @relation(fields: [lectureId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, lectureId])
+  @@unique([userId, courseId, lectureId])
   @@map("progress")
 }
 
@@ -1036,4 +1071,202 @@ enum AnnouncementPriority {
   NORMAL
   HIGH
   URGENT
+}
+
+model LectureResource {
+  id             String    @id @default(cuid())
+  name           String
+  url            String
+  type           String // "pdf", "video", "audio", "document", etc.
+  description    String?
+  fileSize       Int? // in bytes
+  mimeType       String?
+  isDownloadable Boolean   @default(true)
+  requiresAuth   Boolean   @default(false)
+  downloadCount  Int       @default(0)
+  expiresAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("lecture_resources")
+}
+
+model LectureRating {
+  id           String  @id @default(cuid())
+  rating       Int     @default(1) // 1-5 stars
+  feedback     String?
+  isHelpful    Boolean @default(false)
+  helpfulCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lectureId])
+  @@map("lecture_ratings")
+}
+
+model LectureIssue {
+  id          String    @id @default(cuid())
+  issueType   String // "technical", "content", "accessibility", "other"
+  description String
+  status      String    @default("PENDING") // "PENDING", "IN_PROGRESS", "RESOLVED", "CLOSED"
+  priority    String    @default("NORMAL") // "LOW", "NORMAL", "HIGH", "URGENT"
+  assignedTo  String? // User ID of assigned staff
+  resolution  String?
+  resolvedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("lecture_issues")
+}
+
+model LectureAccessRequest {
+  id         String    @id @default(cuid())
+  reason     String?
+  status     String    @default("PENDING") // "PENDING", "APPROVED", "REJECTED"
+  approvedBy String? // User ID of approver
+  approvedAt DateTime?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("lecture_access_requests")
+}
+
+model LectureTranscript {
+  id         String    @id @default(cuid())
+  content    String
+  language   String    @default("en")
+  timestamps Json      @default("{}") // Timestamp mapping
+  accuracy   Float     @default(0.0) // 0.0-1.0 accuracy score
+  isVerified Boolean   @default(false)
+  verifiedBy String? // User ID of verifier
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("lecture_transcripts")
+}
+
+model LectureSummary {
+  id                   String   @id @default(cuid())
+  content              String
+  keyPoints            String[] @default([])
+  difficulty           Float    @default(1.0) // 1.0-5.0 difficulty rating
+  estimatedReadingTime Int      @default(0) // in minutes
+  isAI                 Boolean  @default(true)
+  generatedBy          String? // User ID or "AI"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  lectureId String
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@map("lecture_summaries")
+}
+
+model LectureAnalytics {
+  id        String  @id @default(cuid())
+  lectureId String  @unique
+  lecture   Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  // View analytics
+  totalViews       Int   @default(0)
+  uniqueViews      Int   @default(0)
+  averageWatchTime Float @default(0) // in seconds
+  completionRate   Float @default(0) // percentage
+  engagementRate   Float @default(0) // percentage
+
+  // Drop-off analysis
+  dropOffPoints Json @default("[]") // Array of {time: number, percentage: number}
+
+  // Popular segments
+  popularSegments Json @default("[]") // Array of {startTime: number, endTime: number, viewCount: number}
+
+  // User interactions
+  userInteractions Json @default("[]") // Array of {type: string, count: number, timestamp: number}
+
+  // Heatmap data
+  heatmapData Json @default("{}") // Time-based interaction heatmap
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("lecture_analytics")
+}
+
+model CourseAnalytics {
+  id       String @id @default(cuid())
+  courseId String @unique
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // Enrollment analytics
+  totalEnrollments     Int   @default(0)
+  activeEnrollments    Int   @default(0)
+  completedEnrollments Int   @default(0)
+  completionRate       Float @default(0) // percentage
+  averageProgress      Float @default(0) // percentage
+
+  // Revenue analytics
+  totalRevenue                Float  @default(0)
+  currency                    String @default("USD")
+  averageRevenuePerEnrollment Float  @default(0)
+
+  // Engagement analytics
+  totalDiscussions Int   @default(0)
+  totalReviews     Int   @default(0)
+  averageTimeSpent Float @default(0) // in minutes
+  retentionRate    Float @default(0) // percentage
+
+  // Monthly trends
+  monthlyEnrollments Json @default("{}") // {month: string, count: number}
+  monthlyRevenue     Json @default("{}") // {month: string, amount: number}
+
+  // Performance insights
+  topPerformingLectures   Json     @default("[]")
+  strugglingStudents      Int      @default(0)
+  recommendedImprovements String[] @default([])
+  contentGaps             String[] @default([])
+
+  // Comparisons
+  categoryAverage   Float @default(0)
+  industryBenchmark Float @default(0)
+  previousPeriod    Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("course_analytics")
 }
