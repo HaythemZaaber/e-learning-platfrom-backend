@@ -18,7 +18,7 @@ import {
   EnrollmentType,
   ContentType,
   LectureType,
-} from '../../../generated/prisma';
+} from '@prisma/client';
 import GraphQLJSON from 'graphql-type-json';
 import { Course } from '../entities/course.entity';
 

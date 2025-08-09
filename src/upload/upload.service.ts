@@ -1,7 +1,7 @@
 // src/modules/upload/upload.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ContentType } from '../../generated/prisma';
+import { ContentType } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 

@@ -29,14 +29,7 @@ async function bootstrap() {
   );
 
   // Serve static files from uploads directory
-  // the join function is used to join the path of the uploads directory with the path of the current file
-  // the __dirname is the path of the current file
-  // the .. is the parent directory of the current file
-  // the uploads is the name of the directory that contains the uploaded files
-  // the prefix is the prefix of the url that will be used to serve the files
-  // the useStaticAssets function is used to serve static files from the uploads directory
-  // the app.useStaticAssets function is used to serve static files from the uploads directory
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
   });
 

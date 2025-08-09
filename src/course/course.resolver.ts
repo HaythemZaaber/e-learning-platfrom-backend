@@ -11,6 +11,11 @@ import {
   LectureAnalytics,
   CourseNavigation,
   CourseAnalyticsResponse,
+  LectureInteractionResponse,
+  ProgressResponse,
+  QuizSubmissionResponse,
+  ResourceDownloadResponse,
+  BookmarkResponse,
 } from './entities/course.entity';
 import {
   CreateCourseInput,
@@ -26,7 +31,7 @@ import {
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../../generated/prisma';
+import { UserRole } from '@prisma/client';
 import { GraphQLJSON } from 'graphql-type-json';
 
 @Resolver(() => Course)
@@ -479,7 +484,7 @@ export class CourseResolver {
   // LECTURE TRACKING AND INTERACTIONS
   // ============================================
 
-  @Mutation(() => GraphQLJSON, { name: 'trackLectureView' })
+  @Mutation(() => LectureInteractionResponse, { name: 'trackLectureView' })
   async trackLectureView(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -489,7 +494,7 @@ export class CourseResolver {
     return this.courseService.trackLectureView(lectureId, courseId, user.id);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'markLectureComplete' })
+  @Mutation(() => ProgressResponse, { name: 'markLectureComplete' })
   async markLectureComplete(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -500,7 +505,7 @@ export class CourseResolver {
     return this.courseService.markLectureComplete(lectureId, courseId, user.id, progress);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'updateLectureProgress' })
+  @Mutation(() => ProgressResponse, { name: 'updateLectureProgress' })
   async updateLectureProgress(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -512,7 +517,7 @@ export class CourseResolver {
     return this.courseService.updateLectureProgress(lectureId, courseId, user.id, progress, timeSpent);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'trackLectureInteraction' })
+  @Mutation(() => LectureInteractionResponse, { name: 'trackLectureInteraction' })
   async trackLectureInteraction(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -524,7 +529,7 @@ export class CourseResolver {
     return this.courseService.trackLectureInteraction(lectureId, courseId, user.id, interactionType, metadata);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'submitLectureQuiz' })
+  @Mutation(() => QuizSubmissionResponse, { name: 'submitLectureQuiz' })
   async submitLectureQuiz(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -544,7 +549,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'downloadLectureResource' })
+  @Mutation(() => ResourceDownloadResponse, { name: 'downloadLectureResource' })
   async downloadLectureResource(
     @Args('resourceId') resourceId: string,
     @Args('lectureId') lectureId: string,
@@ -561,7 +566,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'toggleLectureBookmark' })
+  @Mutation(() => BookmarkResponse, { name: 'toggleLectureBookmark' })
   async toggleLectureBookmark(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,

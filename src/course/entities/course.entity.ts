@@ -32,7 +32,7 @@ import {
   InstructorStatus,
   ApplicationStatus,
   EnrollmentSource,
-} from '../../../generated/prisma';
+} from '@prisma/client';
 import GraphQLJSON from 'graphql-type-json';
 
 // Register all enums for GraphQL
@@ -155,6 +155,91 @@ registerEnumType(EnrollmentSource, {
   name: 'EnrollmentSource',
   description: 'The source of enrollment',
 });
+
+// New GraphQL object types for lecture navigation and resources
+@ObjectType()
+export class LectureResource {
+  @Field()
+  name: string;
+
+  @Field()
+  url: string;
+
+  @Field()
+  type: string;
+}
+
+@ObjectType()
+export class LectureNavigation {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field(() => LectureType)
+  type: LectureType;
+
+  @Field(() => Int)
+  order: number;
+
+  @Field()
+  isPreview: boolean;
+
+  @Field()
+  isCompleted: boolean;
+
+  @Field()
+  isLocked: boolean;
+}
+
+@ObjectType()
+export class LectureCourseInfo {
+  @Field(() => ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field()
+  description: string;
+
+  @Field({ nullable: true })
+  thumbnail?: string;
+
+  @Field(() => CourseLevel)
+  level: CourseLevel;
+
+  @Field(() => CourseStatus)
+  status: CourseStatus;
+
+  @Field(() => Float)
+  price: number;
+
+  @Field()
+  currency: string;
+
+  @Field(() => Int)
+  totalSections: number;
+
+  @Field(() => Int)
+  totalLectures: number;
+
+  @Field(() => Int)
+  estimatedHours: number;
+
+  @Field(() => Int)
+  estimatedMinutes: number;
+
+  @Field(() => Float)
+  difficulty: number;
+
+  @Field()
+  instructorId: string;
+
+  @Field(() => UserObject, { nullable: true })
+  instructor?: UserObject;
+}
 
 // ============================================
 // ENHANCED CONTENT ENTITIES
@@ -1652,7 +1737,6 @@ export class LecturePreview {
   @Field()
   isLocked: boolean;
 
-  // AI features
   @Field()
   hasAIQuiz: boolean;
 
@@ -1665,25 +1749,21 @@ export class LecturePreview {
   @Field()
   autoTranscript: boolean;
 
-  // Accessibility
   @Field({ nullable: true })
   captions?: string;
 
   @Field({ nullable: true })
   transcript?: string;
 
-  // Download & offline
   @Field()
   downloadable: boolean;
 
   @Field({ nullable: true })
   offlineContent?: string;
 
-  // Content association
   @Field(() => ContentItem, { nullable: true })
   contentItem?: ContentItem;
 
-  // Settings and metadata
   @Field(() => GraphQLJSON, { nullable: true })
   settings?: any;
 
@@ -1696,46 +1776,35 @@ export class LecturePreview {
   @Field()
   sectionId: string;
 
-  // Resources
-  @Field(() => [GraphQLJSON], { nullable: true })
-  resources?: Array<{
-    name: string;
-    url: string;
-    type: string;
-  }>;
+  @Field(() => [LectureResource], { nullable: true })
+  resources?: LectureResource[];
 
-  // Quiz data (embedded)
   @Field(() => Quiz, { nullable: true })
   quiz?: Quiz;
 
-  // Timestamps
   @Field()
   createdAt: Date;
 
   @Field()
   updatedAt: Date;
 
-  // Computed fields
   @Field(() => Int, { nullable: true })
   completionCount?: number;
 
   @Field(() => Float, { nullable: true })
   averageTimeSpent?: number;
 
-  // Navigation
-  @Field(() => GraphQLJSON, { nullable: true })
-  previousLecture?: any;
+  @Field(() => LectureNavigation, { nullable: true })
+  previousLecture?: LectureNavigation;
 
-  @Field(() => GraphQLJSON, { nullable: true })
-  nextLecture?: any;
+  @Field(() => LectureNavigation, { nullable: true })
+  nextLecture?: LectureNavigation;
 
-  // Section info
   @Field(() => Section, { nullable: true })
   section?: Section;
 
-  // Course info
-  @Field(() => GraphQLJSON, { nullable: true })
-  course?: any;
+  @Field(() => LectureCourseInfo, { nullable: true })
+  course?: LectureCourseInfo;
 }
 
 

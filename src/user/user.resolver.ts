@@ -4,7 +4,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserService } from './user.service';
-import { UserRole, User } from '../../generated/prisma';
+import { UserRole, User } from '@prisma/client';
 import { UserObject } from './user.entity';
 
 @Resolver(() => UserObject)

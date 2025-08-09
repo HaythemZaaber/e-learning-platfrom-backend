@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { PrismaClient, Prisma } from '../../generated/prisma';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
@@ -9,8 +9,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     // Add middleware to convert ALL null values to undefined globally
     this.$use(
       async (
-        params: Prisma.MiddlewareParams,
-        next: (params: Prisma.MiddlewareParams) => Promise<any>,
+        params: any,
+        next: (params: any) => Promise<any>,
       ) => {
         const result = await next(params);
 

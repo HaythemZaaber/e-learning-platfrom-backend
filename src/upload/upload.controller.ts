@@ -16,7 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole, ContentType } from '../../generated/prisma';
+import { UserRole, ContentType } from '@prisma/client';
 import { UploadService } from './upload.service';
 import { GetUser } from '../auth/get-user.decorator';
 

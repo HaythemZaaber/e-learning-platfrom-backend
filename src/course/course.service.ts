@@ -27,7 +27,7 @@ import {
   ContentType,
   LectureType,
   Prisma,
-} from '../../generated/prisma';
+} from '@prisma/client';
 import { UploadService } from '../upload/upload.service';
 
 // Define SortOrder type locally since it's not exported from the main prisma index
@@ -3465,15 +3465,46 @@ export class CourseService {
       // Check if user is enrolled
       let enrollment: any = null;
       let progress: any = null;
+      let userProgressMap: Map<string, boolean> = new Map();
+      
       if (userId) {
         enrollment = course.enrollments?.[0] || null;
         if (enrollment) {
           progress = await this.getCourseProgress(courseId, userId);
+          
+          // Get completion status for each lecture
+          const lectureProgress = await this.prisma.progress.findMany({
+            where: {
+              userId,
+              courseId,
+            },
+            select: {
+              lectureId: true,
+              completed: true,
+            },
+          });
+          
+          lectureProgress.forEach((p) => {
+            if (p.lectureId) {
+              userProgressMap.set(p.lectureId, p.completed);
+            }
+          });
         }
       }
 
+      // Add completion status to lectures
+      const sectionsWithProgress = course.sections?.map(section => ({
+        ...section,
+        lectures: section.lectures.map(lecture => ({
+          ...lecture,
+          isCompleted: userProgressMap.get(lecture.id) || false,
+          isLocked: this.isLectureLocked(lecture, userId),
+        })),
+      }));
+
       const result = {
         ...course,
+        sections: sectionsWithProgress,
         enrollment: enrollment ? {
           id: enrollment.id,
           status: enrollment.status,
@@ -3519,7 +3550,6 @@ export class CourseService {
               },
             },
           },
-
         },
       });
 
@@ -3557,6 +3587,18 @@ export class CourseService {
         course: {
           id: lecture.section.course.id,
           title: lecture.section.course.title,
+          description: lecture.section.course.description,
+          thumbnail: lecture.section.course.thumbnail,
+          level: lecture.section.course.level,
+          status: lecture.section.course.status,
+          price: lecture.section.course.price,
+          currency: lecture.section.course.currency,
+          totalSections: lecture.section.course.totalSections,
+          totalLectures: lecture.section.course.totalLectures,
+          estimatedHours: lecture.section.course.estimatedHours,
+          estimatedMinutes: lecture.section.course.estimatedMinutes,
+          difficulty: lecture.section.course.difficulty,
+          instructorId: lecture.section.course.instructorId,
           instructor: lecture.section.course.instructor,
         },
       };
@@ -3684,9 +3726,28 @@ export class CourseService {
       let progress: any = null;
       let currentSection: string | null = null;
       let currentLecture: string | null = null;
+      let userProgressMap: Map<string, boolean> = new Map();
 
       if (userId) {
         progress = await this.getCourseProgress(courseId, userId);
+        
+        // Get completion status for each lecture
+        const lectureProgress = await this.prisma.progress.findMany({
+          where: {
+            userId,
+            courseId,
+          },
+          select: {
+            lectureId: true,
+            completed: true,
+          },
+        });
+        
+        lectureProgress.forEach((p) => {
+          if (p.lectureId) {
+            userProgressMap.set(p.lectureId, p.completed);
+          }
+        });
         
         // Find current lecture
         const enrollment = await this.prisma.enrollment.findUnique({
@@ -3709,12 +3770,24 @@ export class CourseService {
       }
 
       // Add computed fields to sections
-      const sectionsWithComputed = sections.map(section => ({
-        ...section,
-        totalLectures: section.lectures.length,
-        totalDuration: section.lectures.reduce((sum, lecture) => sum + lecture.duration, 0),
-        completionRate: 0, // TODO: Calculate based on user progress
-      }));
+      const sectionsWithComputed = sections.map(section => {
+        const lecturesWithProgress = section.lectures.map(lecture => ({
+          ...lecture,
+          isCompleted: userProgressMap.get(lecture.id) || false,
+          isLocked: this.isLectureLocked(lecture, userId),
+        }));
+        
+        const completedLectures = lecturesWithProgress.filter(l => l.isCompleted).length;
+        const completionRate = section.lectures.length > 0 ? (completedLectures / section.lectures.length) * 100 : 0;
+        
+        return {
+          ...section,
+          lectures: lecturesWithProgress,
+          totalLectures: section.lectures.length,
+          totalDuration: section.lectures.reduce((sum, lecture) => sum + lecture.duration, 0),
+          completionRate,
+        };
+      });
 
       return {
         sections: sectionsWithComputed,
@@ -3997,6 +4070,8 @@ export class CourseService {
         id: previousLecture.id,
         title: previousLecture.title,
         type: previousLecture.type,
+        order: previousLecture.order,
+        isPreview: previousLecture.isPreview,
         isLocked: this.isLectureLocked(previousLecture),
         isCompleted: false, // TODO: Check user completion
       };
@@ -4023,6 +4098,8 @@ export class CourseService {
         id: previousSection.lectures[0].id,
         title: previousSection.lectures[0].title,
         type: previousSection.lectures[0].type,
+        order: previousSection.lectures[0].order,
+        isPreview: previousSection.lectures[0].isPreview,
         isLocked: this.isLectureLocked(previousSection.lectures[0]),
         isCompleted: false,
       };
@@ -4054,6 +4131,8 @@ export class CourseService {
         id: nextLecture.id,
         title: nextLecture.title,
         type: nextLecture.type,
+        order: nextLecture.order,
+        isPreview: nextLecture.isPreview,
         isLocked: this.isLectureLocked(nextLecture),
         isCompleted: false,
       };
@@ -4080,6 +4159,8 @@ export class CourseService {
         id: nextSection.lectures[0].id,
         title: nextSection.lectures[0].title,
         type: nextSection.lectures[0].type,
+        order: nextSection.lectures[0].order,
+        isPreview: nextSection.lectures[0].isPreview,
         isLocked: this.isLectureLocked(nextSection.lectures[0]),
         isCompleted: false,
       };
