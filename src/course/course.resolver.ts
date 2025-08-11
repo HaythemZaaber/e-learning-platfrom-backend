@@ -1,5 +1,5 @@
 import { Resolver, Mutation, Query, Args, Context } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, ForbiddenException } from '@nestjs/common';
 import { CourseService } from './course.service';
 import {
   Course,
@@ -16,6 +16,18 @@ import {
   QuizSubmissionResponse,
   ResourceDownloadResponse,
   BookmarkResponse,
+  UpdateVideoDurationResponse,
+  UpdateLectureDurationResponse,
+  NoteResponse,
+  NotesResponse,
+  RatingResponse,
+  IssueResponse,
+  AccessResponse,
+  ShareResponse,
+  TranscriptResponse,
+  SummaryResponse,
+  DiscussionResponse,
+  ReplyResponse,
 } from './entities/course.entity';
 import {
   CreateCourseInput,
@@ -61,6 +73,7 @@ export class CourseResolver {
     @Args('category') category: string,
     @Args('level') level: string,
     @Context() context: any,
+    @Args('isPublic', { nullable: true }) isPublic?: boolean,
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
     return this.courseService.createCourseWithBasicInfo(user.id, {
@@ -68,6 +81,7 @@ export class CourseResolver {
       description,
       category,
       level,
+      isPublic,
     });
   }
 
@@ -259,9 +273,10 @@ export class CourseResolver {
   async duplicateCourse(
     @Args('courseId') courseId: string,
     @Context() context: any,
+    @Args('isPublic', { nullable: true }) isPublic?: boolean,
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
-    const result = await this.courseService.duplicateCourse(courseId, user.id);
+    const result = await this.courseService.duplicateCourse(courseId, user.id, { isPublic });
 
     return {
       success: result.success,
@@ -500,9 +515,10 @@ export class CourseResolver {
     @Args('courseId') courseId: string,
     @Args('progress') progress: number,
     @Context() context: any,
+    @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.markLectureComplete(lectureId, courseId, user.id, progress);
+    return this.courseService.markLectureComplete(lectureId, courseId, user.id, progress, actualDuration);
   }
 
   @Mutation(() => ProgressResponse, { name: 'updateLectureProgress' })
@@ -512,9 +528,10 @@ export class CourseResolver {
     @Args('progress') progress: number,
     @Args('timeSpent') timeSpent: number,
     @Context() context: any,
+    @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.updateLectureProgress(lectureId, courseId, user.id, progress, timeSpent);
+    return this.courseService.updateLectureProgress(lectureId, courseId, user.id, progress, timeSpent, actualDuration);
   }
 
   @Mutation(() => LectureInteractionResponse, { name: 'trackLectureInteraction' })
@@ -524,9 +541,20 @@ export class CourseResolver {
     @Args('interactionType') interactionType: string,
     @Context() context: any,
     @Args('metadata', { nullable: true, type: () => GraphQLJSON }) metadata?: any,
+    @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.trackLectureInteraction(lectureId, courseId, user.id, interactionType, metadata);
+    return this.courseService.trackLectureInteraction(lectureId, courseId, user.id, interactionType, metadata, actualDuration);
+  }
+
+
+
+  @Mutation(() => UpdateLectureDurationResponse, { name: 'updateLectureDuration' })
+  async updateLectureDuration(
+    @Args('lectureId') lectureId: string,
+    @Args('duration') duration: number,
+  ) {
+    return this.courseService.updateLectureDurationPublic(lectureId, duration);
   }
 
   @Mutation(() => QuizSubmissionResponse, { name: 'submitLectureQuiz' })
@@ -582,7 +610,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'addLectureNote' })
+  @Mutation(() => NoteResponse, { name: 'addLectureNote' })
   async addLectureNote(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -591,56 +619,38 @@ export class CourseResolver {
     @Args('timestamp', { nullable: true }) timestamp?: number,
   ) {
     const user = context.req.user;
-    // TODO: Implement note creation logic
-    return {
-      success: true,
-      message: 'Note added successfully',
-      note: {
-        id: 'note-123',
-        content,
-        timestamp,
-        createdAt: new Date(),
-      },
-      errors: [],
-    };
+    return this.courseService.addLectureNote(lectureId, courseId, user.id, content, timestamp);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'updateLectureNote' })
+  @Mutation(() => NoteResponse, { name: 'updateLectureNote' })
   async updateLectureNote(
     @Args('noteId') noteId: string,
     @Args('content') content: string,
     @Context() context: any,
   ) {
     const user = context.req.user;
-    // TODO: Implement note update logic
-    return {
-      success: true,
-      message: 'Note updated successfully',
-      note: {
-        id: noteId,
-        content,
-        timestamp: 120.5,
-        updatedAt: new Date(),
-      },
-      errors: [],
-    };
+    return this.courseService.updateLectureNote(noteId, user.id, content);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'deleteLectureNote' })
+  @Mutation(() => NoteResponse, { name: 'deleteLectureNote' })
   async deleteLectureNote(
     @Args('noteId') noteId: string,
     @Context() context: any,
   ) {
     const user = context.req.user;
-    // TODO: Implement note deletion logic
-    return {
-      success: true,
-      message: 'Note deleted successfully',
-      errors: [],
-    };
+    return this.courseService.deleteLectureNote(noteId, user.id);
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'rateLecture' })
+  @Query(() => NotesResponse, { name: 'getLectureNotes' })
+  async getLectureNotes(
+    @Args('lectureId') lectureId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.getLectureNotes(lectureId, user.id);
+  }
+
+  @Mutation(() => RatingResponse, { name: 'rateLecture' })
   async rateLecture(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -663,7 +673,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'reportLectureIssue' })
+  @Mutation(() => IssueResponse, { name: 'reportLectureIssue' })
   async reportLectureIssue(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -687,7 +697,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'requestLectureAccess' })
+  @Mutation(() => AccessResponse, { name: 'requestLectureAccess' })
   async requestLectureAccess(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -709,7 +719,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'shareLecture' })
+  @Mutation(() => ShareResponse, { name: 'shareLecture' })
   async shareLecture(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -727,7 +737,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'getLectureTranscript' })
+  @Mutation(() => TranscriptResponse, { name: 'getLectureTranscript' })
   async getLectureTranscript(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -750,7 +760,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'generateLectureSummary' })
+  @Mutation(() => SummaryResponse, { name: 'generateLectureSummary' })
   async generateLectureSummary(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -773,7 +783,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'createLectureDiscussion' })
+  @Mutation(() => DiscussionResponse, { name: 'createLectureDiscussion' })
   async createLectureDiscussion(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -801,7 +811,7 @@ export class CourseResolver {
     };
   }
 
-  @Mutation(() => GraphQLJSON, { name: 'replyToLectureDiscussion' })
+  @Mutation(() => ReplyResponse, { name: 'replyToLectureDiscussion' })
   async replyToLectureDiscussion(
     @Args('discussionId') discussionId: string,
     @Args('content') content: string,
@@ -825,4 +835,6 @@ export class CourseResolver {
       errors: [],
     };
   }
+
+  
 }

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -458,6 +459,7 @@ export class CourseService {
       description: string;
       category: string;
       level: string;
+      isPublic?: boolean;
     },
   ): Promise<CourseCreationResponse> {
     try {
@@ -473,7 +475,7 @@ export class CourseService {
           status: CourseStatus.DRAFT,
           enrollmentType: EnrollmentType.FREE,
           language: 'en',
-          isPublic: false,
+          isPublic: basicInfo.isPublic ?? false, // Default to false for basic info creation
           certificate: false,
           settings: {},
           accessibility: {
@@ -730,9 +732,21 @@ export class CourseService {
           // Create maps for efficient lookup
           const existingSectionMap = new Map(existingSections.map(s => [s.id, s]));
           const existingLectureMap = new Map();
+          const existingLectureTitleMap = new Map(); // Fallback for title matching
           existingSections.forEach(section => {
             section.lectures.forEach(lecture => {
               existingLectureMap.set(lecture.id, lecture);
+              existingLectureTitleMap.set(lecture.title, lecture); // Fallback matching by title
+            });
+          });
+
+          // Log for debugging
+          console.log(`Course update: Found ${existingSections.length} existing sections with ${existingLectureMap.size} lectures`);
+          console.log(`Course update: Input has ${sanitizedInput.sections.length} sections`);
+          sanitizedInput.sections.forEach((section, idx) => {
+            console.log(`Section ${idx}: ${section.lectures.length} lectures`);
+            section.lectures.forEach((lecture, lidx) => {
+              console.log(`  Lecture ${lidx}: ${lecture.id} - ${lecture.title}`);
             });
           });
 
@@ -767,10 +781,19 @@ export class CourseService {
               for (const [lectureIndex, lectureInput] of sectionInput.lectures.entries()) {
                 let lecture;
                 
-                if (existingLectureMap.has(lectureInput.id)) {
-                  // Update existing lecture
+                let existingLecture = existingLectureMap.get(lectureInput.id);
+                
+                // If not found by ID, try to find by title as fallback
+                if (!existingLecture && existingLectureTitleMap.has(lectureInput.title)) {
+                  existingLecture = existingLectureTitleMap.get(lectureInput.title);
+                  console.log(`Found lecture by title fallback: ${lectureInput.title} -> ${existingLecture.id}`);
+                }
+                
+                if (existingLecture) {
+                  // Update existing lecture (preserves progress records)
+                  console.log(`Updating existing lecture: ${existingLecture.id} - ${lectureInput.title}`);
                   lecture = await prisma.lecture.update({
-                    where: { id: lectureInput.id },
+                    where: { id: existingLecture.id },
                     data: {
                       title: lectureInput.title,
                       description: lectureInput.description,
@@ -779,10 +802,16 @@ export class CourseService {
                       duration: lectureInput.duration,
                       order: lectureIndex,
                       settings: lectureInput.settings || {},
+                      // Preserve existing fields that shouldn't be overwritten
+                      isPreview: lectureInput.isPreview ?? existingLecture.isPreview,
+                      isInteractive: lectureInput.isInteractive ?? existingLecture.isInteractive,
+                      isLocked: lectureInput.isLocked ?? existingLecture.isLocked,
+                      isRequired: lectureInput.isRequired ?? existingLecture.isRequired,
                     },
                   });
                 } else {
                   // Create new lecture
+                  console.log(`Creating new lecture: ${lectureInput.id} - ${lectureInput.title}`);
                   lecture = await prisma.lecture.create({
                     data: {
                       title: lectureInput.title,
@@ -793,6 +822,8 @@ export class CourseService {
                       order: lectureIndex,
                       isPreview: false,
                       isInteractive: false,
+                      isLocked: false,
+                      isRequired: true,
                       sectionId: section.id,
                       settings: lectureInput.settings || {},
                     },
@@ -860,13 +891,14 @@ export class CourseService {
           for (const existingSection of existingSections) {
             for (const lecture of existingSection.lectures) {
               if (!inputLectureIds.has(lecture.id)) {
+                console.log(`Deleting lecture: ${lecture.id} - ${lecture.title} (not in input)`);
                 // Delete content item first (if exists)
                 if (lecture.contentItem) {
                   await prisma.contentItem.delete({
                     where: { id: lecture.contentItem.id },
                   });
                 }
-                // Delete lecture
+                // Delete lecture (this will cascade delete progress records)
                 await prisma.lecture.delete({
                   where: { id: lecture.id },
                 });
@@ -2215,9 +2247,14 @@ export class CourseService {
   async getCourses(filters?: CourseFiltersInput, instructorId?: string) {
     try {
       const where: Prisma.CourseWhereInput = {
-        isPublic: true,
         status: CourseStatus.PUBLISHED,
       };
+
+      // Only filter by isPublic if instructorId is not provided (public API)
+      // If instructorId is provided, they can see their own courses regardless of isPublic status
+      if (!instructorId) {
+        where.isPublic = true;
+      }
 
       // Apply filters
       if (filters) {
@@ -2429,9 +2466,9 @@ export class CourseService {
     try {
       const courses = await this.prisma.course.findMany({
         where: {
-          isPublic: true,
           status: CourseStatus.PUBLISHED,
           isFeatured: true,
+          isPublic: true, // Featured courses should always be public
         },
         include: this.getCourseIncludeOptions(),
         orderBy: [
@@ -2454,9 +2491,9 @@ export class CourseService {
     try {
       const courses = await this.prisma.course.findMany({
         where: {
-          isPublic: true,
           status: CourseStatus.PUBLISHED,
           isTrending: true,
+          isPublic: true, // Trending courses should always be public
         },
         include: this.getCourseIncludeOptions(),
         orderBy: [
@@ -3044,7 +3081,7 @@ export class CourseService {
   // COURSE DUPLICATION
   // ============================================
 
-  async duplicateCourse(courseId: string, instructorId: string) {
+  async duplicateCourse(courseId: string, instructorId: string, options?: { isPublic?: boolean }) {
     try {
       const originalCourse = await this.prisma.course.findUnique({
         where: { id: courseId },
@@ -3093,7 +3130,7 @@ export class CourseService {
           status: CourseStatus.DRAFT,
           enrollmentType: originalCourse.enrollmentType,
           language: originalCourse.language,
-          isPublic: false, // Start as private
+          isPublic: options?.isPublic ?? false, // Default to private, but allow override
           certificate: originalCourse.certificate,
           settings: originalCourse.settings as any,
           accessibility: originalCourse.accessibility as any,
@@ -3469,38 +3506,24 @@ export class CourseService {
       
       if (userId) {
         enrollment = course.enrollments?.[0] || null;
-        if (enrollment) {
-          progress = await this.getCourseProgress(courseId, userId);
-          
-          // Get completion status for each lecture
-          const lectureProgress = await this.prisma.progress.findMany({
-            where: {
-              userId,
-              courseId,
-            },
-            select: {
-              lectureId: true,
-              completed: true,
-            },
-          });
-          
-          lectureProgress.forEach((p) => {
-            if (p.lectureId) {
-              userProgressMap.set(p.lectureId, p.completed);
-            }
-          });
-        }
+        
+        // Always get progress and completion status for authenticated users
+        // This works for both free courses (no enrollment) and paid courses (with enrollment)
+        progress = await this.getCourseProgress(courseId, userId);
+        userProgressMap = await this.getUserLectureProgress(userId, courseId);
       }
 
       // Add completion status to lectures
-      const sectionsWithProgress = course.sections?.map(section => ({
-        ...section,
-        lectures: section.lectures.map(lecture => ({
-          ...lecture,
-          isCompleted: userProgressMap.get(lecture.id) || false,
-          isLocked: this.isLectureLocked(lecture, userId),
-        })),
-      }));
+      const sectionsWithProgress = await Promise.all(
+        course.sections?.map(async (section) => ({
+          ...section,
+          lectures: section.lectures.map((lecture) => ({
+            ...lecture,
+            isCompleted: userProgressMap.get(lecture.id) || false,
+            isLocked: this.isLectureLockedSync(lecture, userId),
+          })),
+        })) || []
+      );
 
       const result = {
         ...course,
@@ -3559,8 +3582,8 @@ export class CourseService {
 
       // Get navigation info
       const [previousLecture, nextLecture] = await Promise.all([
-        this.getPreviousLecture(lectureId, courseId),
-        this.getNextLecture(lectureId, courseId),
+        this.getPreviousLecture(lectureId, courseId, userId),
+        this.getNextLecture(lectureId, courseId, userId),
       ]);
 
       // Check if user has completed this lecture
@@ -3581,7 +3604,7 @@ export class CourseService {
       return {
         ...lecture,
         isCompleted,
-        isLocked: this.isLectureLocked(lecture, userId),
+        isLocked: this.isLectureLockedSync(lecture, userId),
         previousLecture,
         nextLecture,
         course: {
@@ -3609,17 +3632,11 @@ export class CourseService {
 
   async getCourseProgress(courseId: string, userId: string) {
     try {
-      const enrollment = await this.prisma.enrollment.findUnique({
-        where: {
-          userId_courseId: {
-            userId,
-            courseId,
-          },
-        },
-      });
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      if (!enrollment) {
-        throw new NotFoundException('User not enrolled in this course');
+      if (!accessInfo.hasAccess) {
+        throw new NotFoundException(accessInfo.errorMessage || 'Access denied to this course');
       }
 
       const progress = await this.prisma.progress.findMany({
@@ -3647,8 +3664,8 @@ export class CourseService {
         progress.filter(p => p.completed && p.lecture).map(p => p.lecture!.sectionId)
       ).size;
 
-      const totalTimeSpent = progress.reduce((sum, p) => sum + p.timeSpent, 0);
-      const watchTime = progress.reduce((sum, p) => sum + (p.watchTime || 0), 0);
+      const totalTimeSpent = progress.reduce((sum, p) => sum + p.timeSpent, 0); // timeSpent is already in minutes
+      const watchTime = progress.reduce((sum, p) => sum + (p.watchTime || 0), 0); // watchTime is in seconds
 
       const lastWatchedLecture = progress
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
@@ -3659,14 +3676,14 @@ export class CourseService {
         totalLectures,
         completedSections,
         lastWatchedLecture,
-        timeSpent: Math.round(totalTimeSpent / 60), // Convert to minutes
+        timeSpent: totalTimeSpent, // Already in minutes, no conversion needed
         completionPercentage: totalLectures > 0 ? (completedLectures / totalLectures) * 100 : 0,
-        certificateEarned: enrollment.certificateEarned || false,
+        certificateEarned: accessInfo.enrollment?.certificateEarned || false,
         watchTime,
         interactions: {}, // TODO: Implement interactions tracking
-        currentLessonId: enrollment.currentLectureId,
-        streakDays: enrollment.streakDays || 0,
-        lastAccessedAt: enrollment.lastAccessedAt,
+        currentLessonId: accessInfo.enrollment?.currentLectureId,
+        streakDays: accessInfo.enrollment?.streakDays || 0,
+        lastAccessedAt: accessInfo.enrollment?.lastAccessedAt,
         difficultyRating: null, // TODO: Implement difficulty rating
         aiRecommendations: null, // TODO: Implement AI recommendations
       };
@@ -3710,6 +3727,17 @@ export class CourseService {
 
   async getCourseNavigation(courseId: string, userId?: string) {
     try {
+      if (!userId) {
+        throw new UnauthorizedException('User must be authenticated');
+      }
+
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
+
+      if (!accessInfo.hasAccess) {
+        throw new NotFoundException(accessInfo.errorMessage || 'Access denied to this course');
+      }
+
       const sections = await this.prisma.section.findMany({
         where: { courseId },
         include: {
@@ -3731,40 +3759,21 @@ export class CourseService {
       if (userId) {
         progress = await this.getCourseProgress(courseId, userId);
         
-        // Get completion status for each lecture
-        const lectureProgress = await this.prisma.progress.findMany({
-          where: {
-            userId,
-            courseId,
-          },
-          select: {
-            lectureId: true,
-            completed: true,
-          },
-        });
+        // Get completion status for each lecture using unified method
+        userProgressMap = await this.getUserLectureProgress(userId, courseId);
         
-        lectureProgress.forEach((p) => {
-          if (p.lectureId) {
-            userProgressMap.set(p.lectureId, p.completed);
-          }
-        });
+        // Find current lecture (for both free and paid courses)
+        const accessInfo = await this.checkCourseAccess(courseId, userId);
         
-        // Find current lecture
-        const enrollment = await this.prisma.enrollment.findUnique({
-          where: {
-            userId_courseId: { userId, courseId },
-          },
-        });
-
-        if (enrollment?.currentLectureId) {
+        if (accessInfo.enrollment?.currentLectureId) {
           const currentLectureData = await this.prisma.lecture.findUnique({
-            where: { id: enrollment.currentLectureId },
+            where: { id: accessInfo.enrollment.currentLectureId },
             include: { section: true },
           });
 
           if (currentLectureData) {
             currentSection = currentLectureData.sectionId;
-            currentLecture = enrollment.currentLectureId;
+            currentLecture = accessInfo.enrollment.currentLectureId;
           }
         }
       }
@@ -3774,7 +3783,7 @@ export class CourseService {
         const lecturesWithProgress = section.lectures.map(lecture => ({
           ...lecture,
           isCompleted: userProgressMap.get(lecture.id) || false,
-          isLocked: this.isLectureLocked(lecture, userId),
+          isLocked: this.isLectureLockedSync(lecture, userId),
         }));
         
         const completedLectures = lecturesWithProgress.filter(l => l.isCompleted).length;
@@ -3806,15 +3815,11 @@ export class CourseService {
 
   async trackLectureView(lectureId: string, courseId: string, userId: string) {
     try {
-      // Verify user is enrolled
-      const enrollment = await this.prisma.enrollment.findUnique({
-        where: {
-          userId_courseId: { userId, courseId },
-        },
-      });
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      if (!enrollment) {
-        throw new ForbiddenException('User not enrolled in this course');
+      if (!accessInfo.hasAccess) {
+        throw new ForbiddenException(accessInfo.errorMessage || 'Access denied to this course');
       }
 
       // Update or create progress record
@@ -3845,18 +3850,30 @@ export class CourseService {
     }
   }
 
-  async markLectureComplete(lectureId: string, courseId: string, userId: string, progress: number) {
+  async markLectureComplete(lectureId: string, courseId: string, userId: string, progress: number, actualDuration?: number) {
     try {
-      // Verify user is enrolled
-      const enrollment = await this.prisma.enrollment.findUnique({
-        where: {
-          userId_courseId: { userId, courseId },
-        },
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
+
+      if (!accessInfo.hasAccess) {
+        throw new ForbiddenException(accessInfo.errorMessage || 'Access denied to this course');
+      }
+
+      // Get lecture duration to calculate time spent
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
+        select: { duration: true },
       });
 
-      if (!enrollment) {
-        throw new ForbiddenException('User not enrolled in this course');
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
       }
+
+      // Calculate time spent - use actualDuration if provided, otherwise use lecture duration
+      const timeSpentMinutes = progress >= 100 ? 
+        (actualDuration ? Math.ceil(actualDuration / 60) : Math.ceil(lecture.duration / 60)) : 0;
+      const watchTimeSeconds = progress >= 100 ? 
+        (actualDuration || lecture.duration) : 0;
 
       // Update progress
       const progressRecord = await this.prisma.progress.upsert({
@@ -3867,6 +3884,8 @@ export class CourseService {
           completed: progress >= 100,
           completedAt: progress >= 100 ? new Date() : null,
           progress: progress / 100,
+          timeSpent: progress >= 100 ? timeSpentMinutes : undefined,
+          watchTime: progress >= 100 ? watchTimeSeconds : undefined,
           updatedAt: new Date(),
         },
         create: {
@@ -3876,8 +3895,8 @@ export class CourseService {
           completed: progress >= 100,
           completedAt: progress >= 100 ? new Date() : null,
           progress: progress / 100,
-          timeSpent: 0,
-          watchTime: 0,
+          timeSpent: timeSpentMinutes,
+          watchTime: watchTimeSeconds,
         },
       });
 
@@ -3898,18 +3917,24 @@ export class CourseService {
 
       const overallProgress = totalLectures > 0 ? (completedLectures / totalLectures) * 100 : 0;
 
-      await this.prisma.enrollment.update({
-        where: {
-          userId_courseId: { userId, courseId },
-        },
-        data: {
-          progress: overallProgress,
-          currentLectureId: lectureId,
-          lastAccessedAt: new Date(),
-          completedLectures,
-          totalLectures,
-        },
-      });
+      // Update enrollment if it exists (for paid courses)
+      if (accessInfo.enrollment) {
+        await this.prisma.enrollment.update({
+          where: {
+            userId_courseId: { userId, courseId },
+          },
+          data: {
+            progress: overallProgress,
+            currentLectureId: lectureId,
+            lastAccessedAt: new Date(),
+            completedLectures,
+            totalLectures,
+            totalTimeSpent: {
+              increment: progress >= 100 ? timeSpentMinutes : 0,
+            },
+          },
+        });
+      }
 
       const updatedProgress = await this.getCourseProgress(courseId, userId);
 
@@ -3924,18 +3949,26 @@ export class CourseService {
     }
   }
 
-  async updateLectureProgress(lectureId: string, courseId: string, userId: string, progress: number, timeSpent: number) {
+  async updateLectureProgress(lectureId: string, courseId: string, userId: string, progress: number, timeSpent: number, actualDuration?: number) {
     try {
-      // Verify user is enrolled
-      const enrollment = await this.prisma.enrollment.findUnique({
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
+
+      if (!accessInfo.hasAccess) {
+        throw new ForbiddenException(accessInfo.errorMessage || 'Access denied to this course');
+      }
+
+      // Get existing progress to add to time spent
+      const existingProgress = await this.prisma.progress.findUnique({
         where: {
-          userId_courseId: { userId, courseId },
+          userId_courseId_lectureId: { userId, courseId, lectureId },
         },
       });
 
-      if (!enrollment) {
-        throw new ForbiddenException('User not enrolled in this course');
-      }
+      const currentTimeSpent = existingProgress?.timeSpent || 0;
+      // Use actualDuration if provided, otherwise use the provided timeSpent
+      const effectiveTimeSpent = actualDuration ? Math.round(actualDuration / 60) : Math.round(timeSpent);
+      const newTimeSpent = currentTimeSpent + effectiveTimeSpent;
 
       // Update progress
       await this.prisma.progress.upsert({
@@ -3946,8 +3979,8 @@ export class CourseService {
           completed: progress >= 100,
           completedAt: progress >= 100 ? new Date() : null,
           progress: progress / 100,
-          timeSpent: Math.round(timeSpent * 60), // Convert to seconds
-          watchTime: Math.round(timeSpent * 60), // Convert to seconds
+          timeSpent: newTimeSpent, // Add to existing time spent
+          watchTime: actualDuration ? (currentTimeSpent * 60) + actualDuration : newTimeSpent * 60, // watchTime is in seconds
           updatedAt: new Date(),
         },
         create: {
@@ -3957,24 +3990,26 @@ export class CourseService {
           completed: progress >= 100,
           completedAt: progress >= 100 ? new Date() : null,
           progress: progress / 100,
-          timeSpent: Math.round(timeSpent * 60),
-          watchTime: Math.round(timeSpent * 60),
+          timeSpent: effectiveTimeSpent, // Initial time spent
+          watchTime: actualDuration || Math.round(timeSpent * 60), // watchTime is in seconds
         },
       });
 
-      // Update enrollment
-      await this.prisma.enrollment.update({
-        where: {
-          userId_courseId: { userId, courseId },
-        },
-        data: {
-          currentLectureId: lectureId,
-          lastAccessedAt: new Date(),
-          totalTimeSpent: {
-            increment: Math.round(timeSpent),
+      // Update enrollment if it exists (for paid courses)
+      if (accessInfo.enrollment) {
+        await this.prisma.enrollment.update({
+          where: {
+            userId_courseId: { userId, courseId },
           },
-        },
-      });
+          data: {
+            currentLectureId: lectureId,
+            lastAccessedAt: new Date(),
+            totalTimeSpent: {
+              increment: effectiveTimeSpent, // Use effective time spent
+            },
+          },
+        });
+      }
 
       const updatedProgress = await this.getCourseProgress(courseId, userId);
 
@@ -3989,34 +4024,103 @@ export class CourseService {
     }
   }
 
-  async trackLectureInteraction(lectureId: string, courseId: string, userId: string, interactionType: string, metadata?: any) {
+  async trackLectureInteraction(lectureId: string, courseId: string, userId: string, interactionType: string, metadata?: any, actualDuration?: number) {
     try {
-      // Verify user is enrolled
-      const enrollment = await this.prisma.enrollment.findUnique({
-        where: {
-          userId_courseId: { userId, courseId },
-        },
-      });
+      // Check course access (free courses don't require enrollment)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      if (!enrollment) {
-        throw new ForbiddenException('User not enrolled in this course');
+      if (!accessInfo.hasAccess) {
+        throw new ForbiddenException(accessInfo.errorMessage || 'Access denied to this course');
       }
 
-      // Update progress with interaction
+      // Extract progress information from metadata if available
+      let progressUpdate: any = {
+        interactions: {
+          ...metadata,
+          [interactionType]: {
+            count: { increment: 1 },
+            lastInteraction: new Date(),
+          },
+        },
+        updatedAt: new Date(),
+      };
+
+      // Handle progress updates from metadata
+      if (metadata) {
+        // Handle progress percentage
+        if (metadata.progress !== undefined || metadata.actualProgress !== undefined) {
+          const progressValue = metadata.actualProgress || metadata.progress;
+          if (typeof progressValue === 'number' && progressValue >= 0 && progressValue <= 100) {
+            progressUpdate.progress = progressValue / 100; // Convert to decimal
+            progressUpdate.completed = progressValue >= 100;
+            progressUpdate.completedAt = progressValue >= 100 ? new Date() : null;
+          }
+        }
+
+        // Handle time spent (in minutes)
+        if (metadata.timeSpent !== undefined) {
+          if (typeof metadata.timeSpent === 'number' && metadata.timeSpent >= 0) {
+            // Get existing progress to add to current time spent
+            const existingProgress = await this.prisma.progress.findUnique({
+              where: {
+                userId_courseId_lectureId: { userId, courseId, lectureId },
+              },
+              select: { timeSpent: true, watchTime: true },
+            });
+
+            const currentTimeSpent = existingProgress?.timeSpent || 0;
+            const currentWatchTime = existingProgress?.watchTime || 0;
+            const newTimeSpent = Math.round(metadata.timeSpent);
+            
+            progressUpdate.timeSpent = currentTimeSpent + newTimeSpent;
+            progressUpdate.watchTime = currentWatchTime + (newTimeSpent * 60); // Convert to seconds
+          }
+        }
+
+        // Handle time watched (in seconds)
+        if (metadata.timeWatched !== undefined) {
+          if (typeof metadata.timeWatched === 'number' && metadata.timeWatched >= 0) {
+            const existingProgress = await this.prisma.progress.findUnique({
+              where: {
+                userId_courseId_lectureId: { userId, courseId, lectureId },
+              },
+              select: { timeSpent: true, watchTime: true },
+            });
+
+            const currentTimeSpent = existingProgress?.timeSpent || 0;
+            const currentWatchTime = existingProgress?.watchTime || 0;
+            const newWatchTime = Math.round(metadata.timeWatched);
+            
+            progressUpdate.timeSpent = currentTimeSpent + (newWatchTime / 60); // Convert to minutes
+            progressUpdate.watchTime = currentWatchTime + newWatchTime;
+          }
+        }
+
+        // Handle actualDuration if provided
+        if (actualDuration !== undefined && typeof actualDuration === 'number' && actualDuration >= 0) {
+          const existingProgress = await this.prisma.progress.findUnique({
+            where: {
+              userId_courseId_lectureId: { userId, courseId, lectureId },
+            },
+            select: { timeSpent: true, watchTime: true },
+          });
+
+          const currentTimeSpent = existingProgress?.timeSpent || 0;
+          const currentWatchTime = existingProgress?.watchTime || 0;
+          
+          // Update time spent (convert seconds to minutes)
+          progressUpdate.timeSpent = currentTimeSpent + Math.round(actualDuration / 60);
+          // Update watch time (keep in seconds)
+          progressUpdate.watchTime = currentWatchTime + actualDuration;
+        }
+      }
+
+      // Update progress with interaction and any progress data
       await this.prisma.progress.upsert({
         where: {
           userId_courseId_lectureId: { userId, courseId, lectureId },
         },
-        update: {
-          interactions: {
-            ...metadata,
-            [interactionType]: {
-              count: { increment: 1 },
-              lastInteraction: new Date(),
-            },
-          },
-          updatedAt: new Date(),
-        },
+        update: progressUpdate,
         create: {
           userId,
           lectureId,
@@ -4027,11 +4131,29 @@ export class CourseService {
               lastInteraction: new Date(),
             },
           },
-          completed: false,
-          timeSpent: 0,
-          watchTime: 0,
+          completed: metadata?.progress >= 100 || metadata?.actualProgress >= 100 || false,
+          completedAt: (metadata?.progress >= 100 || metadata?.actualProgress >= 100) ? new Date() : null,
+          progress: ((metadata?.actualProgress || metadata?.progress || 0) / 100),
+          timeSpent: Math.round(metadata?.timeSpent || 0) + (actualDuration ? Math.round(actualDuration / 60) : 0),
+          watchTime: Math.round((metadata?.timeSpent || 0) * 60) + Math.round(metadata?.timeWatched || 0) + (actualDuration || 0),
         },
       });
+
+      // Update enrollment if it exists (for paid courses)
+      if (accessInfo.enrollment) {
+        await this.prisma.enrollment.update({
+          where: {
+            userId_courseId: { userId, courseId },
+          },
+          data: {
+            currentLectureId: lectureId,
+            lastAccessedAt: new Date(),
+            totalTimeSpent: {
+              increment: Math.round(metadata?.timeSpent || 0) + Math.round((metadata?.timeWatched || 0) / 60),
+            },
+          },
+        });
+      }
 
       return {
         success: true,
@@ -4047,7 +4169,7 @@ export class CourseService {
   // UTILITY METHODS
   // ============================================
 
-  private async getPreviousLecture(lectureId: string, courseId: string) {
+  private async getPreviousLecture(lectureId: string, courseId: string, userId?: string) {
     const currentLecture = await this.prisma.lecture.findUnique({
       where: { id: lectureId },
       include: { section: true },
@@ -4066,14 +4188,30 @@ export class CourseService {
     });
 
     if (previousLecture) {
+      // Check completion status if userId is provided
+      let isCompleted = false;
+      if (userId) {
+        const progress = await this.prisma.progress.findUnique({
+          where: {
+            userId_courseId_lectureId: {
+              userId,
+              courseId,
+              lectureId: previousLecture.id,
+            },
+          },
+          select: { completed: true },
+        });
+        isCompleted = progress?.completed || false;
+      }
+
       return {
         id: previousLecture.id,
         title: previousLecture.title,
         type: previousLecture.type,
         order: previousLecture.order,
         isPreview: previousLecture.isPreview,
-        isLocked: this.isLectureLocked(previousLecture),
-        isCompleted: false, // TODO: Check user completion
+        isLocked: this.isLectureLockedSync(previousLecture),
+        isCompleted,
       };
     }
 
@@ -4094,21 +4232,37 @@ export class CourseService {
     });
 
     if (previousSection?.lectures?.[0]) {
+      // Check completion status if userId is provided
+      let isCompleted = false;
+      if (userId) {
+        const progress = await this.prisma.progress.findUnique({
+          where: {
+            userId_courseId_lectureId: {
+              userId,
+              courseId,
+              lectureId: previousSection.lectures[0].id,
+            },
+          },
+          select: { completed: true },
+        });
+        isCompleted = progress?.completed || false;
+      }
+
       return {
         id: previousSection.lectures[0].id,
         title: previousSection.lectures[0].title,
         type: previousSection.lectures[0].type,
         order: previousSection.lectures[0].order,
         isPreview: previousSection.lectures[0].isPreview,
-        isLocked: this.isLectureLocked(previousSection.lectures[0]),
-        isCompleted: false,
+        isLocked: this.isLectureLockedSync(previousSection.lectures[0]),
+        isCompleted,
       };
     }
 
     return null;
   }
 
-  private async getNextLecture(lectureId: string, courseId: string) {
+  private async getNextLecture(lectureId: string, courseId: string, userId?: string) {
     const currentLecture = await this.prisma.lecture.findUnique({
       where: { id: lectureId },
       include: { section: true },
@@ -4127,14 +4281,30 @@ export class CourseService {
     });
 
     if (nextLecture) {
+      // Check completion status if userId is provided
+      let isCompleted = false;
+      if (userId) {
+        const progress = await this.prisma.progress.findUnique({
+          where: {
+            userId_courseId_lectureId: {
+              userId,
+              courseId,
+              lectureId: nextLecture.id,
+            },
+          },
+          select: { completed: true },
+        });
+        isCompleted = progress?.completed || false;
+      }
+
       return {
         id: nextLecture.id,
         title: nextLecture.title,
         type: nextLecture.type,
         order: nextLecture.order,
         isPreview: nextLecture.isPreview,
-        isLocked: this.isLectureLocked(nextLecture),
-        isCompleted: false,
+        isLocked: this.isLectureLockedSync(nextLecture),
+        isCompleted,
       };
     }
 
@@ -4155,22 +4325,568 @@ export class CourseService {
     });
 
     if (nextSection?.lectures?.[0]) {
+      // Check completion status if userId is provided
+      let isCompleted = false;
+      if (userId) {
+        const progress = await this.prisma.progress.findUnique({
+          where: {
+            userId_courseId_lectureId: {
+              userId,
+              courseId,
+              lectureId: nextSection.lectures[0].id,
+            },
+          },
+          select: { completed: true },
+        });
+        isCompleted = progress?.completed || false;
+      }
+
       return {
         id: nextSection.lectures[0].id,
         title: nextSection.lectures[0].title,
         type: nextSection.lectures[0].type,
         order: nextSection.lectures[0].order,
         isPreview: nextSection.lectures[0].isPreview,
-        isLocked: this.isLectureLocked(nextSection.lectures[0]),
-        isCompleted: false,
+        isLocked: this.isLectureLockedSync(nextSection.lectures[0]),
+        isCompleted,
       };
     }
 
     return null;
   }
 
-  private isLectureLocked(lecture: any, userId?: string): boolean {
-    // TODO: Implement proper locking logic based on course settings
+  /**
+   * Check if a user has access to a course
+   * Free courses don't require enrollment
+   */
+  private async checkCourseAccess(courseId: string, userId?: string): Promise<{
+    hasAccess: boolean;
+    isFree: boolean;
+    enrollment?: any;
+    course?: any;
+    errorMessage?: string;
+  }> {
+    try {
+      // Get course details
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          enrollmentType: true,
+          price: true,
+          isPublic: true,
+          instructorId: true,
+        },
+      });
+
+      if (!course) {
+        return { 
+          hasAccess: false, 
+          isFree: false, 
+          errorMessage: 'Course not found' 
+        };
+      }
+
+      // Check if course is public (only for non-instructors)
+      // Instructors can always access their own courses regardless of isPublic status
+      if (!course.isPublic && course.instructorId !== userId) {
+        return { 
+          hasAccess: false, 
+          isFree: false, 
+          course,
+          errorMessage: 'This course is not publicly available' 
+        };
+      }
+
+      // Check if course is free
+      const isFree = course.enrollmentType === 'FREE' || course.price === 0;
+
+      // If course is free, user has access
+      if (isFree) {
+        return { hasAccess: true, isFree: true, course };
+      }
+
+      // For paid courses, check enrollment
+      if (!userId) {
+        return { 
+          hasAccess: false, 
+          isFree: false, 
+          course,
+          errorMessage: 'Authentication required to access this course' 
+        };
+      }
+
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (!enrollment) {
+        return {
+          hasAccess: false,
+          isFree: false,
+          course,
+          errorMessage: `You are not enrolled in "${course.title}". Please enroll to access this course.`
+        };
+      }
+
+      return {
+        hasAccess: true,
+        isFree: false,
+        enrollment,
+        course,
+      };
+    } catch (error) {
+      return {
+        hasAccess: false,
+        isFree: false,
+        errorMessage: `Error checking course access: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Get user's lecture completion status for a course
+   */
+  private async getUserLectureProgress(userId: string, courseId: string): Promise<Map<string, boolean>> {
+    const lectureProgress = await this.prisma.progress.findMany({
+      where: {
+        userId,
+        courseId,
+      },
+      select: {
+        lectureId: true,
+        completed: true,
+      },
+    });
+    
+    const userProgressMap = new Map<string, boolean>();
+    lectureProgress.forEach((p) => {
+      if (p.lectureId) {
+        userProgressMap.set(p.lectureId, p.completed);
+      }
+    });
+    
+    return userProgressMap;
+  }
+
+  /**
+   * Check if a lecture is locked for a user
+   * Free courses have all lectures unlocked
+   */
+  private async isLectureLocked(lecture: any, courseId: string, userId?: string): Promise<boolean> {
+    try {
+      // Get course access info
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
+      
+      // If course is free, no lectures are locked
+      if (accessInfo.isFree) {
+        return false;
+      }
+
+      // For paid courses, check if user is enrolled
+      if (!accessInfo.hasAccess) {
+        return true;
+      }
+
+      // Check lecture-specific locking logic
+      if (lecture.isLocked) {
+        return true;
+      }
+
+      // Check if previous lectures are completed (for sequential access)
+      // This can be enhanced based on course settings
+      return false;
+    } catch (error) {
+      // If there's an error checking access, assume locked for safety
+      return true;
+    }
+  }
+
+  /**
+   * Synchronous version for backward compatibility
+   * This will be deprecated in favor of the async version
+   */
+  private isLectureLockedSync(lecture: any, userId?: string): boolean {
+    // If lecture is marked as preview, it's not locked
+    if (lecture.isPreview) {
+      return false;
+    }
+    
+    // If lecture is explicitly locked, it's locked
+    if (lecture.isLocked) {
+      return true;
+    }
+    
+    // For now, return false to maintain backward compatibility
+    // This should be replaced with proper async calls that check course access
+    // The async version properly handles free vs paid course access
     return false;
+  }
+
+ 
+
+  /**
+   * Add a note to a lecture
+   */
+  async addLectureNote(
+    lectureId: string,
+    courseId: string,
+    userId: string,
+    content: string,
+    timestamp?: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    note?: any;
+    errors?: string[];
+  }> {
+    try {
+      // Verify the lecture exists and user has access to the course
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
+        include: {
+          section: {
+            include: {
+              course: true,
+            },
+          },
+        },
+      });
+
+      if (!lecture) {
+        return {
+          success: false,
+          message: 'Lecture not found',
+          errors: ['Lecture does not exist'],
+        };
+      }
+
+      // Check if user has access to the course
+      const accessInfo = await this.checkCourseAccess(lecture.section.courseId, userId);
+      if (!accessInfo.hasAccess) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You do not have access to this course'],
+        };
+      }
+
+      // Create the note
+      const note = await this.prisma.lectureNote.create({
+        data: {
+          content,
+          timestamp: timestamp || null,
+          isPrivate: true,
+          userId,
+          lectureId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Note added successfully',
+        note,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to add note: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  /**
+   * Update a lecture note
+   */
+  async updateLectureNote(
+    noteId: string,
+    userId: string,
+    content: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    note?: any;
+    errors?: string[];
+  }> {
+    try {
+      // Find the note and verify ownership
+      const existingNote = await this.prisma.lectureNote.findUnique({
+        where: { id: noteId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      if (!existingNote) {
+        return {
+          success: false,
+          message: 'Note not found',
+          errors: ['Note does not exist'],
+        };
+      }
+
+      // Check if user owns the note
+      if (existingNote.userId !== userId) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You can only update your own notes'],
+        };
+      }
+
+      // Update the note
+      const updatedNote = await this.prisma.lectureNote.update({
+        where: { id: noteId },
+        data: {
+          content,
+          updatedAt: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Note updated successfully',
+        note: updatedNote,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update note: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  /**
+   * Delete a lecture note
+   */
+  async deleteLectureNote(
+    noteId: string,
+    userId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    errors?: string[];
+  }> {
+    try {
+      // Find the note and verify ownership
+      const existingNote = await this.prisma.lectureNote.findUnique({
+        where: { id: noteId },
+        select: { id: true, userId: true },
+      });
+
+      if (!existingNote) {
+        return {
+          success: false,
+          message: 'Note not found',
+          errors: ['Note does not exist'],
+        };
+      }
+
+      // Check if user owns the note
+      if (existingNote.userId !== userId) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You can only delete your own notes'],
+        };
+      }
+
+      // Delete the note
+      await this.prisma.lectureNote.delete({
+        where: { id: noteId },
+      });
+
+      return {
+        success: true,
+        message: 'Note deleted successfully',
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to delete note: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+
+
+  /*
+
+  /**
+   * Get all notes for a lecture
+   */
+  async getLectureNotes(
+    lectureId: string,
+    userId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    notes?: any[];
+    errors?: string[];
+  }> {
+    try {
+      // Verify the lecture exists and user has access
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
+        include: {
+          section: {
+            include: {
+              course: true,
+            },
+          },
+        },
+      });
+
+      if (!lecture) {
+        return {
+          success: false,
+          message: 'Lecture not found',
+          errors: ['Lecture does not exist'],
+        };
+      }
+
+      // Check if user has access to the course
+      const accessInfo = await this.checkCourseAccess(lecture.section.courseId, userId);
+      if (!accessInfo.hasAccess) {
+        return {
+          success: false,
+          message: 'Access denied',
+          errors: ['You do not have access to this course'],
+        };
+      }
+
+      // Get all notes for the lecture (user's own notes)
+      const notes = await this.prisma.lectureNote.findMany({
+        where: {
+          lectureId,
+          userId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Notes retrieved successfully',
+        notes,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to retrieve notes: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  /**
+   * Update lecture duration (public method)
+   */
+  async updateLectureDurationPublic(lectureId: string, duration: number): Promise<{
+    success: boolean;
+    message: string;
+    lecture?: any;
+    errors?: string[];
+  }> {
+    try {
+      // Find the lecture
+      const lecture = await this.prisma.lecture.findUnique({
+        where: { id: lectureId },
+        include: {
+          section: {
+            include: {
+              course: true,
+            },
+          },
+        },
+      });
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
+      }
+
+      // Update the lecture duration
+      const updatedLecture = await this.prisma.lecture.update({
+        where: { id: lectureId },
+        data: {
+          duration: duration,
+        },
+        include: {
+          section: {
+            include: {
+              course: true,
+            },
+          },
+        },
+      });
+
+      // Recalculate course duration
+      await this.recalculateCourseDuration(lecture.section.courseId);
+
+      return {
+        success: true,
+        message: 'Lecture duration updated successfully',
+        lecture: updatedLecture,
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update lecture duration: ${error.message}`,
+        errors: [error.message],
+      };
+    }
   }
 }

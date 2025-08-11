@@ -1957,6 +1957,21 @@ export class NoteResponse {
 }
 
 @ObjectType()
+export class NotesResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => [LectureNote], { nullable: true })
+  notes?: LectureNote[];
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}
+
+@ObjectType()
 export class LectureRating {
   @Field(() => ID)
   id: string;
@@ -2194,6 +2209,36 @@ export class ReplyResponse {
 
   @Field(() => DiscussionReply, { nullable: true })
   reply?: DiscussionReply;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}
+
+@ObjectType()
+export class UpdateVideoDurationResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => Int, { nullable: true })
+  duration?: number;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}
+
+@ObjectType()
+export class UpdateLectureDurationResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field(() => Lecture, { nullable: true })
+  lecture?: Lecture;
 
   @Field(() => [String], { nullable: true })
   errors?: string[];
