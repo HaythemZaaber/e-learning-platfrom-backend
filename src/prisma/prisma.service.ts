@@ -7,21 +7,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     await this.$connect();
 
     // Add middleware to convert ALL null values to undefined globally
-    this.$use(
-      async (
-        params: any,
-        next: (params: any) => Promise<any>,
-      ) => {
-        const result = await next(params);
+    this.$use(async (params: any, next: (params: any) => Promise<any>) => {
+      const result = await next(params);
 
-        // Apply conversion to all database operations
-        if (result) {
-          return this.convertNullsToUndefined(result);
-        }
+      // Apply conversion to all database operations
+      if (result) {
+        return this.convertNullsToUndefined(result);
+      }
 
-        return result;
-      },
-    );
+      return result;
+    });
   }
 
   private convertNullsToUndefined<T>(obj: T): T {

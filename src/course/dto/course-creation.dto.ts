@@ -1,4 +1,11 @@
-import { InputType, Field, ObjectType, Float, Int } from '@nestjs/graphql';
+import {
+  InputType,
+  Field,
+  ObjectType,
+  Float,
+  Int,
+  GraphQLISODateTime,
+} from '@nestjs/graphql';
 import {
   IsString,
   IsOptional,
@@ -113,6 +120,11 @@ export class LectureInput {
   @Field(() => GraphQLJSON, { nullable: true })
   @IsOptional()
   settings?: any;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
 }
 
 @InputType()

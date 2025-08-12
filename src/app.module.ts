@@ -9,6 +9,7 @@ import { AppService } from './app.service';
 import { WebhookModule } from './webhooks/webhook.module';
 import { CourseModule } from './course/course.module';
 import { UploadModule } from './upload/upload.module';
+import { PaymentModule } from './payment/payment.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -34,6 +35,7 @@ import { ConfigModule } from '@nestjs/config';
     CourseModule,
     PrismaModule,
     WebhookModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

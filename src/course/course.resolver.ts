@@ -276,7 +276,9 @@ export class CourseResolver {
     @Args('isPublic', { nullable: true }) isPublic?: boolean,
   ): Promise<CourseCreationResponse> {
     const user = context.req.user;
-    const result = await this.courseService.duplicateCourse(courseId, user.id, { isPublic });
+    const result = await this.courseService.duplicateCourse(courseId, user.id, {
+      isPublic,
+    });
 
     return {
       success: result.success,
@@ -425,16 +427,12 @@ export class CourseResolver {
   }
 
   @Query(() => [Course], { name: 'getFeaturedCourses' })
-  async getFeaturedCourses(
-    @Args('limit', { nullable: true }) limit?: number,
-  ) {
+  async getFeaturedCourses(@Args('limit', { nullable: true }) limit?: number) {
     return this.courseService.getFeaturedCourses(limit);
   }
 
   @Query(() => [Course], { name: 'getTrendingCourses' })
-  async getTrendingCourses(
-    @Args('limit', { nullable: true }) limit?: number,
-  ) {
+  async getTrendingCourses(@Args('limit', { nullable: true }) limit?: number) {
     return this.courseService.getTrendingCourses(limit);
   }
 
@@ -471,9 +469,7 @@ export class CourseResolver {
   }
 
   @Query(() => LectureAnalytics, { name: 'getLectureAnalytics' })
-  async getLectureAnalytics(
-    @Args('lectureId') lectureId: string,
-  ) {
+  async getLectureAnalytics(@Args('lectureId') lectureId: string) {
     return this.courseService.getLectureAnalytics(lectureId);
   }
 
@@ -518,7 +514,13 @@ export class CourseResolver {
     @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.markLectureComplete(lectureId, courseId, user.id, progress, actualDuration);
+    return this.courseService.markLectureComplete(
+      lectureId,
+      courseId,
+      user.id,
+      progress,
+      actualDuration,
+    );
   }
 
   @Mutation(() => ProgressResponse, { name: 'updateLectureProgress' })
@@ -531,25 +533,42 @@ export class CourseResolver {
     @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.updateLectureProgress(lectureId, courseId, user.id, progress, timeSpent, actualDuration);
+    return this.courseService.updateLectureProgress(
+      lectureId,
+      courseId,
+      user.id,
+      progress,
+      timeSpent,
+      actualDuration,
+    );
   }
 
-  @Mutation(() => LectureInteractionResponse, { name: 'trackLectureInteraction' })
+  @Mutation(() => LectureInteractionResponse, {
+    name: 'trackLectureInteraction',
+  })
   async trackLectureInteraction(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
     @Args('interactionType') interactionType: string,
     @Context() context: any,
-    @Args('metadata', { nullable: true, type: () => GraphQLJSON }) metadata?: any,
+    @Args('metadata', { nullable: true, type: () => GraphQLJSON })
+    metadata?: any,
     @Args('actualDuration', { nullable: true }) actualDuration?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.trackLectureInteraction(lectureId, courseId, user.id, interactionType, metadata, actualDuration);
+    return this.courseService.trackLectureInteraction(
+      lectureId,
+      courseId,
+      user.id,
+      interactionType,
+      metadata,
+      actualDuration,
+    );
   }
 
-
-
-  @Mutation(() => UpdateLectureDurationResponse, { name: 'updateLectureDuration' })
+  @Mutation(() => UpdateLectureDurationResponse, {
+    name: 'updateLectureDuration',
+  })
   async updateLectureDuration(
     @Args('lectureId') lectureId: string,
     @Args('duration') duration: number,
@@ -619,7 +638,13 @@ export class CourseResolver {
     @Args('timestamp', { nullable: true }) timestamp?: number,
   ) {
     const user = context.req.user;
-    return this.courseService.addLectureNote(lectureId, courseId, user.id, content, timestamp);
+    return this.courseService.addLectureNote(
+      lectureId,
+      courseId,
+      user.id,
+      content,
+      timestamp,
+    );
   }
 
   @Mutation(() => NoteResponse, { name: 'updateLectureNote' })
@@ -835,6 +860,4 @@ export class CourseResolver {
       errors: [],
     };
   }
-
-  
 }

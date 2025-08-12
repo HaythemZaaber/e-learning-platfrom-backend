@@ -1,5 +1,10 @@
 import { ObjectType, Field, ID, Float, Int } from '@nestjs/graphql';
-import { UserRole, Gender, LearningStyle, InstructorStatus } from '@prisma/client';
+import {
+  UserRole,
+  Gender,
+  LearningStyle,
+  InstructorStatus,
+} from '@prisma/client';
 
 @ObjectType()
 export class UserObject {

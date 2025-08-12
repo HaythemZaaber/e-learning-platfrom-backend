@@ -5,6 +5,7 @@ import {
   Float,
   ID,
   registerEnumType,
+  GraphQLISODateTime,
 } from '@nestjs/graphql';
 import { UserObject } from '../../user/user.entity'; // Adjust import path as needed
 import {
@@ -34,6 +35,7 @@ import {
   EnrollmentSource,
 } from '@prisma/client';
 import GraphQLJSON from 'graphql-type-json';
+import { GQLDate } from '../../common/decorators/gql-date.decorator';
 
 // Register all enums for GraphQL
 registerEnumType(CourseLevel, {
@@ -783,7 +785,6 @@ export class Course {
   @Field()
   isNew: boolean;
 
-
   // Certificates & completion
   @Field()
   certificate: boolean;
@@ -1442,8 +1443,8 @@ export class CourseNavigation {
   @Field({ nullable: true })
   currentLecture?: string;
 
-  @Field(() => CourseProgress)
-  progress: CourseProgress;
+  @Field(() => CourseProgress, { nullable: true })
+  progress?: CourseProgress;
 }
 
 @ObjectType()
@@ -1807,8 +1808,6 @@ export class LecturePreview {
   course?: LectureCourseInfo;
 }
 
-
-
 @ObjectType()
 export class ProgressResponse {
   @Field()
@@ -1931,14 +1930,26 @@ export class LectureNote {
   @Field()
   content: string;
 
-  @Field(() => Float, { nullable: true })
+  @Field(() => Int, { nullable: true })
   timestamp?: number;
 
-  @Field()
-  createdAt: Date;
+  @Field(() => Boolean, { nullable: true })
+  isPrivate?: boolean;
 
-  @Field({ nullable: true })
+  @Field(() => ID)
+  userId: string;
+
+  @Field(() => ID)
+  lectureId: string;
+
+  @Field(() => Date, { nullable: true })
+  createdAt?: Date;
+
+  @Field(() => Date, { nullable: true })
   updatedAt?: Date;
+
+  @Field(() => UserObject, { nullable: true })
+  user?: UserObject;
 }
 
 @ObjectType()

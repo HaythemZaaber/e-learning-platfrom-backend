@@ -98,6 +98,8 @@ model User {
   lectureRatings        LectureRating[]
   lectureIssues         LectureIssue[]
   lectureAccessRequests LectureAccessRequest[]
+  paymentSessions       PaymentSession[]
+  paymentMethods        PaymentMethod[]
 
   @@map("users")
 }
@@ -268,22 +270,23 @@ model Course {
   archivedAt  DateTime?
 
   // Relationships
-  instructorId   String
-  instructor     User                 @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Cascade)
-  sections       Section[]
-  enrollments    Enrollment[]
-  reviews        Review[]
-  progress       Progress[]
-  aiInteractions AIInteraction[]
-  certificates   Certificate[]
-  discussions    Discussion[]
-  contentItems   ContentItem[]
-  learningPaths  CourseLearningPath[]
-  bookmarks      CourseBookmark[]
-  quizzes        Quiz[]
-  assignments    Assignment[]
-  announcements  CourseAnnouncement[]
-  analytics      CourseAnalytics?
+  instructorId    String
+  instructor      User                 @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Cascade)
+  sections        Section[]
+  enrollments     Enrollment[]
+  reviews         Review[]
+  progress        Progress[]
+  aiInteractions  AIInteraction[]
+  certificates    Certificate[]
+  discussions     Discussion[]
+  contentItems    ContentItem[]
+  learningPaths   CourseLearningPath[]
+  bookmarks       CourseBookmark[]
+  quizzes         Quiz[]
+  assignments     Assignment[]
+  announcements   CourseAnnouncement[]
+  analytics       CourseAnalytics?
+  paymentSessions PaymentSession[]
 
   @@map("courses")
 }
@@ -580,10 +583,11 @@ model Enrollment {
   completionPercentage Float            @default(0)
 
   // Relationships
-  userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String
+  course          Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  paymentSessions PaymentSession[]
 
   @@unique([userId, courseId])
   @@map("enrollments")
@@ -1016,6 +1020,22 @@ enum PaymentStatus {
   FAILED
   REFUNDED
   PARTIAL_REFUND
+  CANCELED
+  EXPIRED
+}
+
+enum PaymentSessionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
 }
 
 enum ReviewStatus {
@@ -1268,4 +1288,100 @@ model CourseAnalytics {
   updatedAt DateTime @updatedAt
 
   @@map("course_analytics")
+}
+
+// Payment System Models
+
+model PaymentSession {
+  id              String               @id @default(cuid())
+  courseId        String
+  userId          String
+  status          PaymentSessionStatus @default(PENDING)
+  amount          Int // Amount in cents
+  currency        String               @default("USD")
+  paymentIntentId String?              @unique
+  enrollmentId    String?
+  metadata        Json                 @default("{}")
+
+  // Stripe-specific fields
+  stripeSessionId  String? @unique
+  stripeCustomerId String?
+
+  // Coupon and discount information
+  couponCode     String?
+  discountAmount Int     @default(0)
+  finalAmount    Int // Amount after discounts
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expiresAt DateTime?
+
+  // Relationships
+  course     Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enrollment Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, courseId])
+  @@index([paymentIntentId])
+  @@index([status])
+  @@map("payment_sessions")
+}
+
+model PaymentMethod {
+  id                    String  @id @default(cuid())
+  userId                String
+  stripePaymentMethodId String  @unique
+  type                  String // "card", "bank_account", etc.
+  cardBrand             String?
+  cardLast4             String?
+  cardExpMonth          Int?
+  cardExpYear           Int?
+  billingDetails        Json    @default("{}")
+  isDefault             Boolean @default(false)
+
+  // Additional metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stripePaymentMethodId])
+  @@map("payment_methods")
+}
+
+model Coupon {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  name          String
+  description   String?
+  discountType  DiscountType @default(PERCENTAGE)
+  discountValue Float // Percentage or fixed amount
+  currency      String       @default("USD")
+  maxUses       Int?
+  currentUses   Int          @default(0)
+  isActive      Boolean      @default(true)
+
+  // Validity period
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  // Usage restrictions
+  minimumAmount     Int? // Minimum order amount in cents
+  maximumDiscount   Int? // Maximum discount amount in cents
+  applicableCourses String[] @default([]) // Course IDs this coupon applies to
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+  @@map("coupons")
 }
