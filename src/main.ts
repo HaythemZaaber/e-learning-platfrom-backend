@@ -7,10 +7,16 @@ import { config } from 'dotenv';
 config();
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
+
+
 
   // Configure payload size limits
-  app.use(require('express').json({ limit: '10mb' }));
+  app.use(require('express').json({ limit: '10mb' ,verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }}));
   app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
 
   // Enable CORS

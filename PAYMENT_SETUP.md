@@ -109,16 +109,17 @@ npx prisma migrate dev
 
 ## API Endpoints Summary
 
-| Endpoint                            | Method | Description            |
-| ----------------------------------- | ------ | ---------------------- |
-| `/api/payments/sessions`            | POST   | Create payment session |
-| `/api/payments/sessions/:id`        | GET    | Get payment session    |
-| `/api/payments/sessions/:id/cancel` | POST   | Cancel payment session |
-| `/api/payments/coupons/validate`    | POST   | Validate coupon        |
-| `/api/payments/coupons/active`      | GET    | Get active coupons     |
-| `/api/payments/enrollments`         | POST   | Create enrollment      |
-| `/api/payments/enrollments`         | GET    | Get user enrollments   |
-| `/api/payments/webhooks/stripe`     | POST   | Stripe webhook handler |
+| Endpoint                                  | Method | Description                   |
+| ----------------------------------------- | ------ | ----------------------------- |
+| `/api/payments/sessions`                  | POST   | Create payment session        |
+| `/api/payments/sessions/:id`              | GET    | Get payment session           |
+| `/api/payments/sessions/stripe/:stripeId` | GET    | Get payment session by Stripe |
+| `/api/payments/sessions/:id/cancel`       | POST   | Cancel payment session        |
+| `/api/payments/coupons/validate`          | POST   | Validate coupon               |
+| `/api/payments/coupons/active`            | GET    | Get active coupons            |
+| `/api/payments/enrollments`               | POST   | Create enrollment             |
+| `/api/payments/enrollments`               | GET    | Get user enrollments          |
+| `/api/payments/webhooks/stripe`           | POST   | Stripe webhook handler        |
 
 ## Security Notes
 

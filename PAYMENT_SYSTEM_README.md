@@ -51,11 +51,12 @@ Frontend (Next.js) ←→ REST API Routes ←→ NestJS Backend ←→ Stripe AP
 
 ### Payment Sessions
 
-| Method | Endpoint                            | Description            | Auth Required |
-| ------ | ----------------------------------- | ---------------------- | ------------- |
-| POST   | `/api/payments/sessions`            | Create payment session | ✅            |
-| GET    | `/api/payments/sessions/:id`        | Get payment session    | ✅            |
-| POST   | `/api/payments/sessions/:id/cancel` | Cancel payment session | ✅            |
+| Method | Endpoint                                  | Description                   | Auth Required |
+| ------ | ----------------------------------------- | ----------------------------- | ------------- |
+| POST   | `/api/payments/sessions`                  | Create payment session        | ✅            |
+| GET    | `/api/payments/sessions/:id`              | Get payment session           | ✅            |
+| GET    | `/api/payments/sessions/stripe/:stripeId` | Get payment session by Stripe | ❌            |
+| POST   | `/api/payments/sessions/:id/cancel`       | Cancel payment session        | ✅            |
 
 ### Coupons
 

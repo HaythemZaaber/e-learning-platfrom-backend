@@ -167,6 +167,8 @@ export class PaymentService {
         where: { code: dto.code },
       });
 
+    
+
       if (!coupon) {
         return {
           isValid: false,
@@ -175,6 +177,8 @@ export class PaymentService {
           error: 'Invalid coupon code',
         };
       }
+
+   
 
       // Check if coupon is active
       if (!coupon.isActive) {
@@ -250,6 +254,8 @@ export class PaymentService {
       }
 
       const finalAmount = Math.max(0, dto.amount - discountAmount);
+
+     
 
       return {
         isValid: true,
@@ -424,6 +430,44 @@ export class PaymentService {
       return session;
     } catch (error) {
       this.logger.error('Error getting payment session:', error);
+      throw error;
+    }
+  }
+
+  async getPaymentSessionByStripeId(stripeSessionId: string) {
+    try {
+      const session = await this.prisma.paymentSession.findFirst({
+        where: {
+          stripeSessionId,
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              price: true,
+              currency: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new NotFoundException('Payment session not found');
+      }
+
+      return session;
+    } catch (error) {
+      this.logger.error('Error getting payment session by Stripe ID:', error);
       throw error;
     }
   }

@@ -10,6 +10,8 @@ import {
   HttpStatus,
   HttpCode,
   BadRequestException,
+  RawBodyRequest,
+  Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -82,6 +84,31 @@ export class PaymentController {
     return this.paymentService.getPaymentSession(id, userId);
   }
 
+  @Get('sessions/stripe/:stripeSessionId')
+  @ApiOperation({ summary: 'Get payment session by Stripe session ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment session retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Payment session not found' })
+  async getPaymentSessionByStripeId(@Param('stripeSessionId') stripeSessionId: string) {
+    try {
+      const session = await this.paymentService.getPaymentSessionByStripeId(stripeSessionId);
+      return {
+        success: true,
+        session,
+        message: 'Payment session found',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        session: null,
+        error: error.message,
+        message: 'Payment session not found',
+      };
+    }
+  }
+
   @Post('sessions/:id/cancel')
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
@@ -134,13 +161,15 @@ export class PaymentController {
   @ApiOperation({ summary: 'Handle Stripe webhooks' })
   @ApiResponse({ status: 200, description: 'Webhook processed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid webhook signature' })
-  async handleStripeWebhook(@Req() req: Request) {
-    const signature = req.headers['stripe-signature'] as string;
+  
+  async handleStripeWebhook(@Headers('stripe-signature') signature: string,
+  @Req() req: RawBodyRequest<Request>) {
+     console.log(signature);
     if (!signature) {
       throw new BadRequestException('Missing Stripe signature');
     }
 
-    const event = this.paymentService.constructWebhookEvent(req.body, signature);
+    const event = this.paymentService.constructWebhookEvent(req.rawBody, signature);
     return this.paymentService.handleWebhook(event);
   }
 
@@ -212,6 +241,8 @@ export class PaymentController {
     if (!enrollment) {
       throw new BadRequestException('Enrollment not found for this course');
     }
+
+    console.log(enrollment);
     
     return enrollment;
   }
