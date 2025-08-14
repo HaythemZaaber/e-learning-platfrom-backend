@@ -3,6 +3,8 @@ export interface PaymentSessionResponse {
   session: any;
   redirectUrl?: string;
   error?: string;
+  enrollment?: any;
+  isFreeCourse?: boolean;
 }
 
 export interface CouponValidationResponse {

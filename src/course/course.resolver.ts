@@ -11,6 +11,7 @@ import {
   LectureAnalytics,
   CourseNavigation,
   CourseAnalyticsResponse,
+  CourseViewResponse,
   LectureInteractionResponse,
   ProgressResponse,
   QuizSubmissionResponse,
@@ -494,6 +495,15 @@ export class CourseResolver {
   // ============================================
   // LECTURE TRACKING AND INTERACTIONS
   // ============================================
+
+  @Mutation(() => CourseViewResponse, { name: 'trackCourseView' })
+  async trackCourseView(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ) {
+    const user = context.req.user;
+    return this.courseService.trackCourseView(courseId, user.id);
+  }
 
   @Mutation(() => LectureInteractionResponse, { name: 'trackLectureView' })
   async trackLectureView(

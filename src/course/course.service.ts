@@ -2474,6 +2474,11 @@ export class CourseService {
         },
         orderBy: { order: 'asc' },
       },
+      enrollments: {
+        include: {
+          user: true,
+        },
+      },  
       contentItems: {
         where: {
           lectureId: null, // Course-level content items only
@@ -3960,13 +3965,13 @@ export class CourseService {
         accessInfo = await this.checkCourseAccess(courseId, userId);
         enrollment = course.enrollments?.[0] || null;
 
-        // Only get progress and completion status if user has access
-        if (accessInfo.hasAccess || accessInfo.isFree) {
+        // Only get progress and completion status if user has access (enrolled)
+        if (accessInfo.hasAccess) {
           progress = await this.getCourseProgress(courseId, userId);
           userProgressMap = await this.getUserLectureProgress(userId, courseId);
         }
       } else {
-        // For non-authenticated users, check if course is free
+        // For non-authenticated users, check course access
         accessInfo = await this.checkCourseAccess(courseId, undefined);
       }
 
@@ -4163,11 +4168,11 @@ export class CourseService {
 
   async getCourseProgress(courseId: string, userId: string) {
     try {
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If user doesn't have access to paid course, return default progress with locked status
-      if (!accessInfo.hasAccess && !accessInfo.isFree) {
+      // If user doesn't have access (not enrolled), return default progress with locked status
+      if (!accessInfo.hasAccess) {
         const totalLectures = await this.prisma.lecture.count({
           where: {
             section: { courseId },
@@ -4300,7 +4305,7 @@ export class CourseService {
         throw new UnauthorizedException('User must be authenticated');
       }
 
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
       const sections = await this.prisma.section.findMany({
@@ -4322,12 +4327,12 @@ export class CourseService {
       let userProgressMap: Map<string, boolean> = new Map();
 
       if (userId) {
-        // Only get progress and completion status if user has access
-        if (accessInfo.hasAccess || accessInfo.isFree) {
+        // Only get progress and completion status if user has access (enrolled)
+        if (accessInfo.hasAccess) {
           progress = await this.getCourseProgress(courseId, userId);
           userProgressMap = await this.getUserLectureProgress(userId, courseId);
 
-          // Find current lecture (for both free and paid courses)
+          // Find current lecture
           if (accessInfo.enrollment?.currentLectureId) {
             const currentLectureData = await this.prisma.lecture.findUnique({
               where: { id: accessInfo.enrollment.currentLectureId },
@@ -4385,16 +4390,86 @@ export class CourseService {
   }
 
   // ============================================
-  // LECTURE TRACKING AND INTERACTIONS
+  // COURSE AND LECTURE TRACKING AND INTERACTIONS
   // ============================================
+
+  async trackCourseView(courseId: string, userId: string) {
+    try {
+      // Check if course exists
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: { id: true, title: true, status: true },
+      });
+
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          errors: ['Course not found'],
+        };
+      }
+
+      if (course.status !== 'PUBLISHED') {
+        return {
+          success: false,
+          message: 'Course is not published',
+          errors: ['Course is not available for viewing'],
+        };
+      }
+
+      // Check course access (all courses require enrollment for tracking)
+      const accessInfo = await this.checkCourseAccess(courseId, userId);
+
+      // If user doesn't have access (not enrolled), return success but don't track
+      if (!accessInfo.hasAccess) {
+        return {
+          success: true,
+          message: 'Course view tracking skipped - user not enrolled',
+          errors: [],
+        };
+      }
+
+      // Update course views (increment both total and unique views)
+      await this.prisma.course.update({
+        where: { id: courseId },
+        data: {
+          views: { increment: 1 },
+          // Note: uniqueViews would require more complex logic to track unique visitors
+          // For now, we'll increment it as well, but in a real implementation,
+          // you might want to track unique visitors using cookies or user sessions
+          uniqueViews: { increment: 1 },
+        },
+      });
+
+      // Update enrollment last accessed time
+      if (accessInfo.enrollment) {
+        await this.prisma.enrollment.update({
+          where: { id: accessInfo.enrollment.id },
+          data: { lastAccessedAt: new Date() },
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Course view tracked successfully',
+        errors: [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to track course view: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
 
   async trackLectureView(lectureId: string, courseId: string, userId: string) {
     try {
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If user doesn't have access to paid course, return success but don't track
-      if (!accessInfo.hasAccess && !accessInfo.isFree) {
+      // If user doesn't have access (not enrolled), return success but don't track
+      if (!accessInfo.hasAccess) {
         return {
           success: true,
           message: 'Lecture view tracking skipped - user not enrolled',
@@ -4451,11 +4526,11 @@ export class CourseService {
     actualDuration?: number,
   ) {
     try {
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If user doesn't have access to paid course, return success but don't track
-      if (!accessInfo.hasAccess && !accessInfo.isFree) {
+      // If user doesn't have access (not enrolled), return success but don't track
+      if (!accessInfo.hasAccess) {
         return {
           success: true,
           message: 'Lecture completion tracking skipped - user not enrolled',
@@ -4570,11 +4645,11 @@ export class CourseService {
     actualDuration?: number,
   ) {
     try {
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If user doesn't have access to paid course, return success but don't track
-      if (!accessInfo.hasAccess && !accessInfo.isFree) {
+      // If user doesn't have access (not enrolled), return success but don't track
+      if (!accessInfo.hasAccess) {
         return {
           success: true,
           message: 'Lecture progress tracking skipped - user not enrolled',
@@ -4664,11 +4739,11 @@ export class CourseService {
     actualDuration?: number,
   ) {
     try {
-      // Check course access (free courses don't require enrollment)
+      // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If user doesn't have access to paid course, return success but don't track
-      if (!accessInfo.hasAccess && !accessInfo.isFree) {
+      // If user doesn't have access (not enrolled), return success but don't track
+      if (!accessInfo.hasAccess) {
         return {
           success: true,
           message: 'Lecture interaction tracking skipped - user not enrolled',
@@ -5056,7 +5131,7 @@ export class CourseService {
 
   /**
    * Check if a user has access to a course
-   * Free courses don't require enrollment
+   * All courses (free and paid) require enrollment for access
    */
   private async checkCourseAccess(
     courseId: string,
@@ -5104,16 +5179,11 @@ export class CourseService {
       // Check if course is free
       const isFree = course.enrollmentType === 'FREE' || course.price === 0;
 
-      // If course is free, user has access
-      if (isFree) {
-        return { hasAccess: true, isFree: true, course };
-      }
-
-      // For paid courses, check enrollment
+      // For both free and paid courses, check enrollment
       if (!userId) {
         return {
           hasAccess: false,
-          isFree: false,
+          isFree,
           course,
           errorMessage: 'Authentication required to access this course',
         };
@@ -5126,17 +5196,21 @@ export class CourseService {
       });
 
       if (!enrollment) {
+        const errorMessage = isFree 
+          ? `You are not enrolled in "${course.title}". Please enroll to access this free course.`
+          : `You are not enrolled in "${course.title}". Please enroll to access this course.`;
+        
         return {
           hasAccess: false,
-          isFree: false,
+          isFree,
           course,
-          errorMessage: `You are not enrolled in "${course.title}". Please enroll to access this course.`,
+          errorMessage,
         };
       }
 
       return {
         hasAccess: true,
-        isFree: false,
+        isFree,
         enrollment,
         course,
       };
@@ -5179,7 +5253,7 @@ export class CourseService {
 
   /**
    * Check if a lecture is locked for a user
-   * Free courses have all lectures unlocked
+   * All courses require enrollment to unlock lectures
    */
   private async isLectureLocked(
     lecture: any,
@@ -5190,12 +5264,7 @@ export class CourseService {
       // Get course access info
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
-      // If course is free, no lectures are locked
-      if (accessInfo.isFree) {
-        return false;
-      }
-
-      // For paid courses, check if user is enrolled
+      // If user doesn't have access (not enrolled), lectures are locked
       if (!accessInfo.hasAccess) {
         return true;
       }
@@ -5236,17 +5305,12 @@ export class CourseService {
 
     // If we have access info, use it
     if (accessInfo) {
-      // If course is free, lectures are not locked
-      if (accessInfo.isFree) {
-        return false;
-      }
-
-      // If user has access (enrolled in paid course), lectures are not locked
+      // If user has access (enrolled in course), lectures are not locked
       if (accessInfo.hasAccess) {
         return false;
       }
 
-      // If user doesn't have access to paid course, lectures are locked
+      // If user doesn't have access (not enrolled), lectures are locked
       return true;
     }
 
@@ -5270,17 +5334,12 @@ export class CourseService {
 
     // If we have access info, use it
     if (accessInfo) {
-      // If course is free, sections are not locked
-      if (accessInfo.isFree) {
-        return false;
-      }
-
-      // If user has access (enrolled in paid course), sections are not locked
+      // If user has access (enrolled in course), sections are not locked
       if (accessInfo.hasAccess) {
         return false;
       }
 
-      // If user doesn't have access to paid course, sections are locked
+      // If user doesn't have access (not enrolled), sections are locked
       return true;
     }
 

@@ -862,6 +862,9 @@ export class Course {
   @Field({ nullable: true })
   enrollmentEndDate?: Date;
 
+  @Field(() => [Enrollment])
+  enrollments: Enrollment[];
+
   @Field({ nullable: true })
   courseStartDate?: Date;
 
@@ -1266,6 +1269,9 @@ export class Enrollment {
 
   @Field()
   courseId: string;
+
+  @Field(() => Course)
+  course: Course;
 
   @Field(() => EnrollmentStatus)
   status: EnrollmentStatus;
@@ -1848,6 +1854,18 @@ export class CourseNavigationResponse {
 
   @Field(() => CourseNavigation, { nullable: true })
   navigation?: CourseNavigation;
+
+  @Field(() => [String], { nullable: true })
+  errors?: string[];
+}
+
+@ObjectType()
+export class CourseViewResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
 
   @Field(() => [String], { nullable: true })
   errors?: string[];

@@ -20,7 +20,9 @@ type UserObject {
   updatedAt: DateTime
 }
 
-"""The role of the user"""
+"""
+The role of the user
+"""
 enum UserRole {
   VISITOR
   STUDENT
@@ -138,6 +140,8 @@ type Query {
   getCourse(courseId: String!): Course!
   getCourses(filters: CourseFiltersInput): [Course!]!
   getMyCourses: [Course!]!
+  myEnrollments: [Enrollment!]!
+  myEnrollment(courseId: String!): Enrollment
 }
 
 input CourseFiltersInput {
@@ -148,7 +152,9 @@ input CourseFiltersInput {
   tags: [String!]
 }
 
-"""The difficulty level of the course"""
+"""
+The difficulty level of the course
+"""
 enum CourseLevel {
   BEGINNER
   INTERMEDIATE
@@ -157,7 +163,9 @@ enum CourseLevel {
   ALL_LEVELS
 }
 
-"""The type of enrollment for the course"""
+"""
+The type of enrollment for the course
+"""
 enum EnrollmentType {
   FREE
   PAID
@@ -168,13 +176,45 @@ enum EnrollmentType {
 type Mutation {
   updateUserRole(clerkId: String!, role: String!): UserObject!
   createCourse(input: CreateCourseInput!): CourseCreationResponse!
-  createCourseWithBasicInfo(title: String!, description: String!, category: String!, level: String!): CourseCreationResponse!
+  createCourseWithBasicInfo(
+    title: String!
+    description: String!
+    category: String!
+    level: String!
+  ): CourseCreationResponse!
   saveCourseDraft(input: SaveCourseDraftInput!): CourseDraftResponse!
   deleteCourseDraft: CourseCreationResponse!
-  createTextContent(courseId: String!, title: String!, content: String!, description: String, lessonId: String, order: Float): CourseCreationResponse!
-  createAssignment(courseId: String!, title: String!, description: String!, instructions: String, dueDate: String, points: Float, lessonId: String, order: Float): CourseCreationResponse!
-  createResourceLink(courseId: String!, title: String!, url: String!, resourceType: String!, description: String, lessonId: String, order: Float): CourseCreationResponse!
-  updateCourse(courseId: String!, input: UpdateCourseInput!): CourseCreationResponse!
+  createTextContent(
+    courseId: String!
+    title: String!
+    content: String!
+    description: String
+    lessonId: String
+    order: Float
+  ): CourseCreationResponse!
+  createAssignment(
+    courseId: String!
+    title: String!
+    description: String!
+    instructions: String
+    dueDate: String
+    points: Float
+    lessonId: String
+    order: Float
+  ): CourseCreationResponse!
+  createResourceLink(
+    courseId: String!
+    title: String!
+    url: String!
+    resourceType: String!
+    description: String
+    lessonId: String
+    order: Float
+  ): CourseCreationResponse!
+  updateCourse(
+    courseId: String!
+    input: UpdateCourseInput!
+  ): CourseCreationResponse!
   publishCourse(courseId: String!): CourseCreationResponse!
 }
 
@@ -219,7 +259,9 @@ input LectureInput {
   settings: JSON
 }
 
-"""The type of lesson"""
+"""
+The type of lesson
+"""
 enum LessonType {
   VIDEO
   TEXT
@@ -244,7 +286,9 @@ input ContentItemInput {
   order: Int! = 0
 }
 
-"""The type of content item"""
+"""
+The type of content item
+"""
 enum ContentType {
   VIDEO
   AUDIO

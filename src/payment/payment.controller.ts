@@ -27,7 +27,7 @@ interface AuthenticatedRequest extends Request {
 import { PaymentService } from './payment.service';
 import { CreatePaymentSessionDto } from './dto/create-payment-session.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
-import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
+import { CreateEnrollmentDto, EnrollmentType, EnrollmentSource } from './dto/create-enrollment.dto';
 import { RestAuthGuard } from '../auth/rest-auth.guard';
 
 @ApiTags('Payment')
@@ -198,6 +198,80 @@ export class PaymentController {
   ) {
     const userId = req.user.id;
     const result = await this.paymentService.createEnrollment(dto, userId);
+    
+    if (!result.success) {
+      throw new BadRequestException(result.error);
+    }
+    
+    return result;
+  }
+
+  @Get('enrollments/free/validate/:courseId')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Validate if a course can be enrolled for free' })
+  @ApiResponse({
+    status: 200,
+    description: 'Validation result',
+    schema: {
+      type: 'object',
+      properties: {
+        canEnroll: { type: 'boolean' },
+        course: { type: 'object' },
+        error: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async validateFreeCourseEnrollment(
+    @Param('courseId') courseId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.id;
+    return this.paymentService.validateFreeCourseEnrollment(courseId, userId);
+  }
+
+  @Post('enrollments/free')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Enroll in a free course directly' })
+  @ApiResponse({
+    status: 201,
+    description: 'Free course enrollment created successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        enrollment: { type: 'object' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Bad request - Course is not free' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  @HttpCode(HttpStatus.CREATED)
+  async enrollInFreeCourse(
+    @Body() dto: { courseId: string; notes?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.id;
+    
+    // Validate free course enrollment first
+    const validation = await this.paymentService.validateFreeCourseEnrollment(dto.courseId, userId);
+    
+    if (!validation.canEnroll) {
+      throw new BadRequestException(validation.error);
+    }
+    
+    const result = await this.paymentService.createEnrollment(
+      {
+        courseId: dto.courseId,
+        type: EnrollmentType.FREE,
+        source: EnrollmentSource.DIRECT,
+        notes: dto.notes || 'Free course enrollment',
+      },
+      userId,
+    );
     
     if (!result.success) {
       throw new BadRequestException(result.error);

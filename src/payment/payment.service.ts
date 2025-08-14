@@ -65,6 +65,35 @@ export class PaymentService {
         throw new BadRequestException('User is already enrolled in this course');
       }
 
+      // Check if course is free
+      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+
+      if (isFreeCourse) {
+        // For free courses, create enrollment directly without payment session
+        // This unlocks the course content for the user
+        const enrollmentResult = await this.createEnrollment(
+          {
+            courseId: dto.courseId,
+            type: EnrollmentType.FREE,
+            source: EnrollmentSource.DIRECT,
+            notes: dto.metadata?.notes || 'Free course enrollment',
+          },
+          userId,
+        );
+
+        if (!enrollmentResult.success) {
+          throw new BadRequestException(enrollmentResult.error);
+        }
+
+        return {
+          success: true,
+          session: null,
+          redirectUrl: undefined,
+          enrollment: enrollmentResult.enrollment,
+          isFreeCourse: true,
+        };
+      }
+
       // Calculate amount and apply coupon
       let amount = course.price;
       let discountAmount = 0;
@@ -150,6 +179,7 @@ export class PaymentService {
         success: true,
         session: paymentSession,
         redirectUrl: session.url ?? undefined,
+        isFreeCourse: false,
       };
     } catch (error) {
       this.logger.error('Error creating payment session:', error);
@@ -157,6 +187,7 @@ export class PaymentService {
         success: false,
         session: null,
         error: error.message,
+        isFreeCourse: false,
       };
     }
   }
@@ -311,7 +342,10 @@ export class PaymentService {
         throw new BadRequestException('Course is not available for enrollment');
       }
 
-      // Get payment session if provided
+      // Check if course is free
+      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+
+      // Get payment session if provided (only required for paid courses)
       let paymentSession: any = null;
       if (dto.paymentSessionId) {
         paymentSession = await this.prisma.paymentSession.findUnique({
@@ -329,6 +363,9 @@ export class PaymentService {
         if (paymentSession.status !== 'COMPLETED') {
           throw new BadRequestException('Payment session is not completed');
         }
+      } else if (!isFreeCourse) {
+        // For paid courses, payment session is required
+        throw new BadRequestException('Payment session is required for paid courses');
       }
 
       // Create enrollment
@@ -337,8 +374,8 @@ export class PaymentService {
           userId,
           courseId: dto.courseId,
           status: 'ACTIVE',
-          type: dto.type || (course.enrollmentType === 'FREE' ? 'FREE' : 'PAID'),
-          source: dto.source || 'DIRECT',
+          type: dto.type || (isFreeCourse ? EnrollmentType.FREE : EnrollmentType.PAID),
+          source: dto.source || EnrollmentSource.DIRECT,
           paymentStatus: paymentSession ? 'PAID' : 'FREE',
           paymentId: paymentSession?.id,
           amountPaid: paymentSession ? paymentSession.finalAmount : 0,
@@ -477,22 +514,172 @@ export class PaymentService {
       const enrollments = await this.prisma.enrollment.findMany({
         where: { userId },
         include: {
+          
           course: {
             select: {
+              // Basic Course Info
               id: true,
               title: true,
-              thumbnail: true,
               description: true,
+              shortDescription: true,
+              thumbnail: true,
+              trailer: true,
+              galleryImages: true,
+              
+              // Categorization
               category: true,
+              subcategory: true,
               level: true,
+              status: true,
+              
+              // Pricing
+              price: true,
+              originalPrice: true,
+              currency: true,
+              discountPercent: true,
+              discountValidUntil: true,
+              
+              // Analytics & Performance
+              views: true,
+              uniqueViews: true,
+              completionRate: true,
+              avgRating: true,
+              totalRatings: true,
+              
+              // Content Counts
+              totalSections: true,
+              totalLectures: true,
+              totalQuizzes: true,
+              totalAssignments: true,
+              totalContentItems: true,
+              totalDiscussions: true,
+              totalAnnouncements: true,
+              
+              // Course Settings & Features
+              isFeatured: true,
+              isBestseller: true,
+              isTrending: true,
+              
+              // Instructor
               instructor: {
                 select: {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  email: true,
                   profileImage: true,
+                  title: true,
+                  bio: true,
+                  expertise: true,
+                  rating: true,
+                  totalStudents: true,
+                  totalCourses: true,
                 },
               },
+              instructorId: true,
+              
+              // Content Structure
+              sections: {
+                select: {
+                  id: true,
+                  title: true,
+                  description: true,
+                  order: true,
+                  lectures: {
+                    select: {
+                      id: true,
+                      title: true,
+                      description: true,
+                      type: true,
+                      duration: true,
+                      order: true,
+                      isPreview: true,
+                    },
+                    orderBy: { order: 'asc' },
+                  },
+                },
+                orderBy: { order: 'asc' },
+              },
+              
+              // Requirements & Outcomes
+              requirements: true,
+              whatYouLearn: true,
+              objectives: true,
+              prerequisites: true,
+              
+              // Course Details
+              language: true,
+              subtitleLanguages: true,
+              
+              // Advanced Features
+              hasLiveSessions: true,
+              hasRecordings: true,
+              hasDiscussions: true,
+              hasAssignments: true,
+              hasQuizzes: true,
+              downloadableResources: true,
+              offlineAccess: true,
+              mobileOptimized: true,
+              
+              // Scheduling
+              enrollmentStartDate: true,
+              enrollmentEndDate: true,
+              courseStartDate: true,
+              courseEndDate: true,
+              
+              // Capacity
+              maxStudents: true,
+              currentEnrollments: true,
+              waitlistEnabled: true,
+              
+              // Reviews
+              reviews: {
+                select: {
+                  id: true,
+                  rating: true,
+                  comment: true,
+                  user: {
+                    select: {
+                      id: true,
+                      username: true,
+                      lastName: true,
+                    },
+                  },
+                },
+                take: 5, // Limit to 5 recent reviews
+                orderBy: { createdAt: 'desc' },
+              },
+              
+              // SEO & Marketing
+              seoTitle: true,
+              seoDescription: true,
+              seoTags: true,
+              marketingTags: true,
+              targetAudience: true,
+              
+              // Duration & Difficulty
+              estimatedHours: true,
+              estimatedMinutes: true,
+              difficulty: true,
+              intensityLevel: true,
+              
+              // Certificates & Completion
+              certificate: true,
+              certificateTemplate: true,
+              passingGrade: true,
+              allowRetakes: true,
+              maxAttempts: true,
+              
+              // Course Settings
+              enrollmentType: true,
+              isPublic: true,
+              version: true,
+              
+              // Timestamps
+              createdAt: true,
+              updatedAt: true,
+              publishedAt: true,
+              archivedAt: true,
             },
           },
         },
@@ -644,6 +831,80 @@ export class PaymentService {
     } catch (error) {
       this.logger.error('Error getting active coupons:', error);
       throw error;
+    }
+  }
+
+  async validateFreeCourseEnrollment(courseId: string, userId: string) {
+    try {
+      // Check if user is already enrolled
+      const existingEnrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+      });
+
+      if (existingEnrollment) {
+        return {
+          canEnroll: false,
+          error: 'User is already enrolled in this course',
+        };
+      }
+
+      // Get course details
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          enrollmentType: true,
+          status: true,
+        },
+      });
+
+      if (!course) {
+        return {
+          canEnroll: false,
+          error: 'Course not found',
+        };
+      }
+
+      if (course.status !== 'PUBLISHED') {
+        return {
+          canEnroll: false,
+          error: 'Course is not available for enrollment',
+        };
+      }
+
+      // Check if course is free
+      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+
+      if (!isFreeCourse) {
+        return {
+          canEnroll: false,
+          error: 'This course is not free. Please use the payment enrollment process.',
+        };
+      }
+
+      // For free courses, user can enroll to unlock content
+      return {
+        canEnroll: true,
+        course,
+      };
+
+      return {
+        canEnroll: true,
+        course,
+      };
+    } catch (error) {
+      this.logger.error('Error validating free course enrollment:', error);
+      return {
+        canEnroll: false,
+        error: 'Error validating enrollment',
+      };
     }
   }
 
