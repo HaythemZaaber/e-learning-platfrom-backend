@@ -30,7 +30,7 @@ export class UploadController {
   // ============================================
 
   @Post('video')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadVideo(
     @UploadedFile(
@@ -57,7 +57,7 @@ export class UploadController {
   }
 
   @Post('image')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(
     @UploadedFile(
@@ -84,7 +84,7 @@ export class UploadController {
   }
 
   @Post('document')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadDocument(
     @UploadedFile(
@@ -111,7 +111,7 @@ export class UploadController {
   }
 
   @Post('audio')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadAudio(
     @UploadedFile(
@@ -137,7 +137,7 @@ export class UploadController {
   }
 
   @Post('archive')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadArchive(
     @UploadedFile(
@@ -164,7 +164,7 @@ export class UploadController {
   }
 
   @Post('batch')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   @UseInterceptors(FileInterceptor('file'))
   async uploadBatch(
     @UploadedFile(
@@ -201,7 +201,7 @@ export class UploadController {
   // ============================================
 
   @Delete('content/:contentItemId')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async deleteContentItem(
     @Param('contentItemId') contentItemId: string,
     @GetUser() user: any,
@@ -214,7 +214,7 @@ export class UploadController {
   }
 
   @Delete('file')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async deleteFile(
     @Body('data') data: { fileUrl: string },
     @GetUser() user: any,
@@ -236,7 +236,7 @@ export class UploadController {
   // ============================================
 
   @Delete('thumbnail/unsaved')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async deleteUnsavedThumbnail(
     @Body('thumbnailUrl') thumbnailUrl: string,
     @GetUser() user: any,
@@ -251,7 +251,7 @@ export class UploadController {
   }
 
   @Delete('thumbnail/draft/:courseId')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async deleteDraftThumbnail(
     @Param('courseId') courseId: string,
     @Body('thumbnailUrl') thumbnailUrl: string,
@@ -272,7 +272,7 @@ export class UploadController {
   }
 
   @Delete('thumbnail/course/:courseId')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async deleteCourseThumbnail(
     @Param('courseId') courseId: string,
     @Body('thumbnailUrl') thumbnailUrl: string,
@@ -292,7 +292,7 @@ export class UploadController {
   }
 
   @Delete('thumbnail/cleanup')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async cleanupOrphanedThumbnails(@GetUser() user: any) {
     return this.uploadService.cleanupOrphanedThumbnails(user.id);
   }
@@ -302,7 +302,7 @@ export class UploadController {
   // ============================================
 
   @Get('my-content')
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT)
   async getMyContentItems(@GetUser() user: any) {
     return this.uploadService.getUserContentItems(user.id);
   }

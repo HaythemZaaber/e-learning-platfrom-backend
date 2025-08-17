@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { GraphQLJSON } from 'graphql-type-json';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -10,6 +11,7 @@ import { WebhookModule } from './webhooks/webhook.module';
 import { CourseModule } from './course/course.module';
 import { UploadModule } from './upload/upload.module';
 import { PaymentModule } from './payment/payment.module';
+import { InstructorVerificationModule } from './instructor-verification/instructor-verification.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -24,6 +26,9 @@ import { ConfigModule } from '@nestjs/config';
       }),
       playground: true,
       // graphiql: true,
+      resolvers: {
+        JSON: GraphQLJSON,
+      },
     }),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -36,6 +41,7 @@ import { ConfigModule } from '@nestjs/config';
     PrismaModule,
     WebhookModule,
     PaymentModule,
+    InstructorVerificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

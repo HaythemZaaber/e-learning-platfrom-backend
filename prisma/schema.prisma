@@ -79,6 +79,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // =============================================================================
+  // ROLE-SPECIFIC PROFILE RELATIONS
+  // =============================================================================
+  instructorProfile InstructorProfile?
+  studentProfile    StudentProfile?
+  adminProfile      AdminProfile?
+
+  // =============================================================================
+  // SHARED RELATIONS (all roles can have these)
+  // =============================================================================
+
   // Relations
   instructorCourses     Course[]               @relation("InstructorCourses")
   enrollments           Enrollment[]
@@ -101,6 +112,11 @@ model User {
   paymentSessions       PaymentSession[]
   paymentMethods        PaymentMethod[]
 
+  // Instructor verification relations
+  manualReviews         InstructorManualReview[]  @relation("ReviewerReviews")
+  conductedInterviews   InstructorInterview[]     @relation("InterviewerInterviews")
+  documentVerifications DocumentVerificationLog[]
+
   @@map("users")
 }
 
@@ -109,15 +125,21 @@ model CourseDraft {
   instructorId String
   instructor   User   @relation(fields: [instructorId], references: [id], onDelete: Cascade)
 
-  // Draft data with version control
-  draftData       Json @default("{}")
-  currentStep     Int  @default(0)
-  completionScore Int  @default(0)
-  version         Int  @default(1)
+  // Draft type and data
+  draftType       DraftType @default(COURSE)
+  draftData       Json      @default("{}")
+  currentStep     Int       @default(0)
+  completionScore Int       @default(0)
+  version         Int       @default(1)
 
   // Auto-save tracking
   lastAutoSave DateTime?
   saveCount    Int       @default(0)
+
+  // Metadata
+  title       String?
+  description String?
+  isTemplate  Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -125,36 +147,431 @@ model CourseDraft {
   @@map("course_drafts")
 }
 
+model InstructorProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Professional Information
+  title           String?
+  bio             String?
+  shortBio        String? // For instructor cards
+  expertise       String[] @default([])
+  qualifications  String[] @default([])
+  experience      Int?     @default(0) // years of experience
+  socialLinks     Json     @default("{}")
+  personalWebsite String?
+  linkedinProfile String?
+
+  // Teaching Specialization
+  subjectsTeaching    String[] @default([])
+  teachingCategories  String[] @default([])
+  languagesSpoken     Json     @default("[]") // [{language, proficiency}]
+  teachingStyle       String?
+  targetAudience      String?
+  teachingMethodology String?
+
+  // Platform Statistics
+  teachingRating Float? @default(0)
+  totalStudents  Int    @default(0)
+  totalCourses   Int    @default(0)
+  totalRevenue   Float  @default(0)
+  currency       String @default("USD")
+
+  // Performance Metrics
+  averageCourseRating  Float @default(0)
+  studentRetentionRate Float @default(0)
+  courseCompletionRate Float @default(0)
+  responseTime         Int   @default(0) // hours
+  studentSatisfaction  Float @default(0)
+
+  // Teaching Availability
+  isAcceptingStudents  Boolean @default(true)
+  maxStudentsPerCourse Int?
+  preferredSchedule    Json    @default("{}")
+  availableTimeSlots   Json    @default("[]")
+
+  // Verification & Compliance
+  isVerified           Boolean   @default(false)
+  verificationLevel    String? // "BASIC", "VERIFIED", "EXPERT"
+  lastVerificationDate DateTime?
+  complianceStatus     String?   @default("COMPLIANT")
+
+  // Content Creation Stats
+  totalLectures     Int @default(0)
+  totalVideoHours   Int @default(0) // total content hours created
+  totalQuizzes      Int @default(0)
+  totalAssignments  Int @default(0)
+  contentUpdateFreq Int @default(0) // days between updates
+
+  // Financial Information
+  payoutSettings     Json   @default("{}")
+  taxInformation     Json   @default("{}")
+  paymentPreferences Json   @default("{}")
+  revenueSharing     Float? @default(70) // percentage instructor keeps
+
+  // Marketing & Promotion
+  isPromotionEligible Boolean  @default(true)
+  marketingConsent    Boolean  @default(false)
+  featuredInstructor  Boolean  @default(false)
+  badgesEarned        String[] @default([])
+
+  // Activity Tracking
+  lastCourseUpdate    DateTime?
+  lastStudentReply    DateTime?
+  lastContentCreation DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("instructor_profiles")
+}
+
+model StudentProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Learning Preferences
+  learningStyle      LearningStyle?
+  preferredLanguages String[]       @default([])
+  interests          String[]       @default([])
+  skillLevel         StudentLevel   @default(BEGINNER)
+  learningGoals      String[]       @default([])
+
+  // Academic Background
+  education     String?
+  fieldOfStudy  String?
+  currentStatus String? // "student", "professional", "career_change", etc.
+  industry      String?
+  jobTitle      String?
+
+  // Learning Analytics
+  totalTimeSpent        Int       @default(0) // in minutes
+  totalCoursesEnrolled  Int       @default(0)
+  totalCoursesCompleted Int       @default(0)
+  averageCompletionRate Float     @default(0)
+  lastActivityAt        DateTime?
+  studyStreak           Int       @default(0) // days
+  longestStreak         Int       @default(0)
+
+  // Gamification
+  totalPoints     Int      @default(0)
+  level           Int      @default(1)
+  badges          String[] @default([])
+  achievements    String[] @default([])
+  leaderboardRank Int?
+
+  // Learning Behavior
+  preferredStudyTime   Json @default("{}") // time of day preferences
+  sessionDuration      Int  @default(30) // preferred session length in minutes
+  reminderSettings     Json @default("{}")
+  notificationSettings Json @default("{}")
+
+  // Social Learning
+  studyGroups   String[] @default([]) // group IDs
+  mentors       String[] @default([]) // mentor user IDs
+  studyBuddies  String[] @default([]) // peer user IDs
+  publicProfile Boolean  @default(false)
+  shareProgress Boolean  @default(false)
+
+  // Career Development
+  careerGoals       String[] @default([])
+  skillsToLearn     String[] @default([])
+  industryInterests String[] @default([])
+  resumeUrl         String?
+  portfolioUrl      String?
+  jobSearchStatus   String? // "not_looking", "casually_looking", "actively_looking"
+
+  // Financial
+  totalSpent       Float   @default(0)
+  currency         String  @default("USD")
+  budgetPreference String? // "free_only", "budget_conscious", "premium_ok"
+  subscriptionPlan String?
+
+  // Accessibility & Support
+  accessibilityNeeds   Json     @default("{}")
+  learningDisabilities String[] @default([])
+  supportRequests      Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("student_profiles")
+}
+
+model AdminProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Admin Role Details
+  adminLevel  AdminLevel @default(MODERATOR)
+  department  String?
+  title       String?
+  permissions String[]   @default([])
+  accessLevel Int        @default(1) // 1-10 hierarchy
+
+  // Contact Information
+  workEmail        String?
+  workPhone        String?
+  emergencyContact Json    @default("{}")
+
+  // Administrative Stats
+  totalReviews        Int @default(0)
+  totalApprovals      Int @default(0)
+  totalRejections     Int @default(0)
+  averageResponseTime Int @default(0) // hours
+  casesHandled        Int @default(0)
+
+  // Specializations
+  specializations    String[] @default([]) // "instructor_reviews", "content_moderation", etc.
+  languagesSupported String[] @default([])
+  workingHours       Json     @default("{}")
+  timezone           String   @default("UTC")
+
+  // Security & Compliance
+  lastSecurityCheck  DateTime?
+  complianceTraining Json      @default("[]")
+  backgroundCheck    Boolean   @default(false)
+  securityClearance  String?
+
+  // Performance Metrics
+  userSatisfactionRating Float? @default(0)
+  escalationRate         Float? @default(0)
+  resolutionRate         Float? @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_profiles")
+}
+
 model InstructorApplication {
   id     String @id @default(cuid())
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Application Details
-  motivation         String
-  teachingExperience String
-  portfolioUrl       String?
-  resumeUrl          String?
-  identityDocument   String?
-  qualificationDocs  String[] @default([])
-  sampleContent      String? // URL to sample teaching content
+  // Application Data (comprehensive form data)
+  applicationData Json @default("{}")
 
-  // Enhanced review process
-  status      ApplicationStatus @default(PENDING)
-  reviewedBy  String?
-  reviewNotes String?
-  reviewScore Int? // 1-10 rating
-  reviewedAt  DateTime?
+  // Personal Information
+  personalInfo Json @default("{}")
 
-  // Interview process
-  interviewScheduled DateTime?
-  interviewNotes     String?
-  interviewScore     Int?
+  // Professional Background
+  professionalBackground Json @default("{}")
+
+  // Teaching Information
+  teachingInformation Json @default("{}")
+
+  // Documents and Files
+  documents Json @default("{}")
+
+  // Consent and Agreements
+  consents Json @default("{}")
+
+  // Key extracted fields for quick access
+  fullName           String
+  phoneNumber        String
+  nationality        String?
+  currentJobTitle    String?
+  yearsOfExperience  Int
+  subjectsToTeach    String[] @default([])
+  teachingMotivation String
+
+  // Document URLs
+  resumeUrl         String?
+  portfolioUrl      String?
+  identityDocument  Json?   @default("{}")
+  educationCerts    Json    @default("[]")
+  professionalCerts Json    @default("[]")
+  sampleContent     Json    @default("{}")
+
+  // Application Metadata
+  currentStep     Int               @default(0)
+  completionScore Int               @default(0)
+  status          ApplicationStatus @default(PENDING)
+  submittedAt     DateTime?
+  lastAutoSave    DateTime?
+  lastSavedAt     DateTime?         @updatedAt
+
+  // Processing Results
+  aiVerification       InstructorAIVerification?
+  manualReview         InstructorManualReview?
+  interview            InstructorInterview?
+  documentLogs         DocumentVerificationLog[]
+  applicationDocuments ApplicationDocument[]     @relation("ApplicationDocuments")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("instructor_applications")
+}
+
+// =============================================================================
+// INSTRUCTOR VERIFICATION MODELS
+// =============================================================================
+
+model InstructorAIVerification {
+  id            String                @id @default(cuid())
+  applicationId String                @unique
+  application   InstructorApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  // Document Verification
+  identityVerified   Boolean  @default(false)
+  identityConfidence Float?
+  identityFlags      String[] @default([])
+
+  educationVerified   Boolean  @default(false)
+  educationConfidence Float?
+  educationFlags      String[] @default([])
+
+  experienceVerified   Boolean  @default(false)
+  experienceConfidence Float?
+  experienceFlags      String[] @default([])
+
+  // Content Analysis
+  contentQualityScore  Float?
+  languageProficiency  Float?
+  professionalismScore Float?
+
+  // Risk Assessment
+  riskScore       Float?
+  riskFactors     String[] @default([])
+  fraudIndicators String[] @default([])
+
+  // AI Recommendations
+  overallScore         Float?
+  recommendation       AIRecommendation
+  recommendationReason String?
+
+  // Processing Details
+  verificationProvider String?
+  processingTime       Int?
+  processingCost       Float?
+
+  processedAt DateTime @default(now())
+
+  @@map("instructor_ai_verifications")
+}
+
+model InstructorManualReview {
+  id            String                @id @default(cuid())
+  applicationId String                @unique
+  application   InstructorApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  reviewerId String
+  reviewer   User   @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+
+  // Review Scores (1-10)
+  documentationScore   Int?
+  experienceScore      Int?
+  communicationScore   Int?
+  technicalScore       Int?
+  professionalismScore Int?
+  overallScore         Float?
+
+  // Review Details
+  strengths       String?
+  weaknesses      String?
+  concerns        String?
+  recommendations String?
+
+  decision                ReviewDecision
+  decisionReason          String?
+  conditionalRequirements String[]       @default([])
+
+  requiresInterview      Boolean  @default(false)
+  requiresAdditionalDocs Boolean  @default(false)
+  requiredDocuments      String[] @default([])
+
+  reviewedAt DateTime @default(now())
+
+  @@map("instructor_manual_reviews")
+}
+
+model InstructorInterview {
+  id            String                @id @default(cuid())
+  applicationId String                @unique
+  application   InstructorApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  interviewerId   String
+  interviewer     User      @relation("InterviewerInterviews", fields: [interviewerId], references: [id])
+  scheduledAt     DateTime
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+
+  format         InterviewFormat @default(VIDEO_CALL)
+  meetingLink    String?
+  interviewNotes String?
+
+  communicationScore    Int?
+  technicalKnowledge    Int?
+  teachingDemonstration Int?
+  culturalFit           Int?
+  overallScore          Float?
+
+  passed    Boolean?
+  feedback  String?
+  nextSteps String?
+
+  recordingUrl     String?
+  recordingConsent Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("instructor_interviews")
+}
+
+model DocumentVerificationLog {
+  id            String                @id @default(cuid())
+  applicationId String
+  application   InstructorApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  documentType         String
+  documentUrl          String
+  verificationProvider String
+  verificationResult   Json   @default("{}")
+
+  isVerified Boolean  @default(false)
+  confidence Float?
+  flags      String[] @default([])
+  notes      String?
+
+  verifiedBy String?
+  verifier   User?    @relation(fields: [verifiedBy], references: [id])
+  verifiedAt DateTime @default(now())
+
+  @@map("document_verification_logs")
+}
+
+model ApplicationDocument {
+  id            String                @id @default(cuid())
+  applicationId String
+  application   InstructorApplication @relation("ApplicationDocuments", fields: [applicationId], references: [id], onDelete: Cascade)
+
+  documentType DocumentType
+  fileName     String
+  originalName String
+  fileSize     Int
+  mimeType     String
+  fileUrl      String
+  thumbnailUrl String?
+
+  verificationStatus VerificationStatus @default(DRAFT)
+  uploadedAt         DateTime           @default(now())
+
+  // AI Analysis Results
+  aiAnalysis Json @default("{}")
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("application_documents")
 }
 
 model Course {
@@ -904,6 +1321,72 @@ enum ApplicationStatus {
   REJECTED
   REQUIRES_MORE_INFO
   INTERVIEW_SCHEDULED
+}
+
+enum VerificationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum DocumentType {
+  IDENTITY_DOCUMENT
+  EDUCATION_CERTIFICATE
+  PROFESSIONAL_CERTIFICATE
+  EMPLOYMENT_VERIFICATION
+  PROFILE_PHOTO
+  VIDEO_INTRODUCTION
+  TEACHING_DEMO
+  RESUME
+  PORTFOLIO
+  OTHER
+}
+
+enum StudentLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum AdminLevel {
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+  SYSTEM_ADMIN
+}
+
+enum DraftType {
+  COURSE
+  APPLICATION
+  PROFILE
+  CONTENT
+}
+
+enum AIRecommendation {
+  APPROVE
+  REJECT
+  MANUAL_REVIEW_REQUIRED
+  INTERVIEW_REQUIRED
+  MORE_DOCUMENTS_NEEDED
+}
+
+enum ReviewDecision {
+  APPROVE
+  REJECT
+  CONDITIONAL_APPROVE
+  REQUEST_INTERVIEW
+  REQUEST_MORE_INFO
+}
+
+enum InterviewFormat {
+  VIDEO_CALL
+  PHONE_CALL
+  IN_PERSON
+  ASYNCHRONOUS_VIDEO
 }
 
 enum CourseLevel {

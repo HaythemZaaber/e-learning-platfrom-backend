@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { config } from 'dotenv';
+import { GraphQLAwareValidationPipe } from './common/pipes/graphql-aware-validation.pipe';
 config();
 
 async function bootstrap() {
@@ -25,14 +26,8 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
+  // Global validation pipe (GraphQL-aware)
+  app.useGlobalPipes(new GraphQLAwareValidationPipe());
 
   // Serve static files from uploads directory
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
