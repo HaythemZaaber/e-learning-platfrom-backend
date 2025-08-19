@@ -4,9 +4,10 @@ import { InstructorVerificationResolver } from './instructor-verification.resolv
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { InstructorModule } from '../instructor/instructor.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, InstructorModule],
 
   providers: [InstructorVerificationService, InstructorVerificationResolver],
   exports: [InstructorVerificationService],

@@ -48,7 +48,6 @@ import { UserRole } from '@prisma/client';
 import { GraphQLJSON } from 'graphql-type-json';
 
 @Resolver(() => Course)
-@UseGuards(AuthGuard, RolesGuard)
 export class CourseResolver {
   constructor(private courseService: CourseService) {}
 
@@ -57,6 +56,7 @@ export class CourseResolver {
   // ============================================
 
   @Mutation(() => CourseCreationResponse, { name: 'createCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createCourse(
     @Args('input') input: CreateCourseInput,
@@ -67,6 +67,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createCourseWithBasicInfo(
     @Args('title') title: string,
@@ -91,6 +92,7 @@ export class CourseResolver {
   // ============================================
 
   @Mutation(() => CourseDraftResponse, { name: 'saveCourseDraft' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async saveCourseDraft(
     @Args('input') input: SaveCourseDraftInput,
@@ -101,6 +103,7 @@ export class CourseResolver {
   }
 
   @Query(() => CourseDraftResponse, { name: 'getCourseDraft' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getCourseDraft(@Context() context: any): Promise<CourseDraftResponse> {
     const user = context.req.user;
@@ -108,6 +111,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async deleteCourseDraft(
     @Context() context: any,
@@ -121,6 +125,7 @@ export class CourseResolver {
   // ============================================
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createTextContent(
     @Args('courseId') courseId: string,
@@ -142,6 +147,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createAssignment(
     @Args('courseId') courseId: string,
@@ -167,6 +173,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async createResourceLink(
     @Args('courseId') courseId: string,
@@ -194,6 +201,7 @@ export class CourseResolver {
   // ============================================
 
   @Mutation(() => CourseCreationResponse, { name: 'updateCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourse(
     @Args('courseId') courseId: string,
@@ -205,6 +213,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourseBasicInfo(
     @Args('courseId') courseId: string,
@@ -221,6 +230,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse)
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateCourseSettings(
     @Args('courseId') courseId: string,
@@ -233,6 +243,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse, { name: 'publishCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async publishCourse(
     @Args('courseId') courseId: string,
@@ -243,6 +254,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse, { name: 'unpublishCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async unpublishCourse(
     @Args('courseId') courseId: string,
@@ -253,6 +265,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse, { name: 'deleteCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async deleteCourse(
     @Args('courseId') courseId: string,
@@ -270,6 +283,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => CourseCreationResponse, { name: 'duplicateCourse' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async duplicateCourse(
     @Args('courseId') courseId: string,
@@ -393,7 +407,7 @@ export class CourseResolver {
   }
 
   // ============================================
-  // COURSE QUERIES
+  // COURSE QUERIES (VISITOR ACCESSIBLE)
   // ============================================
 
   @Query(() => Course, { name: 'getCourse' })
@@ -421,6 +435,7 @@ export class CourseResolver {
   }
 
   @Query(() => [Course], { name: 'getMyCourses' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getMyCourses(@Context() context: any) {
     const user = context.req.user;
@@ -438,7 +453,7 @@ export class CourseResolver {
   }
 
   // ============================================
-  // COURSE PREVIEW AND LECTURE QUERIES
+  // COURSE PREVIEW AND LECTURE QUERIES (VISITOR ACCESSIBLE)
   // ============================================
 
   @Query(() => CoursePreview, { name: 'getCoursePreview' })
@@ -461,6 +476,7 @@ export class CourseResolver {
   }
 
   @Query(() => CourseProgress, { name: 'getCourseProgress' })
+  @UseGuards(AuthGuard, RolesGuard)
   async getCourseProgress(
     @Args('courseId') courseId: string,
     @Context() context: any,
@@ -470,11 +486,14 @@ export class CourseResolver {
   }
 
   @Query(() => LectureAnalytics, { name: 'getLectureAnalytics' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getLectureAnalytics(@Args('lectureId') lectureId: string) {
     return this.courseService.getLectureAnalytics(lectureId);
   }
 
   @Query(() => CourseNavigation, { name: 'getCourseNavigation' })
+  @UseGuards(AuthGuard, RolesGuard)
   async getCourseNavigation(
     @Args('courseId') courseId: string,
     @Context() context: any,
@@ -484,6 +503,8 @@ export class CourseResolver {
   }
 
   @Query(() => CourseAnalyticsResponse, { name: 'courseAnalytics' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getCourseAnalytics(
     @Args('courseId') courseId: string,
     @Context() context: any,
@@ -493,10 +514,11 @@ export class CourseResolver {
   }
 
   // ============================================
-  // LECTURE TRACKING AND INTERACTIONS
+  // LECTURE TRACKING AND INTERACTIONS (REQUIRES AUTHENTICATION)
   // ============================================
 
   @Mutation(() => CourseViewResponse, { name: 'trackCourseView' })
+  @UseGuards(AuthGuard, RolesGuard)
   async trackCourseView(
     @Args('courseId') courseId: string,
     @Context() context: any,
@@ -506,6 +528,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => LectureInteractionResponse, { name: 'trackLectureView' })
+  @UseGuards(AuthGuard, RolesGuard)
   async trackLectureView(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -516,6 +539,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => ProgressResponse, { name: 'markLectureComplete' })
+  @UseGuards(AuthGuard, RolesGuard)
   async markLectureComplete(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -534,6 +558,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => ProgressResponse, { name: 'updateLectureProgress' })
+  @UseGuards(AuthGuard, RolesGuard)
   async updateLectureProgress(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -556,6 +581,7 @@ export class CourseResolver {
   @Mutation(() => LectureInteractionResponse, {
     name: 'trackLectureInteraction',
   })
+  @UseGuards(AuthGuard, RolesGuard)
   async trackLectureInteraction(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -579,6 +605,8 @@ export class CourseResolver {
   @Mutation(() => UpdateLectureDurationResponse, {
     name: 'updateLectureDuration',
   })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateLectureDuration(
     @Args('lectureId') lectureId: string,
     @Args('duration') duration: number,
@@ -587,6 +615,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => QuizSubmissionResponse, { name: 'submitLectureQuiz' })
+  @UseGuards(AuthGuard, RolesGuard)
   async submitLectureQuiz(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -607,6 +636,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => ResourceDownloadResponse, { name: 'downloadLectureResource' })
+  @UseGuards(AuthGuard, RolesGuard)
   async downloadLectureResource(
     @Args('resourceId') resourceId: string,
     @Args('lectureId') lectureId: string,
@@ -624,6 +654,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => BookmarkResponse, { name: 'toggleLectureBookmark' })
+  @UseGuards(AuthGuard, RolesGuard)
   async toggleLectureBookmark(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -640,6 +671,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => NoteResponse, { name: 'addLectureNote' })
+  @UseGuards(AuthGuard, RolesGuard)
   async addLectureNote(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -658,6 +690,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => NoteResponse, { name: 'updateLectureNote' })
+  @UseGuards(AuthGuard, RolesGuard)
   async updateLectureNote(
     @Args('noteId') noteId: string,
     @Args('content') content: string,
@@ -668,6 +701,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => NoteResponse, { name: 'deleteLectureNote' })
+  @UseGuards(AuthGuard, RolesGuard)
   async deleteLectureNote(
     @Args('noteId') noteId: string,
     @Context() context: any,
@@ -677,6 +711,7 @@ export class CourseResolver {
   }
 
   @Query(() => NotesResponse, { name: 'getLectureNotes' })
+  @UseGuards(AuthGuard, RolesGuard)
   async getLectureNotes(
     @Args('lectureId') lectureId: string,
     @Context() context: any,
@@ -686,6 +721,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => RatingResponse, { name: 'rateLecture' })
+  @UseGuards(AuthGuard, RolesGuard)
   async rateLecture(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -709,6 +745,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => IssueResponse, { name: 'reportLectureIssue' })
+  @UseGuards(AuthGuard, RolesGuard)
   async reportLectureIssue(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -733,6 +770,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => AccessResponse, { name: 'requestLectureAccess' })
+  @UseGuards(AuthGuard, RolesGuard)
   async requestLectureAccess(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -755,6 +793,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => ShareResponse, { name: 'shareLecture' })
+  @UseGuards(AuthGuard, RolesGuard)
   async shareLecture(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -773,6 +812,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => TranscriptResponse, { name: 'getLectureTranscript' })
+  @UseGuards(AuthGuard, RolesGuard)
   async getLectureTranscript(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -796,6 +836,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => SummaryResponse, { name: 'generateLectureSummary' })
+  @UseGuards(AuthGuard, RolesGuard)
   async generateLectureSummary(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -819,6 +860,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => DiscussionResponse, { name: 'createLectureDiscussion' })
+  @UseGuards(AuthGuard, RolesGuard)
   async createLectureDiscussion(
     @Args('lectureId') lectureId: string,
     @Args('courseId') courseId: string,
@@ -847,6 +889,7 @@ export class CourseResolver {
   }
 
   @Mutation(() => ReplyResponse, { name: 'replyToLectureDiscussion' })
+  @UseGuards(AuthGuard, RolesGuard)
   async replyToLectureDiscussion(
     @Args('discussionId') discussionId: string,
     @Args('content') content: string,

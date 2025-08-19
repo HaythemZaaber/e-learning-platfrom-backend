@@ -17,7 +17,10 @@ import {
   VerificationResponse,
   DocumentUploadResponse,
   VerificationStatusResponse,
+  AdminStats,
 } from './entities/instructor-verification.entity';
+
+
 
 import {
   CreateInstructorVerificationInput,
@@ -34,6 +37,11 @@ import {
   CreateInterviewInput,
   UpdateInterviewInput,
   ApplicationFiltersInput,
+  StartReviewInput,
+  ReviewDocumentInput,
+  ApproveApplicationInput,
+  RejectApplicationInput,
+  RequestMoreInfoInput,
 } from './dto/instructor-verification.dto';
 
 @Resolver(() => InstructorVerification)
@@ -48,13 +56,14 @@ export class InstructorVerificationResolver {
   // =============================================================================
 
   @Query(() => VerificationResponse, { name: 'getInstructorVerification' })
-  async getInstructorVerification(@Args('userId') userId: string) {
+  async getInstructorVerification(@Args('userId', { nullable: true }) userId?: string ,@Args('applicationId', { nullable: true }) applicationId?: string) {
     try {
-      const verification = await this.instructorVerificationService.getInstructorVerification(userId);
+      const verification = await this.instructorVerificationService.getInstructorVerification(userId, applicationId);
       
       return {
         success: true,
-        message: 'Instructor verification retrieved successfully',
+      
+   message: 'Instructor verification retrieved successfully',
         data: verification,
         errors: null,
       };
@@ -65,8 +74,7 @@ export class InstructorVerificationResolver {
         data: null,
         errors: [error.message],
       };
-    }
-  }
+    } }
 
   @Query(() => [InstructorVerification], { name: 'getDraftApplications' })
   async getDraftApplications(@Args('userId') userId: string) {
@@ -102,6 +110,26 @@ export class InstructorVerificationResolver {
     }
   }
 
+  @Query(() => [InstructorVerification], { name: 'getSubmittedApplications' })
+  @Roles(UserRole.ADMIN)
+  async getSubmittedApplications(@Args('filters', { nullable: true }) filters?: ApplicationFiltersInput) {
+    try {
+      return await this.instructorVerificationService.getSubmittedApplications(filters);
+    } catch (error) {
+      throw new Error(`Failed to get submitted applications: ${error.message}`);
+    }
+  }
+
+  @Query(() => AdminStats, { name: 'getAdminStats' })
+  @Roles(UserRole.ADMIN)
+  async getAdminStats() {
+    try {
+      return await this.instructorVerificationService.getAdminStats();
+    } catch (error) {
+      throw new Error(`Failed to get admin stats: ${error.message}`);
+    }
+  }
+
   @Query(() => InstructorVerification, { name: 'getInstructorApplicationById' })
   @Roles(UserRole.ADMIN)
   async getInstructorApplicationById(@Args('id') id: string) {
@@ -112,6 +140,8 @@ export class InstructorVerificationResolver {
       throw new Error(`Failed to get application: ${error.message}`);
     }
   }
+
+
 
   // =============================================================================
   // MUTATIONS
@@ -500,11 +530,165 @@ export class InstructorVerificationResolver {
         applicationId,
         status,
         reason,
+        user.id,
       );
 
       return {
         success: true,
         message: 'Application status updated successfully',
+        data: verification,
+        errors: null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+        errors: [error.message],
+      };
+    }
+  }
+
+  // =============================================================================
+  // ADMIN REVIEW MUTATIONS
+  // =============================================================================
+
+  @Mutation(() => VerificationResponse, { name: 'startApplicationReview' })
+  @Roles(UserRole.ADMIN)
+  async startApplicationReview(
+    @Args('input') input: StartReviewInput,
+    @GetUser() user?: any,
+  ) {
+    try {
+      const verification = await this.instructorVerificationService.startApplicationReview(
+        input.applicationId,
+        user.id,
+      );
+
+      return {
+        success: true,
+        message: 'Application review started successfully',
+        data: verification,
+        errors: null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+        errors: [error.message],
+      };
+    }
+  }
+
+  @Mutation(() => ApplicationDocument, { name: 'reviewDocument' })
+  @Roles(UserRole.ADMIN)
+  async reviewDocument(
+    @Args('input') input: ReviewDocumentInput,
+    @GetUser() user?: any,
+  ) {
+    try {
+      return await this.instructorVerificationService.reviewDocument(
+        input.documentId,
+        input.verificationStatus,
+        user.id,
+        input.notes,
+      );
+    } catch (error) {
+      throw new Error(`Failed to review document: ${error.message}`);
+    }
+  }
+
+  @Mutation(() => VerificationResponse, { name: 'approveApplication' })
+  @Roles(UserRole.ADMIN)
+  async approveApplication(
+    @Args('input') input: ApproveApplicationInput,
+    @GetUser() user?: any,
+  ) {
+    try {
+      if (!user || !user.id) {
+        throw new Error('User not authenticated or user ID not found');
+      }
+
+      const verification = await this.instructorVerificationService.updateApplicationStatus(
+        input.applicationId,
+        ApplicationStatus.APPROVED,
+        input.notes,
+        user.id,
+      );
+
+      return {
+        success: true,
+        message: 'Application approved successfully',
+        data: verification,
+        errors: null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+        errors: [error.message],
+      };
+    }
+  }
+
+  @Mutation(() => VerificationResponse, { name: 'rejectApplication' })
+  @Roles(UserRole.ADMIN)
+  async rejectApplication(
+    @Args('input') input: RejectApplicationInput,
+    @GetUser() user?: any,
+  ) {
+    try {
+      if (!user || !user.id) {
+        throw new Error('User not authenticated or user ID not found');
+      }
+
+      const verification = await this.instructorVerificationService.rejectApplication(
+        input.applicationId,
+        input.reason,
+        user.id,
+        input.requiresResubmission,
+      );
+
+      return {
+        success: true,
+        message: 'Application rejected successfully',
+        data: verification,
+        errors: null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+        errors: [error.message],
+      };
+    }
+  }
+
+  @Mutation(() => VerificationResponse, { name: 'requestMoreInformation' })
+  @Roles(UserRole.ADMIN)
+  async requestMoreInformation(
+    @Args('input') input: RequestMoreInfoInput,
+    @GetUser() user?: any,
+  ) {
+    try {
+      if (!user || !user.id) {
+        throw new Error('User not authenticated or user ID not found');
+      }
+
+      const deadline = input.deadline ? new Date(input.deadline) : undefined;
+      const verification = await this.instructorVerificationService.requestMoreInformation(
+        input.applicationId,
+        input.requiredInfo,
+        user.id,
+        deadline,
+      );
+
+      return {
+        success: true,
+        message: 'More information requested successfully',
         data: verification,
         errors: null,
       };

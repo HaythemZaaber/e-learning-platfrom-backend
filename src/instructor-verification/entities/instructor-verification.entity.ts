@@ -8,6 +8,7 @@ import {
   ReviewDecision,
   InterviewFormat
 } from '@prisma/client';
+import { User } from 'src/instructor/entities/instructor.entity';
 
 // =============================================================================
 // ENUMS
@@ -70,6 +71,24 @@ export class DocumentTypeEnum {
 // =============================================================================
 // CORE TYPES
 // =============================================================================
+
+// @ObjectType()
+// export class User {
+//   @Field(() => ID)
+//   id: string;
+
+//   @Field()
+//   email: string;
+
+//   @Field({ nullable: true })
+//   firstName?: string;
+
+//   @Field({ nullable: true })
+//   lastName?: string;
+
+//   @Field({ nullable: true })
+//   profileImage?: string;
+// }
 
 
 
@@ -201,6 +220,13 @@ export class InstructorAIVerification {
 
   @Field()
   processedAt: Date;
+
+  // Additional fields for the query
+  @Field(() => GraphQLJSON, { nullable: true })
+  verificationResults?: any;
+
+  @Field(() => Date, { nullable: true })
+  reviewedAt?: Date;
 }
 
 
@@ -299,6 +325,12 @@ export class InstructorInterview {
   @Field({ nullable: true })
   interviewNotes?: string;
 
+  @Field({ nullable: true })
+  notes?: string;
+
+  @Field({ nullable: true })
+  status?: string;
+
   @Field(() => Int, { nullable: true })
   communicationScore?: number;
 
@@ -363,10 +395,10 @@ export class InstructorVerification {
   @Field(() => GraphQLJSON, { nullable: true })
   consents?: any;
 
-  @Field(() => String, { nullable: true })
+  @Field(() => Date, { nullable: true })
   submittedAt?: Date;
 
-  @Field(() => String, { nullable: true })
+  @Field(() => Date, { nullable: true })
   lastSavedAt?: Date;
 
   @Field()
@@ -416,6 +448,10 @@ export class InstructorVerification {
 
   @Field(() => InstructorInterview, { nullable: true })
   interview?: InstructorInterview;
+
+  // User relation
+  @Field(() => User, { nullable: true })
+  user?: User;
 }
 
 // =============================================================================
@@ -465,4 +501,36 @@ export class VerificationStatusResponse {
 
   @Field(() => [String], { nullable: true })
   errors?: string[];
+}
+
+
+
+@ObjectType()
+export class AdminStats {
+  @Field(() => Int)
+  totalApplications: number;
+
+  @Field(() => Int)
+  pendingReview: number;
+
+  @Field(() => Int)
+  underReview: number;
+
+  @Field(() => Int)
+  approved: number;
+
+  @Field(() => Int)
+  rejected: number;
+
+  @Field(() => Int)
+  requiresMoreInfo: number;
+
+  @Field(() => Int)
+  averageReviewTime: number; // in hours
+
+  @Field(() => Int)
+  applicationsThisWeek: number;
+
+  @Field(() => Int)
+  applicationsThisMonth: number;
 }

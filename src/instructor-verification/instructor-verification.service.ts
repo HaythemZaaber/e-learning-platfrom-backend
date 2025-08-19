@@ -1,12 +1,15 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InstructorService } from '../instructor/instructor.service';
 import { 
   ApplicationStatus, 
   VerificationStatus, 
   DocumentType,
   AIRecommendation,
   ReviewDecision,
-  InterviewFormat
+  InterviewFormat,
+  NotificationType,
+  NotificationPriority
 } from '@prisma/client';
 
 @Injectable()
@@ -15,6 +18,7 @@ export class InstructorVerificationService {
 
   constructor(
     private prisma: PrismaService,
+    private instructorService: InstructorService,
   ) {}
 
   // =============================================================================
@@ -58,7 +62,7 @@ export class InstructorVerificationService {
           consents: {},
           currentStep: 0,
           completionScore: 0,
-          status: ApplicationStatus.PENDING,
+          status: ApplicationStatus.DRAFT,
           lastAutoSave: new Date(),
         },
         include: {
@@ -77,10 +81,10 @@ export class InstructorVerificationService {
     }
   }
 
-  async getInstructorVerification(userId: string) {
+  async getInstructorVerification(userId?: string, applicationId?: string) {
     try {
       const application = await this.prisma.instructorApplication.findUnique({
-        where: { userId },
+        where: { userId, id: applicationId },
         include: {
           applicationDocuments: true,
           aiVerification: true,
@@ -105,7 +109,7 @@ export class InstructorVerificationService {
       const applications = await this.prisma.instructorApplication.findMany({
         where: {
           userId,
-          status: ApplicationStatus.PENDING, // Only show drafts
+          status: ApplicationStatus.DRAFT, // Only show drafts
         },
         include: {
           applicationDocuments: true,
@@ -194,6 +198,7 @@ export class InstructorVerificationService {
         where: { id },
         include: {
           applicationDocuments: true,
+          manualReview: true,
         },
       });
 
@@ -216,12 +221,20 @@ export class InstructorVerificationService {
 
       // Calculate final completion score
       const completionScore = await this.calculateCompletionScore(application);
+
+      // clean the manual review if the currect decision is reject
+      if (application.manualReview && application.manualReview.decision === 'REJECT') {
+        await this.prisma.instructorManualReview.delete({
+          where: { applicationId: id },
+        });
+      }
+    
       
       // Update application status to submitted (this makes it visible to admin)
       const updatedApplication = await this.prisma.instructorApplication.update({
         where: { id },
         data: {
-          status: ApplicationStatus.UNDER_REVIEW, // This status makes it visible to admin
+          status: ApplicationStatus.SUBMITTED, // This status makes it visible to admin
           consents,
           submittedAt: new Date(),
           lastSavedAt: new Date(),
@@ -260,7 +273,7 @@ export class InstructorVerificationService {
 
       // Extract and organize draft data into proper fields
       const updateData: any = {
-        status: ApplicationStatus.PENDING, // Keep as PENDING for drafts
+        status: ApplicationStatus.DRAFT, // Keep as DRAFT for drafts
         lastAutoSave: new Date(),
         lastSavedAt: new Date(),
       };
@@ -308,6 +321,7 @@ export class InstructorVerificationService {
       if (draftData.documents) {
         updateData.documents = draftData.documents;
       }
+
 
       // Update consents if provided
       if (draftData.consents) {
@@ -698,9 +712,10 @@ export class InstructorVerificationService {
         where.status = filters.status;
       } else {
         // By default, only show applications that are ready for admin review
-        // (not drafts/PENDING status)
+        // (not drafts/DRAFT status)
         where.status = {
           in: [
+            ApplicationStatus.SUBMITTED,
             ApplicationStatus.UNDER_REVIEW,
             ApplicationStatus.APPROVED,
             ApplicationStatus.REJECTED,
@@ -715,6 +730,19 @@ export class InstructorVerificationService {
           { fullName: { contains: filters.search, mode: 'insensitive' } },
           { phoneNumber: { contains: filters.search, mode: 'insensitive' } },
         ];
+      }
+
+      // Add date range filters
+      if (filters?.dateFrom) {
+        where.createdAt = { ...where.createdAt, gte: new Date(filters.dateFrom) };
+      }
+      if (filters?.dateTo) {
+        where.createdAt = { ...where.createdAt, lte: new Date(filters.dateTo) };
+      }
+
+      // Add completion score filter
+      if (filters?.minCompletionScore) {
+        where.completionScore = { ...where.completionScore, gte: filters.minCompletionScore };
       }
 
       const applications = await this.prisma.instructorApplication.findMany({
@@ -744,7 +772,106 @@ export class InstructorVerificationService {
     }
   }
 
-  async updateApplicationStatus(applicationId: string, status: ApplicationStatus, reason?: string) {
+  async getSubmittedApplications(filters?: any) {
+    try {
+      const where: any = {};
+
+      // Handle status filtering based on frontend tabs
+      if (filters?.status) {
+        if (Array.isArray(filters.status)) {
+          // Handle array of statuses (e.g., ['APPROVED', 'REJECTED'] for completed tab)
+          where.status = {
+            in: filters.status
+          };
+        } else {
+          // Handle single status
+          where.status = filters.status;
+        }
+      } else {
+        // Default: show applications that are ready for admin review
+        where.status = {
+          in: [
+            ApplicationStatus.SUBMITTED,
+            ApplicationStatus.UNDER_REVIEW,
+            ApplicationStatus.APPROVED,
+            ApplicationStatus.REJECTED,
+            ApplicationStatus.REQUIRES_MORE_INFO,
+          ],
+        };
+      }
+
+      if (filters?.search) {
+        where.OR = [
+          { fullName: { contains: filters.search, mode: 'insensitive' } },
+          { phoneNumber: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      // Add date range filters
+      if (filters?.dateFrom) {
+        where.createdAt = { ...where.createdAt, gte: new Date(filters.dateFrom) };
+      }
+      if (filters?.dateTo) {
+        where.createdAt = { ...where.createdAt, lte: new Date(filters.dateTo) };
+      }
+
+      // Add completion score filter
+      if (filters?.minCompletionScore) {
+        where.completionScore = { ...where.completionScore, gte: filters.minCompletionScore };
+      }
+
+      const applications = await this.prisma.instructorApplication.findMany({
+        where,
+        include: {
+          applicationDocuments: true,
+          aiVerification: true,
+          manualReview: true,
+          interview: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+        orderBy: [
+          { status: 'asc' },
+          { submittedAt: 'asc' }
+        ],
+      });
+
+      // Transform the data to include computed fields
+      const transformedApplications = applications.map((app: any) => ({
+        ...app,
+        aiVerification: app.aiVerification ? {
+          ...app.aiVerification,
+          verificationResults: {
+            identityVerified: app.aiVerification.identityVerified,
+            educationVerified: app.aiVerification.educationVerified,
+            experienceVerified: app.aiVerification.experienceVerified,
+            overallScore: app.aiVerification.overallScore,
+            recommendation: app.aiVerification.recommendation,
+          },
+          reviewedAt: app.aiVerification.processedAt
+        } : null,
+        interview: app.interview ? {
+          ...app.interview,
+          notes: app.interview.interviewNotes,
+          status: app.interview.passed !== null ? (app.interview.passed ? 'COMPLETED' : 'FAILED') : 'SCHEDULED'
+        } : null
+      }));
+
+      return transformedApplications;
+    } catch (error) {
+      this.logger.error('Error getting submitted applications:', error);
+      throw error;
+    }
+  }
+
+  async updateApplicationStatus(applicationId: string, status: ApplicationStatus, reason?: string, reviewerId?: string) {
     try {
       const application = await this.prisma.instructorApplication.findUnique({
         where: { id: applicationId },
@@ -752,6 +879,17 @@ export class InstructorVerificationService {
 
       if (!application) {
         throw new NotFoundException('Application not found');
+      }
+
+      // Validate reviewerId if provided
+      if (reviewerId) {
+        const reviewer = await this.prisma.user.findUnique({
+          where: { id: reviewerId },
+        });
+        
+        if (!reviewer) {
+          throw new BadRequestException(`Reviewer with ID ${reviewerId} not found`);
+        }
       }
 
       const updatedApplication = await this.prisma.instructorApplication.update({
@@ -768,21 +906,455 @@ export class InstructorVerificationService {
         },
       });
 
-      // If approved, update user role to instructor
-      if (status === ApplicationStatus.APPROVED) {
-        await this.prisma.user.update({
-          where: { id: application.userId },
-          data: {
-            role: 'INSTRUCTOR',
-            instructorStatus: 'APPROVED',
+      // Create review record only if reviewerId is provided
+      if (reviewerId) {
+        await this.prisma.instructorManualReview.upsert({
+          where: { applicationId },
+          create: {
+            applicationId,
+            reviewerId,
+            decision: 'APPROVE',
+            decisionReason: reason,
+            reviewedAt: new Date(),
+          },
+          update: {
+            decision: 'APPROVE',
+            decisionReason: reason,
+            reviewedAt: new Date(),
           },
         });
       }
+
+      // If approved, update user role to instructor and create instructor profile
+      if (status === ApplicationStatus.APPROVED) {
+        await this.approveInstructor(application.userId, application);
+      }
+
+      // Send notification to user
+      await this.sendApplicationStatusNotification(application.userId, status, reason);
 
       this.logger.log(`Updated application status: ${applicationId} -> ${status}`);
       return updatedApplication;
     } catch (error) {
       this.logger.error('Error updating application status:', error);
+      throw error;
+    }
+  }
+
+  async startApplicationReview(applicationId: string, reviewerId: string) {
+    try {
+      const application = await this.prisma.instructorApplication.findUnique({
+        where: { id: applicationId },
+      });
+
+      if (!application) {
+        throw new NotFoundException('Application not found');
+      }
+
+      if (application.status !== ApplicationStatus.SUBMITTED) {
+        throw new BadRequestException('Application is not submitted for review');
+      }
+
+      // Update application status to indicate review is in progress
+      const updatedApplication = await this.prisma.instructorApplication.update({
+        where: { id: applicationId },
+        data: {
+          status: ApplicationStatus.UNDER_REVIEW, // Change to under review when admin starts reviewing
+          lastSavedAt: new Date(),
+        },
+        include: {
+          applicationDocuments: true,
+          aiVerification: true,
+          manualReview: true,
+          interview: true,
+        },
+      });
+
+      this.logger.log(`Started review for application: ${applicationId} by reviewer: ${reviewerId}`);
+      return updatedApplication;
+    } catch (error) {
+      this.logger.error('Error starting application review:', error);
+      throw error;
+    }
+  }
+
+  async reviewDocument(documentId: string, verificationStatus: VerificationStatus, reviewerId: string, notes?: string) {
+    try {
+      const document = await this.prisma.applicationDocument.findUnique({
+        where: { id: documentId },
+      });
+
+      if (!document) {
+        throw new NotFoundException('Document not found');
+      }
+
+      const updatedDocument = await this.prisma.applicationDocument.update({
+        where: { id: documentId },
+        data: {
+          verificationStatus,
+          metadata: {
+            reviewedBy: reviewerId,
+            reviewedAt: new Date(),
+            notes,
+          },
+        },
+      });
+
+      this.logger.log(`Document ${documentId} reviewed: ${verificationStatus}`);
+      return updatedDocument;
+    } catch (error) {
+      this.logger.error('Error reviewing document:', error);
+      throw error;
+    }
+  }
+
+  async approveInstructor(userId: string, application: any) {
+    try {
+      // Update application status to approved
+      // Update user role and status
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          role: 'INSTRUCTOR',
+          instructorStatus: 'APPROVED',
+        },
+      });
+
+      // Create instructor profile using the dedicated instructor service
+      await this.instructorService.createInstructorProfile(userId, application);
+
+      // Send welcome notification
+      await this.sendWelcomeNotification(userId);
+
+      this.logger.log(`Instructor approved: ${userId} with comprehensive profile`);
+    } catch (error) {
+      this.logger.error('Error approving instructor:', error);
+      throw error;
+    }
+  }
+
+  async rejectApplication(applicationId: string, reason: string, reviewerId: string, requiresResubmission: boolean = false) {
+    try {
+      const application = await this.prisma.instructorApplication.findUnique({
+        where: { id: applicationId },
+      });
+
+      if (!application) {
+        throw new NotFoundException('Application not found');
+      }
+
+      // Validate reviewerId
+      const reviewer = await this.prisma.user.findUnique({
+        where: { id: reviewerId },
+      });
+      
+      if (!reviewer) {
+        throw new BadRequestException(`Reviewer with ID ${reviewerId} not found`);
+      }
+
+      const status = requiresResubmission ? ApplicationStatus.REQUIRES_MORE_INFO : ApplicationStatus.REJECTED;
+
+      const updatedApplication = await this.prisma.instructorApplication.update({
+        where: { id: applicationId },
+        data: {
+          status,
+          lastSavedAt: new Date(),
+        },
+        include: {
+          applicationDocuments: true,
+          aiVerification: true,
+          manualReview: true,
+          interview: true,
+        },
+      });
+
+      // Create rejection record
+      await this.prisma.instructorManualReview.upsert({
+        where: { applicationId },
+        create: {
+          applicationId,
+          reviewerId,
+          decision: 'REJECT',
+          decisionReason: reason,
+          reviewedAt: new Date(),
+        },
+        update: {
+          decision: 'REJECT',
+          decisionReason: reason,
+          reviewedAt: new Date(),
+        },
+        });
+
+      // Send rejection notification
+      await this.sendApplicationStatusNotification(application.userId, status, reason);
+
+      this.logger.log(`Application rejected: ${applicationId}`);
+      return updatedApplication;
+    } catch (error) {
+      this.logger.error('Error rejecting application:', error);
+      throw error;
+    }
+  }
+
+  async requestMoreInformation(applicationId: string, requiredInfo: string[], reviewerId: string, deadline?: Date) {
+    try {
+      const application = await this.prisma.instructorApplication.findUnique({
+        where: { id: applicationId },
+      });
+
+      if (!application) {
+        throw new NotFoundException('Application not found');
+      }
+
+      // Validate reviewerId
+      const reviewer = await this.prisma.user.findUnique({
+        where: { id: reviewerId },
+      });
+      
+      if (!reviewer) {
+        throw new BadRequestException(`Reviewer with ID ${reviewerId} not found`);
+      }
+
+      const updatedApplication = await this.prisma.instructorApplication.update({
+        where: { id: applicationId },
+        data: {
+          status: ApplicationStatus.REQUIRES_MORE_INFO,
+          lastSavedAt: new Date(),
+        },
+        include: {
+          applicationDocuments: true,
+          aiVerification: true,
+          manualReview: true,
+          interview: true,
+        },
+      });
+
+      // Create review record with required info
+      await this.prisma.instructorManualReview.upsert({
+        where: { applicationId },
+        create: {
+          applicationId,
+          reviewerId,
+          decision: 'REQUEST_MORE_INFO',
+          decisionReason: `Required information: ${requiredInfo.join(', ')}`,
+          conditionalRequirements: requiredInfo,
+          reviewedAt: new Date(),
+        },
+        update: {
+          decision: 'REQUEST_MORE_INFO',
+          decisionReason: `Required information: ${requiredInfo.join(', ')}`,
+          conditionalRequirements: requiredInfo,
+          reviewedAt: new Date(),
+        },
+      });
+
+      // Send notification with required info
+      await this.sendMoreInfoRequestNotification(application.userId, requiredInfo, deadline);
+
+      this.logger.log(`More information requested for application: ${applicationId}`);
+      return updatedApplication;
+    } catch (error) {
+      this.logger.error('Error requesting more information:', error);
+      throw error;
+    }
+  }
+
+  // =============================================================================
+  // HELPER METHODS
+  // =============================================================================
+
+  private extractTimeSlots(weeklyAvailability: any): any[] {
+    const timeSlots: any[] = [];
+    
+    Object.entries(weeklyAvailability).forEach(([day, dayData]: [string, any]) => {
+      if (dayData.available && dayData.timeSlots && dayData.timeSlots.length > 0) {
+        dayData.timeSlots.forEach((slot: any) => {
+          timeSlots.push({
+            day,
+            start: slot.start,
+            end: slot.end
+          });
+        });
+      }
+    });
+    
+    return timeSlots;
+  }
+
+
+
+  // =============================================================================
+  // NOTIFICATION METHODS
+  // =============================================================================
+
+  private async sendApplicationStatusNotification(userId: string, status: ApplicationStatus, reason?: string) {
+    try {
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          title: 'Application Status Update',
+          message: this.getStatusMessage(status, reason),
+          type: NotificationType.INSTRUCTOR_APPROVED,
+          priority: NotificationPriority.HIGH,
+          data: { status, reason },
+        },
+      });
+
+      this.logger.log(`Notification sent to user ${userId} for status: ${status}`);
+    } catch (error) {
+      this.logger.error('Error sending notification:', error);
+    }
+  }
+
+  private async sendWelcomeNotification(userId: string) {
+    try {
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          title: 'Welcome to Our Instructor Community!',
+          message: 'Congratulations! Your instructor application has been approved. You can now start creating courses and sharing your knowledge.',
+          type: NotificationType.INSTRUCTOR_APPROVED,
+          priority: NotificationPriority.HIGH,
+          data: { type: 'welcome' },
+        },
+      });
+
+      this.logger.log(`Welcome notification sent to user ${userId}`);
+    } catch (error) {
+      this.logger.error('Error sending welcome notification:', error);
+    }
+  }
+
+  private async sendMoreInfoRequestNotification(userId: string, requiredInfo: string[], deadline?: Date) {
+    try {
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          title: 'Additional Information Required',
+          message: `We need additional information to process your application: ${requiredInfo.join(', ')}${deadline ? ` Please provide this information by ${deadline.toLocaleDateString()}.` : ''}`,
+          type: NotificationType.INSTRUCTOR_APPROVED,
+          priority: NotificationPriority.HIGH,
+          data: { requiredInfo, deadline },
+        },
+      });
+
+      this.logger.log(`More info request notification sent to user ${userId}`);
+    } catch (error) {
+      this.logger.error('Error sending more info request notification:', error);
+    }
+  }
+
+  private getStatusMessage(status: ApplicationStatus, reason?: string): string {
+    switch (status) {
+      case ApplicationStatus.APPROVED:
+        return 'Congratulations! Your instructor application has been approved.';
+      case ApplicationStatus.REJECTED:
+        return `Your instructor application has been rejected.${reason ? ` Reason: ${reason}` : ''}`;
+      case ApplicationStatus.REQUIRES_MORE_INFO:
+        return `Your application requires additional information.${reason ? ` Details: ${reason}` : ''}`;
+      case ApplicationStatus.UNDER_REVIEW:
+        return 'Your application is currently under review.';
+      default:
+        return 'Your application status has been updated.';
+    }
+  }
+
+
+
+  // =============================================================================
+  // ADMIN STATISTICS
+  // =============================================================================
+
+  async getAdminStats() {
+    try {
+      const now = new Date();
+      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Get total applications
+      const totalApplications = await this.prisma.instructorApplication.count();
+
+      // Get applications by status
+      const pendingReview = await this.prisma.instructorApplication.count({
+        where: { status: ApplicationStatus.SUBMITTED }
+      });
+
+      const underReview = await this.prisma.instructorApplication.count({
+        where: { status: ApplicationStatus.UNDER_REVIEW }
+      });
+
+      const approved = await this.prisma.instructorApplication.count({
+        where: { status: ApplicationStatus.APPROVED }
+      });
+
+      const rejected = await this.prisma.instructorApplication.count({
+        where: { status: ApplicationStatus.REJECTED }
+      });
+
+      const requiresMoreInfo = await this.prisma.instructorApplication.count({
+        where: { status: ApplicationStatus.REQUIRES_MORE_INFO }
+      });
+
+      // Get applications this week
+      const applicationsThisWeek = await this.prisma.instructorApplication.count({
+        where: {
+          createdAt: {
+            gte: oneWeekAgo
+          }
+        }
+      });
+
+      // Get applications this month
+      const applicationsThisMonth = await this.prisma.instructorApplication.count({
+        where: {
+          createdAt: {
+            gte: oneMonthAgo
+          }
+        }
+      });
+
+      // Calculate average review time (time from submission to final decision)
+      const completedApplications = await this.prisma.instructorApplication.findMany({
+        where: {
+          status: {
+            in: [ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]
+          },
+          submittedAt: { not: null }
+        },
+        select: {
+          submittedAt: true,
+          updatedAt: true
+        }
+      });
+
+      let totalReviewTime = 0;
+      let validApplications = 0;
+
+      completedApplications.forEach(app => {
+        if (app.submittedAt && app.updatedAt) {
+          const reviewTime = app.updatedAt.getTime() - app.submittedAt.getTime();
+          totalReviewTime += reviewTime;
+          validApplications++;
+        }
+      });
+
+      const averageReviewTime = validApplications > 0 
+        ? Math.round(totalReviewTime / validApplications / (1000 * 60 * 60)) // Convert to hours
+        : 0;
+
+      return {
+        totalApplications,
+        pendingReview,
+        underReview,
+        approved,
+        rejected,
+        requiresMoreInfo,
+        averageReviewTime,
+        applicationsThisWeek,
+        applicationsThisMonth
+      };
+    } catch (error) {
+      this.logger.error('Error getting admin stats:', error);
       throw error;
     }
   }

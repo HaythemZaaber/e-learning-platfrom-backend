@@ -12,6 +12,7 @@ import { CourseModule } from './course/course.module';
 import { UploadModule } from './upload/upload.module';
 import { PaymentModule } from './payment/payment.module';
 import { InstructorVerificationModule } from './instructor-verification/instructor-verification.module';
+import { InstructorModule } from './instructor/instructor.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -42,6 +43,7 @@ import { ConfigModule } from '@nestjs/config';
     WebhookModule,
     PaymentModule,
     InstructorVerificationModule,
+    InstructorModule,
   ],
   controllers: [AppController],
   providers: [AppService],

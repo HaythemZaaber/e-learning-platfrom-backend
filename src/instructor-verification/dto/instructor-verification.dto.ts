@@ -280,8 +280,8 @@ export class UpdateInterviewInput {
 
 @InputType()
 export class ApplicationFiltersInput {
-  @Field(() => String, { nullable: true })
-  status?: string;
+  @Field(() => GraphQLJSON, { nullable: true })
+  status?: any; // Can be string or array of strings
 
   @Field({ nullable: true })
   search?: string;
@@ -291,6 +291,15 @@ export class ApplicationFiltersInput {
 
   @Field(() => Int, { nullable: true })
   limit?: number;
+
+  @Field({ nullable: true })
+  dateFrom?: string;
+
+  @Field({ nullable: true })
+  dateTo?: string;
+
+  @Field(() => Int, { nullable: true })
+  minCompletionScore?: number;
 }
 
 // =============================================================================
@@ -637,4 +646,59 @@ export class ConsentInput {
 
   @Field()
   codeOfConduct: boolean;
+}
+
+// =============================================================================
+// ADMIN REVIEW TYPES
+// =============================================================================
+
+@InputType()
+export class StartReviewInput {
+  @Field()
+  applicationId: string;
+}
+
+@InputType()
+export class ReviewDocumentInput {
+  @Field()
+  documentId: string;
+
+  @Field(() => String)
+  verificationStatus: VerificationStatus;
+
+  @Field({ nullable: true })
+  notes?: string;
+}
+
+@InputType()
+export class ApproveApplicationInput {
+  @Field()
+  applicationId: string;
+
+  @Field({ nullable: true })
+  notes?: string;
+}
+
+@InputType()
+export class RejectApplicationInput {
+  @Field()
+  applicationId: string;
+
+  @Field()
+  reason: string;
+
+  @Field({ nullable: true })
+  requiresResubmission?: boolean;
+}
+
+@InputType()
+export class RequestMoreInfoInput {
+  @Field()
+  applicationId: string;
+
+  @Field(() => [String])
+  requiredInfo: string[];
+
+  @Field({ nullable: true })
+  deadline?: string;
 }
