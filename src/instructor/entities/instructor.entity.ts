@@ -27,6 +27,8 @@ export class User {
 
   @Field()
   instructorStatus: string;
+
+ 
 }
 
 // =============================================================================
@@ -272,6 +274,61 @@ export class InstructorStats {
 
   @Field(() => InstructorStatistics)
   statistics: InstructorStatistics;
+
+  // Flattened fields for easier querying
+  @Field(() => Float)
+  totalRevenue: number;
+
+  @Field(() => Int)
+  totalStudents: number;
+
+  @Field(() => Int)
+  totalCourses: number;
+
+  @Field(() => Float)
+  averageRating: number;
+
+  @Field(() => Float)
+  courseCompletionRate: number;
+
+  @Field(() => Float)
+  studentRetentionRate: number;
+
+  @Field(() => Float)
+  studentSatisfactionRate: number;
+
+  @Field(() => Int)
+  averageResponseTime: number;
+
+  @Field(() => Int)
+  totalLectures: number;
+
+  @Field(() => Int)
+  totalVideoHours: number;
+
+  @Field(() => Int)
+  totalQuizzes: number;
+
+  @Field(() => Int)
+  totalAssignments: number;
+
+  @Field(() => Int)
+  contentUpdateFrequency: number;
+
+  @Field(() => Date, { nullable: true })
+  lastCourseUpdate?: Date;
+
+  @Field(() => Date, { nullable: true })
+  lastStudentReply?: Date;
+
+  @Field(() => Date, { nullable: true })
+  lastContentCreation?: Date;
+
+  @Field()
+  verificationStatus: string;
+
+  @Field()
+  complianceStatus: string;
 }
 
 // =============================================================================
@@ -288,4 +345,22 @@ export class InstructorSearchResponse {
 
   @Field()
   hasMore: boolean;
+}
+
+
+
+// =============================================================================
+// PROFILE IMAGE UPDATE RESPONSE
+// =============================================================================
+
+@ObjectType()
+export class ProfileImageUpdateResponse {
+  @Field()
+  success: boolean;
+
+  @Field()
+  message: string;
+
+  @Field({ nullable: true })
+  profileImage?: string;
 }

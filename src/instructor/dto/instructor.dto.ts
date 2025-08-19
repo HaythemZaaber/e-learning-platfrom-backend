@@ -162,3 +162,15 @@ export class InstructorStatsFiltersInput {
   @Field({ nullable: true })
   includeArchived?: boolean;
 }
+
+
+
+// =============================================================================
+// UPDATE PROFILE IMAGE INPUT
+// =============================================================================
+
+@InputType()
+export class UpdateProfileImageInput {
+  @Field()
+  profileImage: string;
+}

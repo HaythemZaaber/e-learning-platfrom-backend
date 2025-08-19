@@ -12,10 +12,12 @@ import {
   InstructorProfile,
   InstructorStats,
   InstructorSearchResponse,
+  ProfileImageUpdateResponse,
 } from './entities/instructor.entity';
 
 import {
   UpdateInstructorProfileInput,
+  UpdateProfileImageInput,
   InstructorSearchFiltersInput,
   CreateInstructorProfileInput,
 } from './dto/instructor.dto';
@@ -112,6 +114,29 @@ export class InstructorResolver {
       return await this.instructorService.updateProfile(user.id, input);
     } catch (error) {
       throw new Error(`Failed to update instructor profile: ${error.message}`);
+    }
+  }
+
+
+
+  @Mutation(() => ProfileImageUpdateResponse, { name: 'updateProfileImage' })
+  @Roles(UserRole.INSTRUCTOR)
+  async updateProfileImage(
+    @Args('input') input: UpdateProfileImageInput,
+    @GetUser() user: any,
+  ) {
+    try {
+      if (!user || !user.id) {
+        throw new Error('User not authenticated');
+      }
+      const result = await this.instructorService.updateProfileImage(user.id, input.profileImage);
+      return {
+        success: true,
+        message: 'Profile image updated successfully',
+        profileImage: result.profileImage,
+      };
+    } catch (error) {
+      throw new Error(`Failed to update profile image: ${error.message}`);
     }
   }
 

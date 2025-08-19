@@ -319,6 +319,25 @@ export class InstructorService {
     }
   }
 
+
+  async updateProfileImage(userId: string, profileImage: string) {
+    try {
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          profileImage,
+          updatedAt: new Date(),
+        },
+      });
+
+      this.logger.log(`Updated profile image for user: ${userId}`);
+      return updatedUser;
+    } catch (error) {
+      this.logger.error('Error updating profile image:', error);
+      throw error;
+    }
+  }
+
   async deleteInstructorProfile(userId: string) {
     try {
       const profile = await this.prisma.instructorProfile.findUnique({
@@ -389,6 +408,25 @@ export class InstructorService {
           averageRating,
           courses,
         },
+        // Flattened fields for easier querying
+        totalRevenue,
+        totalStudents: profile.totalStudents,
+        totalCourses,
+        averageRating,
+        courseCompletionRate: profile.courseCompletionRate,
+        studentRetentionRate: profile.studentRetentionRate,
+        studentSatisfactionRate: profile.studentSatisfaction,
+        averageResponseTime: profile.responseTime,
+        totalLectures: profile.totalLectures,
+        totalVideoHours: profile.totalVideoHours,
+        totalQuizzes: profile.totalQuizzes,
+        totalAssignments: profile.totalAssignments,
+        contentUpdateFrequency: profile.contentUpdateFreq,
+        lastCourseUpdate: profile.lastCourseUpdate,
+        lastStudentReply: profile.lastStudentReply,
+        lastContentCreation: profile.lastContentCreation,
+        verificationStatus: profile.isVerified ? 'VERIFIED' : 'UNVERIFIED',
+        complianceStatus: profile.complianceStatus,
       };
     } catch (error) {
       this.logger.error('Error getting instructor stats:', error);
