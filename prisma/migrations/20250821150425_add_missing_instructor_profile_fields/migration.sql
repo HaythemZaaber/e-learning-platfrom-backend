@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE "public"."instructor_profiles" ADD COLUMN     "badgesEarned" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN     "contentUpdateFreq" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "featuredInstructor" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "isPromotionEligible" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "lastContentCreation" TIMESTAMP(3),
+ADD COLUMN     "lastCourseUpdate" TIMESTAMP(3),
+ADD COLUMN     "lastStudentReply" TIMESTAMP(3),
+ADD COLUMN     "marketingConsent" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "paymentPreferences" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN     "payoutSettings" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN     "revenueSharing" DOUBLE PRECISION NOT NULL DEFAULT 70,
+ADD COLUMN     "taxInformation" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN     "totalAssignments" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalLectures" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalQuizzes" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "totalVideoHours" INTEGER NOT NULL DEFAULT 0;

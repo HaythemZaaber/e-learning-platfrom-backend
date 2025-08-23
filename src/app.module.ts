@@ -13,6 +13,7 @@ import { UploadModule } from './upload/upload.module';
 import { PaymentModule } from './payment/payment.module';
 import { InstructorVerificationModule } from './instructor-verification/instructor-verification.module';
 import { InstructorModule } from './instructor/instructor.module';
+import { LiveSessionsModule } from './live-sessions/live-sessions.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -44,6 +45,7 @@ import { ConfigModule } from '@nestjs/config';
     PaymentModule,
     InstructorVerificationModule,
     InstructorModule,
+    LiveSessionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
