@@ -1,372 +1,489 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SessionType, SessionFormat, CancellationPolicy } from '../../live-sessions/dto/common.dto';
+import { IsString, IsOptional, IsArray, IsNumber, IsBoolean, IsObject, IsUrl, IsEnum } from 'class-validator';
 
 export class CreateInstructorProfileDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'User ID' })
   @IsString()
   userId: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Professional title' })
   @IsString()
-  title?: string;
+  title: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Detailed bio' })
   @IsString()
-  bio?: string;
+  bio: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Short bio for preview' })
   @IsString()
-  shortBio?: string;
+  shortBio: string;
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Areas of expertise', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   expertise?: string[];
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Professional qualifications', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   qualifications?: string[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Years of experience' })
   @IsNumber()
+  @IsOptional()
   experience?: number;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Social media links' })
+  @IsObject()
   @IsOptional()
   socialLinks?: Record<string, string>;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Personal website URL' })
+  @IsUrl()
   @IsOptional()
-  @IsString()
   personalWebsite?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'LinkedIn profile URL' })
+  @IsUrl()
   @IsOptional()
-  @IsString()
   linkedinProfile?: string;
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Subjects taught', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   subjectsTeaching?: string[];
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching categories', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   teachingCategories?: string[];
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Languages spoken', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   languagesSpoken?: string[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching style description' })
   @IsString()
+  @IsOptional()
   teachingStyle?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Target audience' })
   @IsString()
+  @IsOptional()
   targetAudience?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching methodology' })
   @IsString()
+  @IsOptional()
   teachingMethodology?: string;
 
-  @ApiProperty({ required: false, default: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Whether live sessions are enabled' })
   @IsBoolean()
+  @IsOptional()
   liveSessionsEnabled?: boolean;
 
-  @ApiProperty({ required: false, default: 60 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Default session duration in minutes' })
   @IsNumber()
+  @IsOptional()
   defaultSessionDuration?: number;
 
-  @ApiProperty({ required: false, enum: SessionType, default: SessionType.INDIVIDUAL })
+  @ApiProperty({ description: 'Default session type' })
+  @IsString()
   @IsOptional()
-  @IsEnum(SessionType)
-  defaultSessionType?: SessionType;
+  defaultSessionType?: string;
 
-  @ApiProperty({ required: false, default: 5 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Preferred group size' })
   @IsNumber()
+  @IsOptional()
   preferredGroupSize?: number;
 
-  @ApiProperty({ required: false, default: 15 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Buffer between sessions in minutes' })
   @IsNumber()
+  @IsOptional()
   bufferBetweenSessions?: number;
 
-  @ApiProperty({ required: false, default: 8 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Maximum sessions per day' })
   @IsNumber()
+  @IsOptional()
   maxSessionsPerDay?: number;
 
-  @ApiProperty({ required: false, default: 12 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Minimum advance booking in hours' })
   @IsNumber()
+  @IsOptional()
   minAdvanceBooking?: number;
 
-  @ApiProperty({ required: false, default: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Auto accept bookings' })
   @IsBoolean()
+  @IsOptional()
   autoAcceptBookings?: boolean;
 
-  @ApiProperty({ required: false, default: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Instant meeting enabled' })
   @IsBoolean()
+  @IsOptional()
   instantMeetingEnabled?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Individual session rate' })
   @IsNumber()
+  @IsOptional()
   individualSessionRate?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Group session rate' })
   @IsNumber()
+  @IsOptional()
   groupSessionRate?: number;
 
-  @ApiProperty({ required: false, default: 'USD' })
-  @IsOptional()
+  @ApiProperty({ description: 'Currency' })
   @IsString()
+  @IsOptional()
   currency?: string;
 
-  @ApiProperty({ required: false, default: 20 })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Platform fee rate percentage' })
   @IsNumber()
+  @IsOptional()
   platformFeeRate?: number;
 
-  @ApiProperty({ required: false, enum: CancellationPolicy, default: CancellationPolicy.MODERATE })
+  @ApiProperty({ description: 'Default cancellation policy' })
+  @IsString()
   @IsOptional()
-  @IsEnum(CancellationPolicy)
-  defaultCancellationPolicy?: CancellationPolicy;
+  defaultCancellationPolicy?: string;
 
-  @ApiProperty({ required: false, enum: SessionFormat, default: SessionFormat.ONLINE })
+  @ApiProperty({ description: 'Default session format' })
+  @IsString()
   @IsOptional()
-  @IsEnum(SessionFormat)
-  defaultSessionFormat?: SessionFormat;
+  defaultSessionFormat?: string;
 
-  @ApiProperty({ required: false, default: true })
-  @IsOptional()
+  @ApiProperty({ description: 'Whether accepting students' })
   @IsBoolean()
+  @IsOptional()
   isAcceptingStudents?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Maximum students per course' })
   @IsNumber()
+  @IsOptional()
   maxStudentsPerCourse?: number;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Preferred schedule' })
+  @IsObject()
   @IsOptional()
   preferredSchedule?: Record<string, any>;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Available time slots', type: [Object] })
+  @IsArray()
   @IsOptional()
   availableTimeSlots?: any[];
 }
 
 export class UpdateInstructorProfileDto {
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Professional title' })
   @IsString()
+  @IsOptional()
   title?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Detailed bio' })
   @IsString()
+  @IsOptional()
   bio?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Short bio for preview' })
   @IsString()
+  @IsOptional()
   shortBio?: string;
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Areas of expertise', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   expertise?: string[];
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Professional qualifications', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   qualifications?: string[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Years of experience' })
   @IsNumber()
+  @IsOptional()
   experience?: number;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Social media links' })
+  @IsObject()
   @IsOptional()
   socialLinks?: Record<string, string>;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Personal website URL' })
+  @IsUrl()
   @IsOptional()
-  @IsString()
   personalWebsite?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'LinkedIn profile URL' })
+  @IsUrl()
   @IsOptional()
-  @IsString()
   linkedinProfile?: string;
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Subjects taught', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   subjectsTeaching?: string[];
 
-  @ApiProperty({ required: false, type: [String] })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching categories', type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @IsOptional()
   teachingCategories?: string[];
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Languages spoken', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   languagesSpoken?: string[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching style description' })
   @IsString()
+  @IsOptional()
   teachingStyle?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Target audience' })
   @IsString()
+  @IsOptional()
   targetAudience?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Teaching methodology' })
   @IsString()
+  @IsOptional()
   teachingMethodology?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Whether live sessions are enabled' })
   @IsBoolean()
+  @IsOptional()
   liveSessionsEnabled?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Default session duration in minutes' })
   @IsNumber()
+  @IsOptional()
   defaultSessionDuration?: number;
 
-  @ApiProperty({ required: false, enum: SessionType })
+  @ApiProperty({ description: 'Default session type' })
+  @IsString()
   @IsOptional()
-  @IsEnum(SessionType)
-  defaultSessionType?: SessionType;
+  defaultSessionType?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Preferred group size' })
   @IsNumber()
+  @IsOptional()
   preferredGroupSize?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Buffer between sessions in minutes' })
   @IsNumber()
+  @IsOptional()
   bufferBetweenSessions?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Maximum sessions per day' })
   @IsNumber()
+  @IsOptional()
   maxSessionsPerDay?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Minimum advance booking in hours' })
   @IsNumber()
+  @IsOptional()
   minAdvanceBooking?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Auto accept bookings' })
   @IsBoolean()
+  @IsOptional()
   autoAcceptBookings?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Instant meeting enabled' })
   @IsBoolean()
+  @IsOptional()
   instantMeetingEnabled?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Individual session rate' })
   @IsNumber()
+  @IsOptional()
   individualSessionRate?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Group session rate' })
   @IsNumber()
+  @IsOptional()
   groupSessionRate?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Currency' })
   @IsString()
+  @IsOptional()
   currency?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Platform fee rate percentage' })
   @IsNumber()
+  @IsOptional()
   platformFeeRate?: number;
 
-  @ApiProperty({ required: false, enum: CancellationPolicy })
+  @ApiProperty({ description: 'Default cancellation policy' })
+  @IsString()
   @IsOptional()
-  @IsEnum(CancellationPolicy)
-  defaultCancellationPolicy?: CancellationPolicy;
+  defaultCancellationPolicy?: string;
 
-  @ApiProperty({ required: false, enum: SessionFormat })
+  @ApiProperty({ description: 'Default session format' })
+  @IsString()
   @IsOptional()
-  @IsEnum(SessionFormat)
-  defaultSessionFormat?: SessionFormat;
+  defaultSessionFormat?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Whether accepting students' })
   @IsBoolean()
+  @IsOptional()
   isAcceptingStudents?: boolean;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @Type(() => Number)
+  @ApiProperty({ description: 'Maximum students per course' })
   @IsNumber()
+  @IsOptional()
   maxStudentsPerCourse?: number;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Preferred schedule' })
+  @IsObject()
   @IsOptional()
   preferredSchedule?: Record<string, any>;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ description: 'Available time slots', type: [Object] })
+  @IsArray()
   @IsOptional()
   availableTimeSlots?: any[];
+}
+
+export class SessionStatsDto {
+  @ApiProperty({ description: 'Number of pending booking requests' })
+  pendingRequests: number;
+
+  @ApiProperty({ description: 'Total earnings from sessions' })
+  totalEarnings: number;
+
+  @ApiProperty({ description: 'Number of upcoming sessions' })
+  upcomingSessions: number;
+
+  @ApiProperty({ description: 'Session completion rate percentage' })
+  completionRate: number;
+
+  @ApiProperty({ description: 'Average bid amount' })
+  averageBid: number;
+
+  @ApiProperty({ description: 'Popular time slots', type: [String] })
+  popularTimeSlots: string[];
+
+  @ApiProperty({ description: 'Total number of sessions' })
+  totalSessions: number;
+
+  @ApiProperty({ description: 'Number of completed sessions' })
+  completedSessions: number;
+
+  @ApiProperty({ description: 'Number of cancelled sessions' })
+  cancelledSessions: number;
+
+  @ApiProperty({ description: 'Average session rating' })
+  averageRating: number;
+
+  @ApiProperty({ description: 'Total number of unique learners' })
+  totalLearners: number;
+
+  @ApiProperty({ description: 'Total number of students' })
+  totalStudents: number;
+
+  @ApiProperty({ description: 'Total number of payouts' })
+  totalPayouts: number;
+
+  @ApiProperty({ description: 'Number of pending payouts' })
+  pendingPayouts: number;
+}
+
+export class InstructorCoursesQueryDto {
+  @ApiProperty({ description: 'Page number', required: false })
+  @IsNumber()
+  @IsOptional()
+  page?: number;
+
+  @ApiProperty({ description: 'Items per page', required: false })
+  @IsNumber()
+  @IsOptional()
+  limit?: number;
+
+  @ApiProperty({ description: 'Course status filter', required: false })
+  @IsString()
+  @IsOptional()
+  status?: string;
+}
+
+export class InstructorReviewsQueryDto {
+  @ApiProperty({ description: 'Page number', required: false })
+  @IsNumber()
+  @IsOptional()
+  page?: number;
+
+  @ApiProperty({ description: 'Items per page', required: false })
+  @IsNumber()
+  @IsOptional()
+  limit?: number;
+
+  @ApiProperty({ description: 'Filter by rating', required: false })
+  @IsNumber()
+  @IsOptional()
+  rating?: number;
+}
+
+export class InstructorAvailabilityQueryDto {
+  @ApiProperty({ description: 'Start date (YYYY-MM-DD)', required: false })
+  @IsString()
+  @IsOptional()
+  startDate?: string;
+
+  @ApiProperty({ description: 'End date (YYYY-MM-DD)', required: false })
+  @IsString()
+  @IsOptional()
+  endDate?: string;
+}
+
+export class InstructorDetailsResponseDto {
+  @ApiProperty({ description: 'Instructor basic information' })
+  instructor: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    profileImage?: string;
+    teachingRating?: number;
+    totalStudents?: number;
+    totalCourses?: number;
+    expertise: string[];
+    qualifications: string[];
+    experience?: number;
+    bio?: string;
+  };
+
+  @ApiProperty({ description: 'Instructor profile details' })
+  profile: any;
+
+  @ApiProperty({ description: 'Instructor statistics' })
+  stats: any;
+
+  @ApiProperty({ description: 'Recent courses', type: [Object] })
+  recentCourses: any[];
+
+  @ApiProperty({ description: 'Recent reviews', type: [Object] })
+  recentReviews: any[];
+
+  @ApiProperty({ description: 'Instructor availability' })
+  availability: any;
+
+  @ApiProperty({ description: 'Summary statistics' })
+  summary: {
+    totalCourses: number;
+    totalReviews: number;
+    averageRating: number;
+    totalStudents: number;
+    totalSessions: number;
+  };
 }

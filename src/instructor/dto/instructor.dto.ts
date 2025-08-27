@@ -74,6 +74,7 @@ export class UpdateInstructorProfileInput {
   @Field(() => Int, { nullable: true })
   maxStudentsPerCourse?: number;
 
+  // Availability fields (for frontend compatibility)
   @Field(() => GraphQLJSON, { nullable: true })
   preferredSchedule?: any;
 
@@ -173,4 +174,95 @@ export class InstructorStatsFiltersInput {
 export class UpdateProfileImageInput {
   @Field()
   profileImage: string;
+}
+
+// =============================================================================
+// INSTRUCTOR LIST FILTERS INPUT
+// =============================================================================
+
+@InputType()
+export class InstructorListFiltersInput {
+  // Search
+  @Field({ nullable: true })
+  searchQuery?: string;
+
+  // Categories and Expertise
+  @Field(() => [String], { nullable: true })
+  categories?: string[];
+
+  @Field(() => [String], { nullable: true })
+  expertise?: string[];
+
+  @Field(() => [String], { nullable: true })
+  teachingCategories?: string[];
+
+  // Experience and Rating
+  @Field(() => [String], { nullable: true })
+  experienceLevels?: string[];
+
+  @Field(() => Float, { nullable: true })
+  minRating?: number;
+
+  @Field(() => Int, { nullable: true })
+  minExperience?: number;
+
+  // Languages
+  @Field(() => [String], { nullable: true })
+  languages?: string[];
+
+  // Live Sessions
+  @Field({ nullable: true })
+  availableToday?: boolean;
+
+  @Field({ nullable: true })
+  offersLiveSessions?: boolean;
+
+  @Field({ nullable: true })
+  groupSessionsAvailable?: boolean;
+
+  // Time Preferences
+  @Field(() => [String], { nullable: true })
+  timePreferences?: string[];
+
+  // Session Types
+  @Field(() => [String], { nullable: true })
+  sessionTypes?: string[];
+
+  // Content and Activity
+  @Field({ nullable: true })
+  hasRecordedCourses?: boolean;
+
+  @Field({ nullable: true })
+  activeOnReels?: boolean;
+
+  @Field({ nullable: true })
+  regularStoryPoster?: boolean;
+
+  // Price Range
+  @Field(() => Float, { nullable: true })
+  minPrice?: number;
+
+  @Field(() => Float, { nullable: true })
+  maxPrice?: number;
+
+  // Verification and Status
+  @Field({ nullable: true })
+  isVerified?: boolean;
+
+  @Field({ nullable: true })
+  isAcceptingStudents?: boolean;
+
+  @Field({ nullable: true })
+  featuredInstructor?: boolean;
+
+  // Location
+  @Field({ nullable: true })
+  location?: string;
+
+  // Pagination
+  @Field(() => Int, { nullable: true })
+  limit?: number;
+
+  @Field(() => Int, { nullable: true })
+  offset?: number;
 }

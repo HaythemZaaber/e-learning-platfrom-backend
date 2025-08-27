@@ -36,7 +36,22 @@ export class InstructorService {
         throw new NotFoundException('Instructor profile not found');
       }
 
-      return profile;
+      // Compute availability fields
+      const [preferredSchedule, availableTimeSlots] = await Promise.all([
+        this.computePreferredSchedule(userId),
+        this.computeAvailableTimeSlots(userId),
+      ]);
+
+      // Add computed fields to the profile
+      const profileWithAvailability = {
+        ...profile,
+        preferredSchedule,
+        availableTimeSlots,
+        individualSessionRate: profile.individualSessionRate || 50,
+        groupSessionRate: profile.groupSessionRate || 30,
+      };
+
+      return profileWithAvailability;
     } catch (error) {
       this.logger.error('Error getting instructor profile:', error);
       throw error;
@@ -142,9 +157,6 @@ export class InstructorService {
           // Teaching Availability
           isAcceptingStudents: true,
           maxStudentsPerCourse: null, // Will be set based on preferences
-          preferredSchedule: teachingInformation.weeklyAvailability || {},
-          availableTimeSlots: teachingInformation.weeklyAvailability ? 
-            this.extractTimeSlots(teachingInformation.weeklyAvailability) : [],
 
           // Verification & Compliance
           isVerified: true,
@@ -266,9 +278,7 @@ export class InstructorService {
         teachingMethodology: teachingInformation.teachingMethodology,
 
         // Teaching Availability
-        preferredSchedule: teachingInformation.weeklyAvailability || {},
-        availableTimeSlots: teachingInformation.weeklyAvailability ? 
-          this.extractTimeSlots(teachingInformation.weeklyAvailability) : [],
+        isAcceptingStudents: true,
 
         // Verification & Compliance
         isVerified: true,
@@ -311,8 +321,22 @@ export class InstructorService {
         },
       });
 
+      // Compute availability fields for response
+      const [preferredSchedule, availableTimeSlots] = await Promise.all([
+        this.computePreferredSchedule(userId),
+        this.computeAvailableTimeSlots(userId),
+      ]);
+
+      const profileWithAvailability = {
+        ...updatedProfile,
+        preferredSchedule,
+        availableTimeSlots,
+        individualSessionRate: updatedProfile.individualSessionRate || 50,
+        groupSessionRate: updatedProfile.groupSessionRate || 30,
+      };
+
       this.logger.log(`Updated instructor profile for user: ${userId}`);
-      return updatedProfile;
+      return profileWithAvailability;
     } catch (error) {
       this.logger.error('Error updating instructor profile:', error);
       throw error;
@@ -509,21 +533,570 @@ export class InstructorService {
   // HELPER METHODS
   // =============================================================================
 
-  private extractTimeSlots(weeklyAvailability: any): any[] {
-    const timeSlots: any[] = [];
-    
-    Object.entries(weeklyAvailability).forEach(([day, dayData]: [string, any]) => {
-      if (dayData.available && dayData.timeSlots && dayData.timeSlots.length > 0) {
-        dayData.timeSlots.forEach((slot: any) => {
-          timeSlots.push({
-            day,
-            start: slot.start,
-            end: slot.end
+  // =============================================================================
+  // AVAILABILITY COMPUTATION METHODS (For Profile Display Only)
+  // =============================================================================
+
+  async computePreferredSchedule(instructorId: string): Promise<any> {
+    try {
+      // Get all availabilities to build a comprehensive weekly schedule
+      // Don't filter by date to ensure we get all availabilities including today's
+      const availabilities = await this.getInstructorAvailabilities(instructorId);
+      
+      this.logger.log(`Found ${availabilities.length} availabilities for instructor ${instructorId}`);
+      
+      const weeklySchedule: any = {
+        monday: { available: false, timeSlots: [] },
+        tuesday: { available: false, timeSlots: [] },
+        wednesday: { available: false, timeSlots: [] },
+        thursday: { available: false, timeSlots: [] },
+        friday: { available: false, timeSlots: [] },
+        saturday: { available: false, timeSlots: [] },
+        sunday: { available: false, timeSlots: [] },
+      };
+
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+      // Group availabilities by day of week
+      const availabilitiesByDay: { [key: string]: any[] } = {};
+      dayNames.forEach(day => {
+        availabilitiesByDay[day] = [];
+      });
+
+      availabilities.forEach(availability => {
+        this.logger.log(`Processing availability: ${availability.id}, date: ${availability.specificDate}, active: ${availability.isActive}, slots: ${availability.generatedSlots.length}`);
+        
+        if (availability.isActive && availability.generatedSlots.length > 0) {
+          const dayOfWeek = availability.specificDate.getDay();
+          const dayName = dayNames[dayOfWeek];
+          availabilitiesByDay[dayName].push(availability);
+        }
+      });
+
+      // Build weekly schedule from grouped availabilities
+      dayNames.forEach(dayName => {
+        const dayAvailabilities = availabilitiesByDay[dayName];
+        if (dayAvailabilities.length > 0) {
+          weeklySchedule[dayName].available = true;
+          
+          // Get all unique time slots for this day
+          const allSlots: any[] = [];
+          dayAvailabilities.forEach(availability => {
+            const slots = availability.generatedSlots
+              .filter(slot => 
+                slot.isAvailable && 
+                !slot.isBooked && 
+                !slot.isBlocked &&
+                slot.startTime > new Date() // Only show future slots
+              )
+              .map(slot => ({
+                start: slot.startTime.toTimeString().slice(0, 5), // HH:MM format
+                end: slot.endTime.toTimeString().slice(0, 5),     // HH:MM format
+                duration: slot.slotDuration,
+                slotId: slot.id,
+                isAvailable: slot.isAvailable,
+                isBooked: slot.isBooked,
+                isBlocked: slot.isBlocked,
+                currentBookings: slot.currentBookings,
+                maxBookings: slot.maxBookings
+              }));
+            allSlots.push(...slots);
           });
-        });
+          
+          // Remove duplicates based on start time
+          const uniqueSlots = allSlots.filter((slot, index, self) => 
+            index === self.findIndex(s => s.start === slot.start)
+          );
+          
+          weeklySchedule[dayName].timeSlots = uniqueSlots;
+          this.logger.log(`${dayName}: ${uniqueSlots.length} unique slots`);
+        }
+      });
+
+      return weeklySchedule;
+    } catch (error) {
+      this.logger.error('Error computing preferred schedule:', error);
+      return {
+        monday: { available: false, timeSlots: [] },
+        tuesday: { available: false, timeSlots: [] },
+        wednesday: { available: false, timeSlots: [] },
+        thursday: { available: false, timeSlots: [] },
+        friday: { available: false, timeSlots: [] },
+        saturday: { available: false, timeSlots: [] },
+        sunday: { available: false, timeSlots: [] },
+      };
+    }
+  }
+
+  async computeAvailableTimeSlots(instructorId: string): Promise<any[]> {
+    try {
+      // Get available slots for today and next 7 days
+      const today = new Date();
+      const availableSlots: any[] = [];
+
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        
+        const slots = await this.getAvailableTimeSlots(instructorId, date);
+        availableSlots.push(...slots.map(slot => ({
+          date: slot.startTime,
+          start: slot.startTime.toTimeString().slice(0, 5),
+          end: slot.endTime.toTimeString().slice(0, 5),
+          duration: slot.duration,
+          availabilityId: slot.availabilityId,
+          priceOverride: slot.priceOverride,
+          currency: slot.currency,
+        })));
       }
-    });
-    
-    return timeSlots;
+
+      return availableSlots;
+    } catch (error) {
+      this.logger.error('Error computing available time slots:', error);
+      return [];
+    }
+  }
+
+  // =============================================================================
+  // AVAILABILITY READ-ONLY METHODS (For Profile Display)
+  // =============================================================================
+
+  async getInstructorAvailabilities(instructorId: string, startDate?: Date, endDate?: Date) {
+    try {
+      const where: any = { instructorId };
+
+      if (startDate && endDate) {
+        where.specificDate = {
+          gte: startDate,
+          lte: endDate,
+        };
+      }
+
+      const availabilities = await this.prisma.instructorAvailability.findMany({
+        where,
+        include: {
+          generatedSlots: {
+            orderBy: { startTime: 'asc' },
+          },
+        },
+        orderBy: { specificDate: 'asc' },
+      });
+
+      return availabilities;
+    } catch (error) {
+      this.logger.error('Error getting instructor availabilities:', error);
+      throw error;
+    }
+  }
+
+  async getAvailableTimeSlots(instructorId: string, date: Date) {
+    try {
+      const availabilities = await this.prisma.instructorAvailability.findMany({
+        where: {
+          instructorId,
+          specificDate: date,
+          isActive: true,
+        },
+        include: {
+          generatedSlots: {
+            where: {
+              isAvailable: true,
+              isBooked: false,
+              isBlocked: false,
+              currentBookings: {
+                lt: this.prisma.timeSlot.fields.maxBookings,
+              },
+            },
+            orderBy: { startTime: 'asc' },
+          },
+        },
+      });
+
+      const availableSlots = availabilities.flatMap(availability => 
+        availability.generatedSlots.map(slot => ({
+          id: slot.id,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          duration: slot.slotDuration,
+          availabilityId: availability.id,
+          priceOverride: availability.priceOverride,
+          currency: availability.currency,
+        }))
+      );
+
+      return availableSlots;
+    } catch (error) {
+      this.logger.error('Error getting available time slots:', error);
+      throw error;
+    }
+  }
+
+  async checkInstructorAvailabilityToday(instructorId: string): Promise<boolean> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const availability = await this.prisma.instructorAvailability.findFirst({
+        where: {
+          instructorId,
+          specificDate: today,
+          isActive: true,
+        },
+        include: {
+          generatedSlots: {
+            where: {
+              isAvailable: true,
+              isBooked: false,
+              isBlocked: false,
+              currentBookings: {
+                lt: this.prisma.timeSlot.fields.maxBookings,
+              },
+            },
+          },
+        },
+      });
+
+      return !!(availability && availability.generatedSlots.length > 0);
+    } catch (error) {
+      this.logger.error('Error checking instructor availability today:', error);
+      return false;
+    }
+  }
+
+  // =============================================================================
+  // LANDING PAGE METHODS
+  // =============================================================================
+
+  async getFeaturedInstructors(limit: number = 6) {
+    try {
+      const featuredInstructors = await this.prisma.instructorProfile.findMany({
+        where: {
+          isVerified: true,
+          isAcceptingStudents: true,
+          featuredInstructor: true,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+              email: true,
+              role: true,
+              instructorStatus: true,
+            },
+          },
+        },
+        orderBy: [
+          { featuredInstructor: 'desc' },
+          { teachingRating: 'desc' },
+          { totalStudents: 'desc' },
+        ],
+        take: limit,
+      });
+
+      // Add computed availability fields to each instructor
+      const featuredInstructorsWithAvailability = await Promise.all(
+        featuredInstructors.map(async (instructor) => {
+          const [preferredSchedule, availableTimeSlots] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+          ]);
+
+          return {
+            ...instructor,
+            preferredSchedule,
+            availableTimeSlots,
+            individualSessionRate: instructor.individualSessionRate || 50,
+            groupSessionRate: instructor.groupSessionRate || 30,
+          };
+        })
+      );
+
+      return {
+        featuredInstructors: featuredInstructorsWithAvailability,
+        total: featuredInstructorsWithAvailability.length,
+        hasMore: featuredInstructorsWithAvailability.length === limit,
+      };
+    } catch (error) {
+      this.logger.error('Error getting featured instructors:', error);
+      throw error;
+    }
+  }
+
+  async getInstructorHeroStats() {
+    try {
+      const [
+        totalInstructors,
+        averageRating,
+        totalStudents,
+        liveSessionsEnabled,
+        verifiedInstructors,
+      ] = await Promise.all([
+        this.prisma.instructorProfile.count({
+          where: { isVerified: true, isAcceptingStudents: true },
+        }),
+        this.prisma.instructorProfile.aggregate({
+          where: { isVerified: true },
+          _avg: { teachingRating: true },
+        }),
+        this.prisma.instructorProfile.aggregate({
+          where: { isVerified: true },
+          _sum: { totalStudents: true },
+        }),
+        this.prisma.instructorProfile.count({
+          where: { liveSessionsEnabled: true, isVerified: true },
+        }),
+        this.prisma.instructorProfile.count({
+          where: { isVerified: true },
+        }),
+      ]);
+
+      // Count instructors available today
+      const availableTodayInstructors = await this.prisma.instructorProfile.findMany({
+        where: {
+          isVerified: true,
+          isAcceptingStudents: true,
+        },
+        select: { userId: true },
+      });
+
+      let availableToday = 0;
+      for (const instructor of availableTodayInstructors) {
+        const isAvailableToday = await this.checkInstructorAvailabilityToday(instructor.userId);
+        if (isAvailableToday) {
+          availableToday++;
+        }
+      }
+
+      return {
+        totalInstructors,
+        availableToday,
+        averageRating: averageRating._avg.teachingRating || 0,
+        totalStudents: totalStudents._sum.totalStudents || 0,
+        liveSessionsEnabled,
+        verifiedInstructors,
+      };
+    } catch (error) {
+      this.logger.error('Error getting instructor hero stats:', error);
+      throw error;
+    }
+  }
+
+  // =============================================================================
+  // INSTRUCTORS PAGE METHODS
+  // =============================================================================
+
+  async getInstructorsList(filters: any, page: number = 1, limit: number = 6, sortBy: string = 'featured') {
+    try {
+      const where: any = {
+        isVerified: true,
+        isAcceptingStudents: true,
+      };
+
+      // Apply filters
+      if (filters?.searchQuery) {
+        where.OR = [
+          { user: { firstName: { contains: filters.searchQuery, mode: 'insensitive' } } },
+          { user: { lastName: { contains: filters.searchQuery, mode: 'insensitive' } } },
+          { title: { contains: filters.searchQuery, mode: 'insensitive' } },
+          { bio: { contains: filters.searchQuery, mode: 'insensitive' } },
+          { expertise: { hasSome: [filters.searchQuery] } },
+        ];
+      }
+
+      if (filters?.categories?.length > 0) {
+        where.teachingCategories = {
+          hasSome: filters.categories,
+        };
+      }
+
+      if (filters?.expertise?.length > 0) {
+        where.expertise = {
+          hasSome: filters.expertise,
+        };
+      }
+
+      if (filters?.minRating) {
+        where.teachingRating = {
+          gte: filters.minRating,
+        };
+      }
+
+      if (filters?.minExperience) {
+        where.experience = {
+          gte: filters.minExperience,
+        };
+      }
+
+      if (filters?.languages?.length > 0) {
+        where.languagesSpoken = {
+          path: ['$[*].language'],
+          array_contains: filters.languages,
+        };
+      }
+
+      if (filters?.offersLiveSessions) {
+        where.liveSessionsEnabled = true;
+      }
+
+      if (filters?.isVerified !== undefined) {
+        where.isVerified = filters.isVerified;
+      }
+
+      if (filters?.featuredInstructor) {
+        where.featuredInstructor = true;
+      }
+
+      // Determine sort order
+      let orderBy: any[] = [];
+      switch (sortBy) {
+        case 'rating':
+          orderBy = [{ teachingRating: 'desc' }];
+          break;
+        case 'students':
+          orderBy = [{ totalStudents: 'desc' }];
+          break;
+        case 'newest':
+          orderBy = [{ createdAt: 'desc' }];
+          break;
+        case 'name':
+          orderBy = [{ user: { firstName: 'asc' } }];
+          break;
+        case 'available-today':
+          orderBy = [{ liveSessionsEnabled: 'desc' }, { teachingRating: 'desc' }];
+          break;
+        case 'most-booked':
+          orderBy = [{ totalStudents: 'desc' }, { teachingRating: 'desc' }];
+          break;
+        default: // featured
+          orderBy = [
+            { featuredInstructor: 'desc' },
+            { teachingRating: 'desc' },
+            { totalStudents: 'desc' },
+          ];
+      }
+
+      const skip = (page - 1) * limit;
+
+      const [instructors, total] = await Promise.all([
+        this.prisma.instructorProfile.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profileImage: true,
+                email: true,
+                role: true,
+                instructorStatus: true,
+              },
+            },
+          },
+          orderBy,
+          take: limit,
+          skip,
+        }),
+        this.prisma.instructorProfile.count({ where }),
+      ]);
+
+      // Add computed availability fields to each instructor
+      const instructorsWithAvailability = await Promise.all(
+        instructors.map(async (instructor) => {
+          const [preferredSchedule, availableTimeSlots] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+          ]);
+
+          return {
+            ...instructor,
+            preferredSchedule,
+            availableTimeSlots,
+            individualSessionRate: instructor.individualSessionRate || 50,
+            groupSessionRate: instructor.groupSessionRate || 30,
+          };
+        })
+      );
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        instructors: instructorsWithAvailability,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasMore: page < totalPages,
+        filters: filters || {},
+      };
+    } catch (error) {
+      this.logger.error('Error getting instructors list:', error);
+      throw error;
+    }
+  }
+
+  async getAvailableTodayInstructors(limit: number = 10) {
+    try {
+      const availableInstructors = await this.prisma.instructorProfile.findMany({
+        where: {
+          isVerified: true,
+          isAcceptingStudents: true,
+          liveSessionsEnabled: true,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+              email: true,
+              role: true,
+              instructorStatus: true,
+            },
+          },
+        },
+        orderBy: [
+          { teachingRating: 'desc' },
+          { totalStudents: 'desc' },
+        ],
+        take: limit,
+      });
+
+      // Filter instructors who are actually available today
+      const availableToday: typeof availableInstructors = [];
+      for (const instructor of availableInstructors) {
+        const isAvailableToday = await this.checkInstructorAvailabilityToday(instructor.userId);
+        if (isAvailableToday) {
+          availableToday.push(instructor);
+        }
+      }
+
+      // Add computed availability fields to each instructor
+      const availableTodayWithAvailability = await Promise.all(
+        availableToday.map(async (instructor) => {
+          const [preferredSchedule, availableTimeSlots] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+          ]);
+
+          return {
+            ...instructor,
+            preferredSchedule,
+            availableTimeSlots,
+            individualSessionRate: instructor.individualSessionRate || 50,
+            groupSessionRate: instructor.groupSessionRate || 30,
+          };
+        })
+      );
+
+      return availableTodayWithAvailability;
+    } catch (error) {
+      this.logger.error('Error getting available today instructors:', error);
+      throw error;
+    }
   }
 }

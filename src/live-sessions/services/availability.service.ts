@@ -256,6 +256,24 @@ export class AvailabilityService {
   async getAvailableTimeSlots(filter: GetAvailableTimeSlotsDto) {
     const { instructorId, date, offeringId } = filter;
 
+    // Get the availability to check advance booking hours
+    const availability = await this.prisma.instructorAvailability.findFirst({
+      where: {
+        instructorId,
+        specificDate: date,
+        isActive: true
+      }
+    });
+
+    if (!availability) {
+      return [];
+    }
+
+    // Calculate the minimum advance booking time
+    const minAdvanceHours = availability.minAdvanceHours || 12;
+    const minAdvanceTime = new Date();
+    minAdvanceTime.setHours(minAdvanceTime.getHours() + minAdvanceHours);
+
     let where: any = {
       availability: {
         instructorId,
@@ -266,7 +284,7 @@ export class AvailabilityService {
       isBooked: false,
       isBlocked: false,
       startTime: {
-        gte: new Date() // Only future slots
+        gte: minAdvanceTime // Respect advance booking hours
       }
     };
 
@@ -371,7 +389,7 @@ export class AvailabilityService {
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + days);
 
-    return this.prisma.instructorAvailability.findMany({
+    const availabilities = await this.prisma.instructorAvailability.findMany({
       where: {
         instructorId,
         specificDate: {
@@ -382,50 +400,68 @@ export class AvailabilityService {
       },
       include: {
         generatedSlots: {
-          where: {
-            isAvailable: true,
-            isBooked: false,
-            isBlocked: false,
-            startTime: { gte: new Date() }
-          },
           orderBy: { startTime: 'asc' }
         }
       },
       orderBy: { specificDate: 'asc' }
     });
+
+    // Filter slots based on advance booking hours for each availability
+    const now = new Date();
+    const filteredAvailabilities = availabilities.map(availability => {
+      const minAdvanceHours = availability.minAdvanceHours || 12;
+      const minAdvanceTime = new Date();
+      minAdvanceTime.setHours(minAdvanceTime.getHours() + minAdvanceHours);
+
+      const availableSlots = availability.generatedSlots.filter(slot => 
+        slot.isAvailable && 
+        !slot.isBooked && 
+        !slot.isBlocked &&
+        slot.startTime >= minAdvanceTime
+      );
+
+      return {
+        ...availability,
+        generatedSlots: availableSlots
+      };
+    });
+
+    return filteredAvailabilities;
   }
 
   async getAvailabilityStats(instructorId: string) {
-    const [
-      totalSlots,
-      availableSlots,
-      bookedSlots,
-      blockedSlots
-    ] = await Promise.all([
-      this.prisma.timeSlot.count({
-        where: { availability: { instructorId } }
-      }),
-      this.prisma.timeSlot.count({
-        where: {
-          availability: { instructorId },
-          isAvailable: true,
-          isBooked: false,
-          isBlocked: false
+    // Get all availabilities for the instructor
+    const availabilities = await this.prisma.instructorAvailability.findMany({
+      where: { instructorId },
+      include: {
+        generatedSlots: true
+      }
+    });
+
+    let totalSlots = 0;
+    let availableSlots = 0;
+    let bookedSlots = 0;
+    let blockedSlots = 0;
+
+    const now = new Date();
+
+    availabilities.forEach(availability => {
+      const minAdvanceHours = availability.minAdvanceHours || 12;
+      const minAdvanceTime = new Date();
+      minAdvanceTime.setHours(minAdvanceTime.getHours() + minAdvanceHours);
+
+      availability.generatedSlots.forEach(slot => {
+        totalSlots++;
+
+        if (slot.isBooked) {
+          bookedSlots++;
+        } else if (slot.isBlocked) {
+          blockedSlots++;
+        } else if (slot.isAvailable && slot.startTime >= minAdvanceTime) {
+          availableSlots++;
         }
-      }),
-      this.prisma.timeSlot.count({
-        where: {
-          availability: { instructorId },
-          isBooked: true
-        }
-      }),
-      this.prisma.timeSlot.count({
-        where: {
-          availability: { instructorId },
-          isBlocked: true
-        }
-      })
-    ]);
+      });
+    });
 
     return {
       totalSlots,

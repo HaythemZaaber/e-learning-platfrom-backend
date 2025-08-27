@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Context } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Context, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -13,6 +13,9 @@ import {
   InstructorStats,
   InstructorSearchResponse,
   ProfileImageUpdateResponse,
+  FeaturedInstructorsResponse,
+  InstructorListResponse,
+  InstructorHeroStats,
 } from './entities/instructor.entity';
 
 import {
@@ -20,7 +23,9 @@ import {
   UpdateProfileImageInput,
   InstructorSearchFiltersInput,
   CreateInstructorProfileInput,
+  InstructorListFiltersInput,
 } from './dto/instructor.dto';
+
 
 @Resolver(() => InstructorProfile)
 @UseGuards(AuthGuard, RolesGuard)
@@ -28,6 +33,55 @@ export class InstructorResolver {
   constructor(
     private instructorService: InstructorService,
   ) {}
+
+  // =============================================================================
+  // LANDING PAGE QUERIES
+  // =============================================================================
+
+  @Query(() => FeaturedInstructorsResponse, { name: 'getFeaturedInstructors' })
+  async getFeaturedInstructors(@Args('limit', { nullable: true, type: () => Int }) limit?: number) {
+    try {
+      return await this.instructorService.getFeaturedInstructors(limit || 6);
+    } catch (error) {
+      throw new Error(`Failed to get featured instructors: ${error.message}`);
+    }
+  }
+
+  @Query(() => InstructorHeroStats, { name: 'getInstructorHeroStats' })
+  async getInstructorHeroStats() {
+    try {
+      return await this.instructorService.getInstructorHeroStats();
+    } catch (error) {
+      throw new Error(`Failed to get instructor hero stats: ${error.message}`);
+    }
+  }
+
+  // =============================================================================
+  // INSTRUCTORS PAGE QUERIES
+  // =============================================================================
+
+  @Query(() => InstructorListResponse, { name: 'getInstructorsList' })
+  async getInstructorsList(
+    @Args('filters', { nullable: true }) filters?: InstructorListFiltersInput,
+    @Args('page', { nullable: true, type: () => Int }) page?: number,
+    @Args('limit', { nullable: true, type: () => Int }) limit?: number,
+    @Args('sortBy', { nullable: true }) sortBy?: string,
+  ) {
+    try {
+      return await this.instructorService.getInstructorsList(filters, page || 1, limit || 6, sortBy);
+    } catch (error) {
+      throw new Error(`Failed to get instructors list: ${error.message}`);
+    }
+  }
+
+  @Query(() => [InstructorProfile], { name: 'getAvailableTodayInstructors' })
+  async getAvailableTodayInstructors(@Args('limit', { nullable: true, type: () => Int }) limit?: number) {
+    try {
+      return await this.instructorService.getAvailableTodayInstructors(limit || 10);
+    } catch (error) {
+      throw new Error(`Failed to get available today instructors: ${error.message}`);
+    }
+  }
 
   // =============================================================================
   // INSTRUCTOR PROFILE QUERIES
@@ -116,8 +170,6 @@ export class InstructorResolver {
       throw new Error(`Failed to update instructor profile: ${error.message}`);
     }
   }
-
-
 
   @Mutation(() => ProfileImageUpdateResponse, { name: 'updateProfileImage' })
   @Roles(UserRole.INSTRUCTOR)

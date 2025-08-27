@@ -160,6 +160,7 @@ export class InstructorProfile {
   @Field(() => Int, { nullable: true })
   maxStudentsPerCourse?: number;
 
+  // Computed availability fields (for frontend compatibility)
   @Field(() => GraphQLJSON)
   preferredSchedule: any;
 
@@ -207,6 +208,12 @@ export class InstructorProfile {
 
   @Field(() => Float, { nullable: true })
   revenueSharing?: number;
+
+  @Field(() => Float, { nullable: true })
+  individualSessionRate?: number;
+
+  @Field(() => Float, { nullable: true })
+  groupSessionRate?: number;
 
   // Marketing & Promotion
   @Field()
@@ -363,4 +370,73 @@ export class ProfileImageUpdateResponse {
 
   @Field({ nullable: true })
   profileImage?: string;
+}
+
+// =============================================================================
+// FEATURED INSTRUCTORS RESPONSE
+// =============================================================================
+
+@ObjectType()
+export class FeaturedInstructorsResponse {
+  @Field(() => [InstructorProfile])
+  featuredInstructors: InstructorProfile[];
+
+  @Field(() => Int)
+  total: number;
+
+  @Field()
+  hasMore: boolean;
+}
+
+// =============================================================================
+// INSTRUCTOR LIST RESPONSE
+// =============================================================================
+
+@ObjectType()
+export class InstructorListResponse {
+  @Field(() => [InstructorProfile])
+  instructors: InstructorProfile[];
+
+  @Field(() => Int)
+  total: number;
+
+  @Field(() => Int)
+  page: number;
+
+  @Field(() => Int)
+  limit: number;
+
+  @Field(() => Int)
+  totalPages: number;
+
+  @Field()
+  hasMore: boolean;
+
+  @Field(() => GraphQLJSON, { nullable: true })
+  filters: any;
+}
+
+// =============================================================================
+// INSTRUCTOR HERO STATS
+// =============================================================================
+
+@ObjectType()
+export class InstructorHeroStats {
+  @Field(() => Int)
+  totalInstructors: number;
+
+  @Field(() => Int)
+  availableToday: number;
+
+  @Field(() => Float)
+  averageRating: number;
+
+  @Field(() => Int)
+  totalStudents: number;
+
+  @Field(() => Int)
+  liveSessionsEnabled: number;
+
+  @Field(() => Int)
+  verifiedInstructors: number;
 }

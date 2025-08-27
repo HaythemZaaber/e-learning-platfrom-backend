@@ -5,9 +5,10 @@ import { InstructorProfileService } from './instructor-profile.service';
 import { InstructorProfileController } from './instructor-profile.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { ReviewsModule } from './reviews/reviews.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, ReviewsModule],
   controllers: [InstructorProfileController],
   providers: [InstructorService, InstructorResolver, InstructorProfileService],
   exports: [InstructorService, InstructorProfileService],

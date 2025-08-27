@@ -58,6 +58,109 @@ import {
     async getInstructorProfile(@Param('userId') userId: string) {
       return this.instructorProfileService.getInstructorProfile(userId);
     }
+
+    @Get('details/:instructorId')
+    @ApiOperation({ summary: 'Get comprehensive instructor details for public profile page' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Instructor details retrieved successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor not found' 
+    })
+    async getInstructorDetails(@Param('instructorId') instructorId: string) {
+      return this.instructorProfileService.getInstructorDetails(instructorId);
+    }
+
+    @Get(':instructorId/courses')
+    @ApiOperation({ summary: 'Get all courses by instructor' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Instructor courses retrieved successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor not found' 
+    })
+    @ApiQuery({ name: 'page', required: false, description: 'Page number', type: Number })
+    @ApiQuery({ name: 'limit', required: false, description: 'Items per page', type: Number })
+    @ApiQuery({ name: 'status', required: false, description: 'Course status filter' })
+    async getInstructorCourses(
+      @Param('instructorId') instructorId: string,
+      @Query('page') page?: number,
+      @Query('limit') limit?: number,
+      @Query('status') status?: string,
+    ) {
+      return this.instructorProfileService.getInstructorCourses(instructorId, {
+        page: page || 1,
+        limit: limit || 10,
+        status
+      });
+    }
+
+    @Get(':instructorId/reviews')
+    @ApiOperation({ summary: 'Get all reviews for instructor' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Instructor reviews retrieved successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor not found' 
+    })
+    @ApiQuery({ name: 'page', required: false, description: 'Page number', type: Number })
+    @ApiQuery({ name: 'limit', required: false, description: 'Items per page', type: Number })
+    @ApiQuery({ name: 'rating', required: false, description: 'Filter by rating', type: Number })
+    async getInstructorReviews(
+      @Param('instructorId') instructorId: string,
+      @Query('page') page?: number,
+      @Query('limit') limit?: number,
+      @Query('rating') rating?: number,
+    ) {
+      return this.instructorProfileService.getInstructorReviews(instructorId, {
+        page: page || 1,
+        limit: limit || 10,
+        rating
+      });
+    }
+
+    @Get(':instructorId/availability')
+    @ApiOperation({ summary: 'Get instructor availability' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Instructor availability retrieved successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor not found' 
+    })
+    @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+    async getInstructorAvailability(
+      @Param('instructorId') instructorId: string,
+      @Query('startDate') startDate?: string,
+      @Query('endDate') endDate?: string,
+    ) {
+      return this.instructorProfileService.getInstructorAvailability(instructorId, {
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+      });
+    }
+
+    @Get(':instructorId/stats')
+    @ApiOperation({ summary: 'Get instructor statistics' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Instructor statistics retrieved successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor profile not found' 
+    })
+    async getInstructorStats(@Param('instructorId') instructorId: string) {
+      return this.instructorProfileService.getInstructorStats(instructorId);
+    }
   
     @Post()
     @ApiOperation({ summary: 'Create instructor profile' })
@@ -108,20 +211,6 @@ import {
     })
     async enableLiveSessions(@Param('userId') userId: string) {
       return this.instructorProfileService.enableLiveSessions(userId);
-    }
-  
-    @Get(':userId/stats')
-    @ApiOperation({ summary: 'Get instructor statistics' })
-    @ApiResponse({ 
-      status: 200, 
-      description: 'Instructor statistics retrieved successfully' 
-    })
-    @ApiResponse({ 
-      status: 404, 
-      description: 'Instructor profile not found' 
-    })
-    async getInstructorStats(@Param('userId') userId: string) {
-      return this.instructorProfileService.getInstructorStats(userId);
     }
   
     @Put(':userId/update-stats')

@@ -879,8 +879,6 @@ model InstructorProfile {
   // =============================================================================
   isAcceptingStudents  Boolean @default(true)
   maxStudentsPerCourse Int?
-  preferredSchedule    Json    @default("{}")
-  availableTimeSlots   Json    @default("[]")
 
   // =============================================================================
   // VERIFICATION & COMPLIANCE
