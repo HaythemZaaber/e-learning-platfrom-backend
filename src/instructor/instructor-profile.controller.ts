@@ -99,6 +99,23 @@ import {
       });
     }
 
+    @Patch(':userId/auto-approval')
+    @ApiOperation({ summary: 'Update instructor auto-approval settings' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Auto-approval settings updated successfully' 
+    })
+    @ApiResponse({ 
+      status: 404, 
+      description: 'Instructor profile not found' 
+    })
+    async updateAutoApprovalSettings(
+      @Param('userId') userId: string,
+      @Body() body: { autoAcceptBookings: boolean }
+    ) {
+      return this.instructorProfileService.updateAutoApprovalSettings(userId, body.autoAcceptBookings);
+    }
+
     @Get(':instructorId/reviews')
     @ApiOperation({ summary: 'Get all reviews for instructor' })
     @ApiResponse({ 

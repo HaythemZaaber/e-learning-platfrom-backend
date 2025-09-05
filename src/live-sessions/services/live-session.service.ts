@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PaymentService as MainPaymentService } from '../../payment/payment.service';
 import { 
   CreateLiveSessionDto, 
   UpdateLiveSessionDto,
@@ -12,7 +13,10 @@ import {
 
 @Injectable()
 export class LiveSessionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private paymentService: MainPaymentService
+  ) {}
 
   async getLiveSessions(filter: LiveSessionFilterDto = {}) {
     const {
@@ -585,13 +589,40 @@ export class LiveSessionService {
     return updatedSession;
   }
 
-  async startLiveSession(id: string, startDto: StartLiveSessionDto = {}) {
+  async startLiveSession(id: string, startDto: StartLiveSessionDto = {}, userId?: string) {
     const session = await this.prisma.liveSession.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        instructor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profileImage: true
+          }
+        },
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
     });
 
     if (!session) {
       throw new NotFoundException('Live session not found');
+    }
+
+    // Validate instructor permissions if userId is provided
+    if (userId && session.instructorId !== userId) {
+      throw new ForbiddenException('Only the instructor can start this session');
     }
 
     if (session.status !== 'SCHEDULED' && session.status !== 'CONFIRMED') {
@@ -604,6 +635,13 @@ export class LiveSessionService {
     // Allow starting up to 15 minutes before scheduled time
     if (now < new Date(scheduledStart.getTime() - 15 * 60 * 1000)) {
       throw new BadRequestException('Session cannot be started more than 15 minutes before scheduled time');
+    }
+
+    // Check if session is too late (more than 2 hours after scheduled start)
+    const timeDiff = scheduledStart.getTime() - now.getTime();
+    const minutesDiff = timeDiff / (1000 * 60);
+    if (minutesDiff < -120) {
+      throw new BadRequestException('Session cannot be started. It\'s more than 2 hours after the scheduled start time.');
     }
 
     const updatedSession = await this.prisma.liveSession.update({
@@ -639,6 +677,22 @@ export class LiveSessionService {
       }
     });
 
+    // Update participant statuses to ATTENDED
+    await this.prisma.sessionParticipant.updateMany({
+      where: { sessionId: id },
+      data: {
+        status: 'ATTENDED'
+      }
+    });
+
+    // Update reservation statuses to COMPLETED
+    await this.prisma.sessionReservation.updateMany({
+      where: { sessionId: id },
+      data: {
+        status: 'COMPLETED'
+      }
+    });
+
     // Send notifications to participants
     for (const participant of updatedSession.participants) {
       await this.createNotification({
@@ -650,26 +704,100 @@ export class LiveSessionService {
       });
     }
 
-    return updatedSession;
+    return {
+      success: true,
+      message: 'Session started successfully',
+      session: updatedSession
+    };
   }
 
   async endLiveSession(id: string, endDto: EndLiveSessionDto = {}) {
     const session = await this.prisma.liveSession.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        bookingRequest: true,
+        offering: {
+          include: {
+            instructor: true
+          }
+        },
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
     });
 
     if (!session) {
       throw new NotFoundException('Live session not found');
     }
 
-    if (session.status !== 'IN_PROGRESS') {
-      throw new BadRequestException('Only sessions in progress can be ended');
+    // Allow ending from SCHEDULED or IN_PROGRESS status
+    if (session.status !== 'SCHEDULED' && session.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Only scheduled or in-progress sessions can be ended');
     }
 
     const now = new Date();
     const actualDuration = session.actualStart 
       ? Math.round((now.getTime() - new Date(session.actualStart).getTime()) / 60000)
-      : session.duration;
+      : (endDto.actualDuration || session.duration);
+
+    // Handle payment capture for booked sessions
+    let paymentCaptured = false;
+    if (session.bookingRequest?.paymentIntentId) {
+      try {
+        const captureResult = await this.paymentService.captureSessionPayment(
+          session.bookingRequest.paymentIntentId
+        );
+
+        if (captureResult.success) {
+          paymentCaptured = true;
+          
+          // Update booking request payment status to PAID
+          await this.prisma.bookingRequest.update({
+            where: { id: session.bookingRequest.id },
+            data: {
+              paymentStatus: 'PAID'
+            }
+          });
+
+          // Update session reservation payment status to PAID
+          await this.prisma.sessionReservation.updateMany({
+            where: { sessionId: session.id },
+            data: {
+              paymentStatus: 'PAID'
+            }
+          });
+
+          // Create payout session for instructor
+          await this.prisma.payoutSession.create({
+            data: {
+              payoutId: 'temp', // Will be updated when creating actual payout
+              sessionId: session.id,
+              sessionAmount: session.totalPrice || 0,
+              platformFee: session.platformFee,
+              netAmount: session.instructorPayout
+            }
+          });
+
+          console.log(`Payment captured successfully for session: ${session.id}`);
+        } else {
+          console.error('Failed to capture payment:', captureResult.error);
+          // Don't throw error, just mark as failed
+        }
+      } catch (error) {
+        console.error('Error capturing payment:', error);
+        // Don't throw error, just mark as failed
+      }
+    }
 
     const updatedSession = await this.prisma.liveSession.update({
       where: { id },
@@ -679,10 +807,11 @@ export class LiveSessionService {
         actualDuration,
         sessionNotes: endDto.notes || session.sessionNotes,
         summary: endDto.summary || session.summary,
+        instructorNotes: endDto.instructorNotes || session.instructorNotes,
         recordingUrl: endDto.recordingUrl || session.recordingUrl,
         sessionArtifacts: endDto.sessionArtifacts || session.sessionArtifacts || [],
         totalRevenue: session.pricePerPerson * session.currentParticipants,
-        payoutStatus: 'PENDING'
+        payoutStatus: paymentCaptured ? 'PENDING' : 'FAILED'
       },
       include: {
         instructor: {
@@ -696,6 +825,18 @@ export class LiveSessionService {
         participants: {
           include: {
             user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        },
+        bookingRequest: {
+          include: {
+            student: {
               select: {
                 id: true,
                 firstName: true,
@@ -733,7 +874,11 @@ export class LiveSessionService {
     // Update offering statistics
     await this.updateOfferingStats(session.offeringId);
 
-    return updatedSession;
+    return {
+      success: true,
+      session: updatedSession,
+      paymentCaptured: paymentCaptured
+    };
   }
 
   async cancelLiveSession(id: string, cancelDto: CancelLiveSessionDto = {}) {
@@ -1332,7 +1477,11 @@ export class LiveSessionService {
       };
     }
 
-    return this.prisma.liveSession.findMany({
+    // Add some debugging
+    console.log('getUpcomingSessions called with:', { instructorId, studentId, days });
+    console.log('Query where clause:', JSON.stringify(where, null, 2));
+
+    const sessions = await this.prisma.liveSession.findMany({
       where,
       include: {
         instructor: {
@@ -1365,5 +1514,8 @@ export class LiveSessionService {
       },
       orderBy: { scheduledStart: 'asc' }
     });
+
+    console.log(`Found ${sessions.length} upcoming sessions`);
+    return sessions;
   }
 }

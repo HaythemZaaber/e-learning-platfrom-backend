@@ -130,6 +130,9 @@ model User {
   paymentMethods  PaymentMethod[]
   sessionPayments SessionPayment[]
 
+  // Stripe Connect account for instructors
+  stripeAccountId String?
+
   // =============================================================================
   // INSTRUCTOR VERIFICATION RELATIONS
   // =============================================================================

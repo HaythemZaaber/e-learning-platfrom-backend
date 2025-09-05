@@ -9,6 +9,9 @@ import {
   GetAvailableTimeSlotsDto
 } from '../dto/availability.dto';
 
+// Import Prisma enums
+import { SessionStatus } from '@prisma/client';
+
 @Injectable()
 export class AvailabilityService {
   constructor(private prisma: PrismaService) {}
@@ -319,7 +322,7 @@ export class AvailabilityService {
         instructorId,
         scheduledStart: { lt: endTime },
         scheduledEnd: { gt: startTime },
-        status: { in: ['SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] }
+        status: { in: [SessionStatus.SCHEDULED, SessionStatus.CONFIRMED, SessionStatus.IN_PROGRESS] }
       }
     });
 

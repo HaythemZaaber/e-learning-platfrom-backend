@@ -10,6 +10,7 @@ import {
     UseGuards,
     HttpStatus,
     HttpCode,
+    Req,
   } from '@nestjs/common';
   import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
   import { LiveSessionService } from '../services/live-session.service';
@@ -30,7 +31,15 @@ import {
   } from '../dto/common.dto';
   import { RestAuthGuard } from '../../auth/rest-auth.guard';
 
-  
+  interface AuthenticatedRequest extends Request {
+    user: {
+      id: string;
+      clerkId: string;
+      email: string;
+      role: string;
+    };
+  }
+
   @ApiTags('Live Sessions')
   @ApiBearerAuth()
   @UseGuards(RestAuthGuard)
@@ -85,6 +94,27 @@ import {
       return this.liveSessionService.getLiveSessions(filter);
     }
   
+    @Get('upcoming')
+    @ApiOperation({ summary: 'Get upcoming sessions' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Upcoming sessions retrieved successfully' 
+    })
+    @ApiQuery({ name: 'instructorId', required: false, description: 'Filter by instructor ID' })
+    @ApiQuery({ name: 'studentId', required: false, description: 'Filter by student ID' })
+    @ApiQuery({ name: 'days', required: false, description: 'Number of days to look ahead', type: Number })
+    async getUpcomingSessions(
+      @Query('instructorId') instructorId?: string,
+      @Query('studentId') studentId?: string,
+      @Query('days') days?: number,
+    ) {
+      return this.liveSessionService.getUpcomingSessions(
+        instructorId,
+        studentId,
+        days ? Number(days) : undefined
+      );
+    }
+
     @Get(':id')
     @ApiOperation({ summary: 'Get live session by ID' })
     @ApiResponse({ 
@@ -139,6 +169,8 @@ import {
     }
   
     @Patch(':id/start')
+    @UseGuards(RestAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Start live session' })
     @ApiResponse({ 
       status: 200, 
@@ -152,11 +184,16 @@ import {
       status: 400, 
       description: 'Session cannot be started' 
     })
+    @ApiResponse({ 
+      status: 403, 
+      description: 'Access denied - only instructor can start session' 
+    })
     async startLiveSession(
       @Param('id') id: string,
-      @Body() startLiveSessionDto?: StartLiveSessionDto
+      @Body() startLiveSessionDto?: StartLiveSessionDto,
+      @Req() req?: AuthenticatedRequest
     ) {
-      return this.liveSessionService.startLiveSession(id, startLiveSessionDto);
+      return this.liveSessionService.startLiveSession(id, startLiveSessionDto, req?.user?.id);
     }
   
     @Patch(':id/end')
@@ -352,24 +389,4 @@ import {
       );
     }
   
-    @Get('upcoming')
-    @ApiOperation({ summary: 'Get upcoming sessions' })
-    @ApiResponse({ 
-      status: 200, 
-      description: 'Upcoming sessions retrieved successfully' 
-    })
-    @ApiQuery({ name: 'instructorId', required: false, description: 'Filter by instructor ID' })
-    @ApiQuery({ name: 'studentId', required: false, description: 'Filter by student ID' })
-    @ApiQuery({ name: 'days', required: false, description: 'Number of days to look ahead', type: Number })
-    async getUpcomingSessions(
-      @Query('instructorId') instructorId?: string,
-      @Query('studentId') studentId?: string,
-      @Query('days') days?: number,
-    ) {
-      return this.liveSessionService.getUpcomingSessions(
-        instructorId,
-        studentId,
-        days ? Number(days) : undefined
-      );
-    }
   }

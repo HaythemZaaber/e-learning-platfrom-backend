@@ -367,6 +367,11 @@ export class EndLiveSessionDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  instructorNotes?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   recordingUrl?: string;
 
   @ApiProperty({ required: false, type: [String] })
@@ -374,6 +379,12 @@ export class EndLiveSessionDto {
   @IsArray()
   @IsString({ each: true })
   sessionArtifacts?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  actualDuration?: number;
 }
 
 export class CancelLiveSessionDto {

@@ -91,8 +91,6 @@ export class InstructorProfileService {
         defaultSessionFormat: createDto.defaultSessionFormat as SessionFormat || SessionFormat.ONLINE,
         isAcceptingStudents: createDto.isAcceptingStudents !== false,
         maxStudentsPerCourse: createDto.maxStudentsPerCourse,
-        preferredSchedule: createDto.preferredSchedule || {},
-        availableTimeSlots: createDto.availableTimeSlots || [],
       },
       include: {
         user: {
@@ -152,9 +150,7 @@ export class InstructorProfileService {
     if (updateDto.languagesSpoken !== undefined) {
       updateData.languagesSpoken = updateDto.languagesSpoken;
     }
-    if (updateDto.availableTimeSlots !== undefined) {
-      updateData.availableTimeSlots = updateDto.availableTimeSlots;
-    }
+
 
     const updatedProfile = await this.prisma.instructorProfile.update({
       where: { userId },
@@ -857,8 +853,6 @@ export class InstructorProfileService {
         currency: true,
         bufferBetweenSessions: true,
         maxSessionsPerDay: true,
-        preferredSchedule: true,
-        availableTimeSlots: true,
       }
     });
 
@@ -894,6 +888,43 @@ export class InstructorProfileService {
         endDate: endDate || null,
         currentTime: now.toISOString(),
       }
+    };
+  }
+
+  async updateAutoApprovalSettings(userId: string, autoAcceptBookings: boolean) {
+    const profile = await this.prisma.instructorProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Instructor profile not found');
+    }
+
+    const updatedProfile = await this.prisma.instructorProfile.update({
+      where: { userId },
+      data: {
+        autoAcceptBookings
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profileImage: true,
+            teachingRating: true,
+            totalStudents: true,
+            totalCourses: true,
+          }
+        }
+      }
+    });
+
+    return {
+      success: true,
+      message: `Auto-approval ${autoAcceptBookings ? 'enabled' : 'disabled'} successfully`,
+      profile: updatedProfile
     };
   }
 

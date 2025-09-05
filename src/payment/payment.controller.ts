@@ -28,6 +28,7 @@ import { PaymentService } from './payment.service';
 import { CreatePaymentSessionDto } from './dto/create-payment-session.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
 import { CreateEnrollmentDto, EnrollmentType, EnrollmentSource } from './dto/create-enrollment.dto';
+import { CreateStripeConnectAccountDto } from './dto/stripe-connect.dto';
 import { RestAuthGuard } from '../auth/rest-auth.guard';
 
 @ApiTags('Payment')
@@ -319,5 +320,126 @@ export class PaymentController {
     console.log(enrollment);
     
     return enrollment;
+  }
+
+  // =============================================================================
+  // STRIPE CONNECT ENDPOINTS
+  // =============================================================================
+
+  @Post('connect/accounts')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create Stripe Connect account for instructor' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Stripe Connect account created successfully' 
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Bad request - validation errors or account already exists' 
+  })
+  @ApiResponse({ 
+    status: 401, 
+    description: 'Unauthorized' 
+  })
+  @HttpCode(HttpStatus.CREATED)
+  async createStripeConnectAccount(
+    @Body() accountData: CreateStripeConnectAccountDto,
+    @Req() req: AuthenticatedRequest
+  ) {
+    // Only instructors can create Connect accounts
+    if (req.user.role !== 'INSTRUCTOR') {
+      throw new BadRequestException('Only instructors can create Stripe Connect accounts');
+    }
+
+    return this.paymentService.createStripeConnectAccount(req.user.id, accountData);
+  }
+
+  @Get('connect/accounts')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get instructor Stripe Connect account details' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Stripe Connect account retrieved successfully' 
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Instructor has not set up Stripe Connect account' 
+  })
+  @ApiResponse({ 
+    status: 401, 
+    description: 'Unauthorized' 
+  })
+  async getStripeConnectAccount(@Req() req: AuthenticatedRequest) {
+    // Only instructors can view their Connect accounts
+    if (req.user.role !== 'INSTRUCTOR') {
+      throw new BadRequestException('Only instructors can view Stripe Connect accounts');
+    }
+
+    return this.paymentService.getStripeConnectAccount(req.user.id);
+  }
+
+  @Post('connect/accounts/links')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create Stripe Connect account onboarding link' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Stripe Connect account link created successfully' 
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Instructor has not set up Stripe Connect account' 
+  })
+  @ApiResponse({ 
+    status: 401, 
+    description: 'Unauthorized' 
+  })
+  async createStripeConnectAccountLink(@Req() req: AuthenticatedRequest) {
+    // Only instructors can create account links
+    if (req.user.role !== 'INSTRUCTOR') {
+      throw new BadRequestException('Only instructors can view Stripe Connect accounts');
+    }
+
+    return this.paymentService.createStripeConnectAccountLink(req.user.id);
+  }
+
+  @Post('connect/accounts/capabilities')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update Stripe Connect account capabilities' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Stripe Connect account capabilities updated successfully' 
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Instructor has not set up Stripe Connect account' 
+  })
+  @ApiResponse({ 
+    status: 401, 
+    description: 'Unauthorized' 
+  })
+  async updateStripeConnectAccountCapabilities(@Req() req: AuthenticatedRequest) {
+    // Only instructors can update their account capabilities
+    if (req.user.role !== 'INSTRUCTOR') {
+      throw new BadRequestException('Only instructors can update Stripe Connect account capabilities');
+    }
+
+    return this.paymentService.updateStripeConnectAccountCapabilities(req.user.id);
+  }
+
+  @Post('webhook/connect')
+  @ApiOperation({ summary: 'Stripe Connect webhook handler' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Webhook processed successfully' 
+  })
+  async handleStripeConnectWebhook(
+    @Headers('stripe-signature') signature: string,
+    @Req() req: RawBodyRequest<Request>
+  ) {
+    return this.paymentService.handleStripeConnectWebhook(req.body);
   }
 }
