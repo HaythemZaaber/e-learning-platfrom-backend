@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PaymentModule } from '../payment/payment.module';
+import { StreamModule } from '../stream/stream.module';
 
 // Controllers
 import { AvailabilityController } from './controllers/availability.controller';
@@ -32,6 +33,7 @@ import { AuthModule } from 'src/auth/auth.module';
   imports: [
     PrismaModule,
     PaymentModule,
+    StreamModule,
     AuthModule
   ],
   controllers: [

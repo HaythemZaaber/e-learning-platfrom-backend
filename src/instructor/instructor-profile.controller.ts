@@ -24,7 +24,7 @@ import {
   
   @ApiTags('Instructor Profiles')
   @ApiBearerAuth()
-  @UseGuards(RestAuthGuard)
+  
   @Controller('instructor-profiles')
   export class InstructorProfileController {
     constructor(private readonly instructorProfileService: InstructorProfileService) {}
@@ -101,6 +101,7 @@ import {
 
     @Patch(':userId/auto-approval')
     @ApiOperation({ summary: 'Update instructor auto-approval settings' })
+    @UseGuards(RestAuthGuard)
     @ApiResponse({ 
       status: 200, 
       description: 'Auto-approval settings updated successfully' 
@@ -180,6 +181,7 @@ import {
     }
   
     @Post()
+    @UseGuards(RestAuthGuard)
     @ApiOperation({ summary: 'Create instructor profile' })
     @ApiResponse({ 
       status: 201, 
@@ -200,6 +202,7 @@ import {
     }
   
     @Patch(':userId')
+    @UseGuards(RestAuthGuard)
     @ApiOperation({ summary: 'Update instructor profile' })
     @ApiResponse({ 
       status: 200, 
@@ -217,6 +220,7 @@ import {
     }
   
     @Patch(':userId/enable-live-sessions')
+    @UseGuards(RestAuthGuard)
     @ApiOperation({ summary: 'Enable live sessions for instructor' })
     @ApiResponse({ 
       status: 200, 
@@ -231,6 +235,7 @@ import {
     }
   
     @Put(':userId/update-stats')
+    @UseGuards(RestAuthGuard)
     @ApiOperation({ summary: 'Update instructor profile statistics' })
     @ApiResponse({ 
       status: 200, 

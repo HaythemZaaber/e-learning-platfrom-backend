@@ -14,7 +14,9 @@ import { PaymentModule } from './payment/payment.module';
 import { InstructorVerificationModule } from './instructor-verification/instructor-verification.module';
 import { InstructorModule } from './instructor/instructor.module';
 import { LiveSessionsModule } from './live-sessions/live-sessions.module';
+import { StreamModule } from './stream/stream.module';
 import { ConfigModule } from '@nestjs/config';
+import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { ConfigModule } from '@nestjs/config';
     InstructorVerificationModule,
     InstructorModule,
     LiveSessionsModule,
+    StreamModule,
+    AIAssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],

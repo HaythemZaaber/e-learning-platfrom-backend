@@ -1614,26 +1614,7 @@ model CourseAnnouncement {
   @@map("course_announcements")
 }
 
-model AIInteraction {
-  id        String            @id @default(cuid())
-  type      AIInteractionType
-  query     String
-  response  String
-  context   Json              @default("{}")
-  isHelpful Boolean?
 
-  confidence     Float?
-  processingTime Int?
-
-  createdAt DateTime @default(now())
-
-  userId   String
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId String?
-  course   Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
-
-  @@map("ai_interactions")
-}
 
 model LectureResource {
   id             String    @id @default(cuid())
@@ -2112,6 +2093,38 @@ model ApplicationDocument {
 
   @@map("application_documents")
 }
+
+model AIInteraction {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String?
+  type      String   // 'suggestion', 'analysis', 'chat', 'generation'
+  request   Json
+  response  Json
+  tokens    Int?
+  createdAt DateTime @default(now())
+  
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([courseId])
+  @@map("ai_interactions")
+}
+
+model AICacheEntry {
+  id         String   @id @default(cuid())
+  cacheKey   String   @unique
+  response   Json
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  
+  @@index([expiresAt])
+  @@map("ai_cache_entries")
+}
+
+
+
 
 // =============================================================================
 // ENUMS - COMPLETE DEFINITION

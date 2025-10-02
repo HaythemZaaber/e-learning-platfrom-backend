@@ -28,7 +28,6 @@ import {
 
 
 @Resolver(() => InstructorProfile)
-@UseGuards(AuthGuard, RolesGuard)
 export class InstructorResolver {
   constructor(
     private instructorService: InstructorService,
@@ -156,6 +155,7 @@ export class InstructorResolver {
   // =============================================================================
 
   @Mutation(() => InstructorProfile, { name: 'updateInstructorProfile' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR)
   async updateInstructorProfile(
     @Args('input') input: UpdateInstructorProfileInput,
@@ -172,6 +172,7 @@ export class InstructorResolver {
   }
 
   @Mutation(() => ProfileImageUpdateResponse, { name: 'updateProfileImage' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR)
   async updateProfileImage(
     @Args('input') input: UpdateProfileImageInput,
@@ -193,6 +194,7 @@ export class InstructorResolver {
   }
 
   @Mutation(() => InstructorProfile, { name: 'updateInstructorProfileByUserId' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async updateInstructorProfileByUserId(
     @Args('userId') userId: string,
@@ -206,6 +208,7 @@ export class InstructorResolver {
   }
 
   @Mutation(() => InstructorProfile, { name: 'deleteInstructorProfile' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async deleteInstructorProfile(@Args('userId') userId: string) {
     try {
@@ -221,6 +224,7 @@ export class InstructorResolver {
   // =============================================================================
 
   @Mutation(() => InstructorProfile, { name: 'createInstructorProfile' })
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async createInstructorProfile(
     @Args('input') input: CreateInstructorProfileInput,

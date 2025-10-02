@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService as MainPaymentService } from '../../payment/payment.service';
+import { StreamService } from '../../stream/services/stream.service.simple';
 import { 
   CreateLiveSessionDto, 
   UpdateLiveSessionDto,
@@ -13,9 +15,13 @@ import {
 
 @Injectable()
 export class LiveSessionService {
+  private readonly logger = new Logger(LiveSessionService.name);
+
   constructor(
     private prisma: PrismaService,
-    private paymentService: MainPaymentService
+    private paymentService: MainPaymentService,
+    private streamService: StreamService,
+    private configService: ConfigService
   ) {}
 
   async getLiveSessions(filter: LiveSessionFilterDto = {}) {
@@ -629,87 +635,113 @@ export class LiveSessionService {
       throw new BadRequestException('Only scheduled or confirmed sessions can be started');
     }
 
-    const now = new Date();
-    const scheduledStart = new Date(session.scheduledStart);
+    // Time validation logic can be uncommented if needed
+    // const currentTime = new Date();
+    // const scheduledStart = new Date(session.scheduledStart);
+    // 
+    // // Allow starting up to 15 minutes before scheduled time
+    // if (currentTime < new Date(scheduledStart.getTime() - 15 * 60 * 1000)) {
+    //   throw new BadRequestException('Session cannot be started more than 15 minutes before scheduled time');
+    // }
+    // 
+    // // Check if session is too late (more than 2 hours after scheduled start)
+    // const timeDiff = scheduledStart.getTime() - currentTime.getTime();
+    // const minutesDiff = timeDiff / (1000 * 60);
+    // if (minutesDiff < -120) {
+    //   throw new BadRequestException('Session cannot be started. It\'s more than 2 hours after the scheduled start time.');
+    // }
 
-    // Allow starting up to 15 minutes before scheduled time
-    if (now < new Date(scheduledStart.getTime() - 15 * 60 * 1000)) {
-      throw new BadRequestException('Session cannot be started more than 15 minutes before scheduled time');
+   // Create or get Stream call
+  let callData;
+  try {
+    if (!session.meetingRoomId) {
+      // Create new Stream call
+      callData = await this.streamService.createCall(id, session.instructorId);
+    } else {
+      try {
+        // Try to get existing call
+        callData = await this.streamService.getCall(session.meetingRoomId);
+      } catch (getCallError) {
+        // If existing call not found, create a new one
+        this.logger.warn(`Existing call ${session.meetingRoomId} not found, creating new call:`, getCallError.message);
+        callData = await this.streamService.createCall(id, session.instructorId);
+      }
     }
+  } catch (error) {
+    this.logger.error('Error creating/getting Stream call:', error);
+    throw new BadRequestException(`Failed to initialize video call: ${error.message}`);
+  }
 
-    // Check if session is too late (more than 2 hours after scheduled start)
-    const timeDiff = scheduledStart.getTime() - now.getTime();
-    const minutesDiff = timeDiff / (1000 * 60);
-    if (minutesDiff < -120) {
-      throw new BadRequestException('Session cannot be started. It\'s more than 2 hours after the scheduled start time.');
-    }
-
-    const updatedSession = await this.prisma.liveSession.update({
-      where: { id },
-      data: {
-        status: 'IN_PROGRESS',
-        actualStart: now,
-        meetingLink: startDto.meetingLink || session.meetingLink,
-        meetingPassword: startDto.meetingPassword || session.meetingPassword,
-        instructorNotes: startDto.instructorNotes || session.instructorNotes
+  const currentTime = new Date();
+  const updatedSession = await this.prisma.liveSession.update({
+    where: { id },
+    data: {
+      status: 'IN_PROGRESS',
+      actualStart: currentTime,
+      meetingRoomId: callData.callId,
+      meetingLink: `https://getstream.io/video/demos/?call_id=${callData.callId}`,
+      meetingPassword: startDto.meetingPassword || session.meetingPassword,
+      instructorNotes: startDto.instructorNotes || session.instructorNotes
+    },
+    include: {
+      instructor: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          profileImage: true
+        }
       },
-      include: {
-        instructor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profileImage: true
-          }
-        },
-        participants: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
+      participants: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
             }
           }
         }
       }
-    });
-
-    // Update participant statuses to ATTENDED
-    await this.prisma.sessionParticipant.updateMany({
-      where: { sessionId: id },
-      data: {
-        status: 'ATTENDED'
-      }
-    });
-
-    // Update reservation statuses to COMPLETED
-    await this.prisma.sessionReservation.updateMany({
-      where: { sessionId: id },
-      data: {
-        status: 'COMPLETED'
-      }
-    });
-
-    // Send notifications to participants
-    for (const participant of updatedSession.participants) {
-      await this.createNotification({
-        userId: participant.userId,
-        type: 'SESSION_STARTING',
-        title: 'Session Starting',
-        message: `Your session "${session.title}" is starting now`,
-        sessionId: id
-      });
     }
+  });
 
-    return {
-      success: true,
-      message: 'Session started successfully',
-      session: updatedSession
-    };
+  // Update participant statuses
+  await this.prisma.sessionParticipant.updateMany({
+    where: { sessionId: id },
+    data: { status: 'ATTENDED' }
+  });
+
+  // Update reservation statuses
+  await this.prisma.sessionReservation.updateMany({
+    where: { sessionId: id },
+    data: { status: 'COMPLETED' }
+  });
+
+  // Send notifications to participants
+  for (const participant of updatedSession.participants) {
+    await this.createNotification({
+      userId: participant.userId,
+      type: 'SESSION_STARTING',
+      title: 'Session Starting',
+      message: `Your session "${session.title}" is starting now`,
+      sessionId: id
+    });
   }
+
+  return {
+    success: true,
+    message: 'Session started successfully',
+    session: updatedSession,
+    callData: {
+      callId: callData.callId,
+      callType: callData.callType,
+      meetingLink: updatedSession.meetingLink,
+      apiKey: this.configService.get('STREAM_API_KEY') // Client needs this
+    }
+  };
+}
 
   async endLiveSession(id: string, endDto: EndLiveSessionDto = {}) {
     const session = await this.prisma.liveSession.findUnique({
@@ -796,6 +828,22 @@ export class LiveSessionService {
       } catch (error) {
         console.error('Error capturing payment:', error);
         // Don't throw error, just mark as failed
+      }
+    }
+
+    // End Stream call if it exists
+    if (session.meetingRoomId) {
+      try {
+        await this.streamService.endCall(session.meetingRoomId);
+        
+        // Get recording URL if available
+        const recordingUrl = await this.streamService.getRecording(session.meetingRoomId);
+        if (recordingUrl) {
+          endDto.recordingUrl = recordingUrl;
+        }
+      } catch (error) {
+        console.error('Error ending Stream call:', error);
+        // Don't throw error, just log it
       }
     }
 

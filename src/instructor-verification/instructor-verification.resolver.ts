@@ -134,7 +134,7 @@ export class InstructorVerificationResolver {
   @Roles(UserRole.ADMIN)
   async getInstructorApplicationById(@Args('id') id: string) {
     try {
-      const application = await this.instructorVerificationService.getInstructorVerification(id);
+      const application = await this.instructorVerificationService.getInstructorVerification(undefined, id);
       return application;
     } catch (error) {
       throw new Error(`Failed to get application: ${error.message}`);

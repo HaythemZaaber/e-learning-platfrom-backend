@@ -83,8 +83,19 @@ export class InstructorVerificationService {
 
   async getInstructorVerification(userId?: string, applicationId?: string) {
     try {
+      let whereClause: any = {};
+      
+      // Determine which unique identifier to use
+      if (applicationId) {
+        whereClause = { id: applicationId };
+      } else if (userId) {
+        whereClause = { userId: userId };
+      } else {
+        throw new BadRequestException('Either userId or applicationId must be provided');
+      }
+
       const application = await this.prisma.instructorApplication.findUnique({
-        where: { userId, id: applicationId },
+        where: whereClause,
         include: {
           applicationDocuments: true,
           aiVerification: true,

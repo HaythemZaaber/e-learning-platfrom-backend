@@ -2586,9 +2586,9 @@ export class CourseService {
       }
 
       // Check permissions for private courses
-      if (!course.isPublic && course.instructorId !== userId) {
-        throw new ForbiddenException('Access denied to private course');
-      }
+      // if (!course.isPublic && course.instructorId !== userId) {
+      //   throw new ForbiddenException('Access denied to private course');
+      // }
 
       // Recalculate duration to ensure it's up-to-date
       await this.recalculateCourseDuration(courseId);

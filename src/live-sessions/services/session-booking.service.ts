@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../../payment/payment.service';
 import { SessionStatus, PaymentStatus, ReservationStatus, ParticipantStatus, ParticipantRole, PayoutStatus, BookingMode, LiveSessionType, SessionFormat, SessionMode } from '@prisma/client';
@@ -19,6 +20,7 @@ export class SessionBookingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
+    private readonly configService: ConfigService,
   ) {}
 
   async createSessionBooking(dto: CreateSessionBookingDto) {
@@ -363,21 +365,21 @@ export class SessionBookingService {
       }
     });
 
-    // Generate Jitsi meeting room
-    const meetingRoomId = this.generateJitsiMeetingId(liveSession.id);
+    // Generate meeting room ID (will be updated when Stream call is created)
+    const meetingRoomId = this.generateMeetingId(liveSession.id);
     
     const updatedLiveSession = await tx.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://meet.jit.si/${meetingRoomId}`
+        meetingLink: `https://getstream.io/call/${meetingRoomId}`
       }
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://meet.jit.si/${meetingRoomId}`
+      meetingLink: `https://getstream.io/call/${meetingRoomId}`
     };
   }
 
@@ -591,14 +593,14 @@ export class SessionBookingService {
         }
       });
 
-      // Generate Jitsi meeting room
-      const meetingRoomId = this.generateJitsiMeetingId(liveSession.id);
+      // Generate meeting room ID (will be updated when Stream call is created)
+      const meetingRoomId = this.generateMeetingId(liveSession.id);
       
       await tx.liveSession.update({
         where: { id: liveSession.id },
         data: {
           meetingRoomId,
-          meetingLink: `https://meet.jit.si/${meetingRoomId}`
+          meetingLink: `https://getstream.io/call/${meetingRoomId}`
         }
       });
 
@@ -623,7 +625,9 @@ export class SessionBookingService {
     // Delegate to LiveSessionService for consistency
     // This method is kept for backward compatibility but now uses the unified logic
     const { LiveSessionService } = await import('./live-session.service');
-    const liveSessionService = new LiveSessionService(this.prisma, this.paymentService);
+    const { StreamService } = await import('../../stream/services/stream.service.simple');
+    const streamService = new StreamService(this.configService, this.prisma);
+    const liveSessionService = new LiveSessionService(this.prisma, this.paymentService, streamService, this.configService);
     
     return liveSessionService.endLiveSession(dto.sessionId, {
       notes: dto.summary,
@@ -1218,7 +1222,7 @@ export class SessionBookingService {
   // Use LiveSessionService.startLiveSession instead
   // This method was removed to consolidate session lifecycle operations
 
-  private generateJitsiMeetingId(sessionId: string): string {
+  private generateMeetingId(sessionId: string): string {
     // Generate a unique meeting ID based on session ID and timestamp
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substring(2, 8);
@@ -1295,21 +1299,21 @@ export class SessionBookingService {
       }
     });
 
-    // Generate Jitsi meeting room
-    const meetingRoomId = this.generateJitsiMeetingId(liveSession.id);
+    // Generate meeting room ID (will be updated when Stream call is created)
+    const meetingRoomId = this.generateMeetingId(liveSession.id);
     
     const updatedLiveSession = await this.prisma.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://meet.jit.si/${meetingRoomId}`
+        meetingLink: `https://getstream.io/call/${meetingRoomId}`
       }
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://meet.jit.si/${meetingRoomId}`
+      meetingLink: `https://getstream.io/call/${meetingRoomId}`
     };
   }
 }
