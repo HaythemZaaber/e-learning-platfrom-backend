@@ -26,7 +26,7 @@ export class AIAssistantService {
 
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-1.5-pro',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-pro',
     });
   }
 
@@ -160,12 +160,18 @@ Analyze this course and provide 3-5 actionable suggestions to improve it.
 `;
 
     const typeSpecificPrompts = {
-      [SuggestionType.GENERAL]: 'Focus on overall course quality and completeness.',
-      [SuggestionType.TITLE]: 'Focus specifically on improving the course title to be more compelling and SEO-friendly.',
-      [SuggestionType.DESCRIPTION]: 'Focus on enhancing the course description to be more engaging and informative.',
-      [SuggestionType.STRUCTURE]: 'Focus on improving the course structure, sections, and lecture organization.',
-      [SuggestionType.SEO]: 'Focus on SEO optimization including keywords, tags, and discoverability.',
-      [SuggestionType.PRICING]: 'Focus on pricing strategy based on course content and market positioning.',
+      [SuggestionType.GENERAL]:
+        'Focus on overall course quality and completeness.',
+      [SuggestionType.TITLE]:
+        'Focus specifically on improving the course title to be more compelling and SEO-friendly.',
+      [SuggestionType.DESCRIPTION]:
+        'Focus on enhancing the course description to be more engaging and informative.',
+      [SuggestionType.STRUCTURE]:
+        'Focus on improving the course structure, sections, and lecture organization.',
+      [SuggestionType.SEO]:
+        'Focus on SEO optimization including keywords, tags, and discoverability.',
+      [SuggestionType.PRICING]:
+        'Focus on pricing strategy based on course content and market positioning.',
       [SuggestionType.CONTENT]: 'Focus on content quality and completeness.',
     };
 
@@ -220,7 +226,8 @@ Ensure confidence is between 0 and 1. Make suggestions practical and specific.`;
           type,
           title: 'Continue developing your course',
           content: 'Add more details to your course information.',
-          reasoning: 'Complete course information helps students make informed decisions.',
+          reasoning:
+            'Complete course information helps students make informed decisions.',
           confidence: 0.8,
           actionable: true,
           metadata: {},
@@ -326,9 +333,8 @@ All scores should be 0-100. Be specific and actionable.`;
     const { message, context } = dto;
     const { courseData, chatHistory } = context;
 
-    const conversationContext = chatHistory
-      ?.map((msg) => `${msg.role}: ${msg.content}`)
-      .join('\n') || '';
+    const conversationContext =
+      chatHistory?.map((msg) => `${msg.role}: ${msg.content}`).join('\n') || '';
 
     const prompt = `
 You are an expert course creation assistant helping instructors build better online courses.
@@ -359,10 +365,7 @@ Provide helpful, specific, and actionable advice. Be concise but thorough.`;
     return response;
   }
 
-  async generateContent(
-    dto: GenerateContentDto,
-    userId: string,
-  ): Promise<any> {
+  async generateContent(dto: GenerateContentDto, userId: string): Promise<any> {
     const { type, context } = dto;
     const { courseData } = context;
 
@@ -398,7 +401,21 @@ Generate detailed lecture outlines for each section. Include:
 - Key topics to cover
 - Estimated duration
 - Teaching methods
-Format as structured markdown.`,
+Format as JSON array with this structure:
+[
+  {
+    "sectionTitle": "Section Name",
+    "lectures": [
+      {
+        "title": "Lecture Title",
+        "learningObjectives": ["objective1", "objective2"],
+        "keyTopics": ["topic1", "topic2"],
+        "estimatedDuration": "15-20 minutes",
+        "teachingMethods": ["method1", "method2"]
+      }
+    ]
+  }
+]`,
 
       [ContentType.ASSESSMENT_QUESTIONS]: `${baseContext}
 Create 10-15 assessment questions:
