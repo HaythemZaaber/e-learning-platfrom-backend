@@ -2451,16 +2451,15 @@ export class CourseService {
   private getCourseIncludeOptions() {
     return {
       instructor: {
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          profileImage: true,
-          title: true,
-          bio: true,
-          instructorBio: true,
-          expertise: true,
+        include: {
+          instructorProfile: {
+            select: {
+              id: true,
+              title: true,
+              bio: true,
+              expertise: true,
+            },
+          },
         },
       },
       sections: {
@@ -2478,12 +2477,26 @@ export class CourseService {
         include: {
           user: true,
         },
-      },  
+      },
       contentItems: {
         where: {
           lectureId: null, // Course-level content items only
         },
         orderBy: { order: 'asc' },
+      },
+      reviews: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10, // Limit to latest 10 reviews for performance
       },
       _count: {
         select: {
@@ -2989,11 +3002,15 @@ export class CourseService {
   // COURSE ANALYTICS AND TRENDS
   // ============================================
 
-  async getCourseAnalytics(courseId: string, instructorId: string) {
+  async getCourseAnalytics(
+    courseId: string,
+    instructorId: string,
+    filters?: any,
+  ) {
     try {
       await this.verifyCourseOwnership(courseId, instructorId);
 
-      const analytics = await this.prisma.course.findUnique({
+      const course = await this.prisma.course.findUnique({
         where: { id: courseId },
         include: {
           _count: {
@@ -3010,11 +3027,10 @@ export class CourseService {
                   firstName: true,
                   lastName: true,
                   email: true,
+                  profileImage: true,
                 },
               },
             },
-            orderBy: { enrolledAt: 'desc' },
-            take: 10,
           },
           reviews: {
             include: {
@@ -3023,42 +3039,404 @@ export class CourseService {
                   id: true,
                   firstName: true,
                   lastName: true,
+                  profileImage: true,
                 },
               },
             },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
+          },
+          sections: {
+            include: {
+              lectures: true,
+            },
           },
         },
       });
 
-      if (!analytics) {
-        throw new NotFoundException('Course not found');
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          errors: ['Course not found'],
+        };
       }
 
-      // Calculate average rating
-      const avgRating =
-        analytics.reviews.length > 0
-          ? analytics.reviews.reduce((sum, review) => sum + review.rating, 0) /
-            analytics.reviews.length
-          : 0;
+      // Calculate comprehensive analytics
+      const analytics = await this.calculateComprehensiveAnalytics(
+        course,
+        filters,
+      );
 
       return {
         success: true,
-        analytics: {
-          totalEnrollments: analytics._count.enrollments,
-          totalReviews: analytics._count.reviews,
-          avgRating,
-          recentEnrollments: analytics.enrollments,
-          recentReviews: analytics.reviews,
-          views: analytics.views,
-        },
+        message: 'Course analytics retrieved successfully',
+        analytics,
       };
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to get course analytics: ${error.message}`,
-      );
+      return {
+        success: false,
+        message: `Failed to get course analytics: ${error.message}`,
+        errors: [error.message],
+      };
     }
+  }
+
+  private async calculateComprehensiveAnalytics(course: any, filters?: any) {
+    const timeRange = filters?.timeRange || '30d';
+    const startDate = this.getDateFromTimeRange(timeRange);
+
+    // Calculate enrollment trend
+    const enrollmentTrend = await this.calculateEnrollmentTrend(
+      course.id,
+      startDate,
+    );
+
+    // Calculate completion stats
+    const completionStats = await this.calculateCompletionStats(course);
+
+    // Calculate engagement metrics
+    const engagementMetrics = await this.calculateEngagementMetrics(course);
+
+    // Calculate rating distribution
+    const ratingDistribution = await this.calculateRatingDistribution(
+      course.id,
+    );
+
+    // Get recent reviews
+    const recentReviews = course.reviews.slice(0, 10).map((review) => ({
+      id: review.id,
+      userId: review.userId,
+      userName: `${review.user.firstName} ${review.user.lastName}`,
+      userProfileImage: review.user.profileImage,
+      rating: review.rating,
+      comment: review.comment,
+      courseQuality: review.courseQuality,
+      instructorRating: review.instructorRating,
+      difficultyRating: review.difficultyRating,
+      valueForMoney: review.valueForMoney,
+      createdAt: review.createdAt.toISOString(),
+      updatedAt: review.updatedAt?.toISOString(),
+    }));
+
+    // Calculate popular content
+    const popularContent = this.calculatePopularContent(course.sections);
+
+    // Calculate student progress
+    const studentProgress = await this.calculateStudentProgress(course);
+
+    // Calculate revenue stats
+    const revenueStats = await this.calculateRevenueStats(course);
+
+    // Calculate performance metrics
+    const courseQualityScore = this.calculateCourseQualityScore(course);
+    const instructorRating = this.calculateInstructorRating(course);
+
+    return {
+      courseId: course.id,
+      courseTitle: course.title,
+      courseStatus: course.status,
+      createdAt: course.createdAt.toISOString(),
+
+      // Enrollment Analytics
+      totalEnrollments: course._count.enrollments,
+      activeStudents: course.enrollments.filter((e) => e.status === 'ACTIVE')
+        .length,
+      completedStudents: course.enrollments.filter(
+        (e) => e.status === 'COMPLETED',
+      ).length,
+      enrollmentTrend,
+      completionStats,
+
+      // Rating & Review Analytics
+      averageRating: course.avgRating,
+      totalRatings: course.totalRatings,
+      ratingDistribution,
+      recentReviews,
+
+      // Engagement Analytics
+      engagementMetrics,
+      popularContent,
+
+      // Revenue Analytics
+      revenueStats,
+
+      // Student Progress
+      studentProgress,
+
+      // Performance Metrics
+      courseQualityScore,
+      instructorRating,
+      totalRevenue: revenueStats.totalRevenue,
+      currency: course.currency,
+
+      // Additional metrics
+      additionalMetrics: {
+        totalViews: course.views,
+        uniqueViews: course.uniqueViews,
+        difficulty: course.difficulty,
+        estimatedHours: course.estimatedHours,
+        language: course.language,
+        isPublic: course.isPublic,
+        certificate: course.certificate,
+      },
+    };
+  }
+
+  private getDateFromTimeRange(timeRange: string): Date {
+    const now = new Date();
+    switch (timeRange) {
+      case '7d':
+        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      case '30d':
+        return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      case '90d':
+        return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      case '1y':
+        return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      default:
+        return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+  }
+
+  private async calculateEnrollmentTrend(courseId: string, startDate: Date) {
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        courseId,
+        enrolledAt: { gte: startDate },
+      },
+      select: {
+        enrolledAt: true,
+      },
+      orderBy: { enrolledAt: 'asc' },
+    });
+
+    // Group by date and calculate cumulative
+    const trendMap = new Map();
+    let cumulative = 0;
+
+    enrollments.forEach((enrollment) => {
+      const date = enrollment.enrolledAt.toISOString().split('T')[0];
+      const current = trendMap.get(date) || 0;
+      trendMap.set(date, current + 1);
+    });
+
+    // Convert to array with cumulative values
+    const trend = Array.from(trendMap.entries()).map(([date, enrollments]) => {
+      cumulative += enrollments;
+      return {
+        date,
+        enrollments,
+        cumulative,
+      };
+    });
+
+    return trend;
+  }
+
+  private async calculateCompletionStats(course: any) {
+    const totalEnrollments = course.enrollments.length;
+    const completedEnrollments = course.enrollments.filter(
+      (e) => e.status === 'COMPLETED',
+    ).length;
+
+    const completionRate =
+      totalEnrollments > 0
+        ? (completedEnrollments / totalEnrollments) * 100
+        : 0;
+
+    // Calculate average completion time
+    const completedWithTimes = course.enrollments
+      .filter((e) => e.status === 'COMPLETED' && e.completedAt)
+      .map((e) => ({
+        enrolledAt: new Date(e.enrolledAt),
+        completedAt: new Date(e.completedAt),
+      }));
+
+    const averageCompletionTime =
+      completedWithTimes.length > 0
+        ? completedWithTimes.reduce((sum, e) => {
+            const diffTime = e.completedAt.getTime() - e.enrolledAt.getTime();
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+            return sum + diffDays;
+          }, 0) / completedWithTimes.length
+        : 0;
+
+    return {
+      totalEnrollments,
+      completedEnrollments,
+      completionRate: Math.round(completionRate * 100) / 100,
+      averageCompletionTime: Math.round(averageCompletionTime * 100) / 100,
+    };
+  }
+
+  private async calculateEngagementMetrics(course: any) {
+    // Calculate total views and unique viewers
+    const totalViews = course.views || 0;
+    const uniqueViewers = course.uniqueViews || 0;
+
+    // Calculate average session duration (simplified)
+    const averageSessionDuration = 45; // This would need to be calculated from actual session data
+
+    // Calculate average progress rate
+    const totalLectures = course.sections.reduce(
+      (sum, section) => sum + section.lectures.length,
+      0,
+    );
+    const averageProgressRate =
+      course.enrollments.length > 0
+        ? course.enrollments.reduce(
+            (sum, enrollment) => sum + (enrollment.progress || 0),
+            0,
+          ) / course.enrollments.length
+        : 0;
+
+    // Calculate total interactions (simplified)
+    const totalInteractions = totalViews + (course.reviews?.length || 0) * 2;
+
+    return {
+      totalViews,
+      uniqueViewers,
+      averageSessionDuration,
+      averageProgressRate: Math.round(averageProgressRate * 100) / 100,
+      totalInteractions,
+    };
+  }
+
+  private async calculateRatingDistribution(courseId: string) {
+    const ratings = await this.prisma.review.findMany({
+      where: {
+        courseId,
+        status: 'PUBLISHED',
+      },
+      select: { rating: true },
+    });
+
+    const distribution = { one: 0, two: 0, three: 0, four: 0, five: 0 };
+    ratings.forEach((review) => {
+      if (review.rating >= 1 && review.rating <= 5) {
+        distribution[
+          review.rating === 1
+            ? 'one'
+            : review.rating === 2
+              ? 'two'
+              : review.rating === 3
+                ? 'three'
+                : review.rating === 4
+                  ? 'four'
+                  : 'five'
+        ]++;
+      }
+    });
+
+    return distribution;
+  }
+
+  private calculatePopularContent(sections: any[]) {
+    const popularContent: Array<{
+      id: string;
+      title: string;
+      type: string;
+      views: number;
+      completionRate: number;
+      averageRating: number;
+    }> = [];
+
+    sections.forEach((section) => {
+      section.lectures.forEach((lecture: any) => {
+        popularContent.push({
+          id: lecture.id,
+          title: lecture.title,
+          type: lecture.type,
+          views: lecture.views || 0, // Use direct views property or default to 0
+          completionRate: 85, // This would need to be calculated from actual completion data
+          averageRating: 4.2, // This would need to be calculated from actual rating data
+        });
+      });
+    });
+
+    // Sort by views and return top 10
+    return popularContent.sort((a, b) => b.views - a.views).slice(0, 10);
+  }
+
+  private async calculateStudentProgress(course: any) {
+    return course.enrollments.slice(0, 20).map((enrollment) => ({
+      userId: enrollment.userId,
+      userName: `${enrollment.user.firstName} ${enrollment.user.lastName}`,
+      userProfileImage: enrollment.user.profileImage,
+      progressPercentage: enrollment.progress || 0,
+      lecturesCompleted: Math.floor(
+        ((enrollment.progress || 0) / 100) *
+          course.sections.reduce(
+            (sum, section) => sum + section.lectures.length,
+            0,
+          ),
+      ),
+      totalLectures: course.sections.reduce(
+        (sum, section) => sum + section.lectures.length,
+        0,
+      ),
+      timeSpent: enrollment.timeSpent || 0,
+      enrolledAt: enrollment.enrolledAt.toISOString(),
+      lastAccessedAt: enrollment.lastAccessedAt?.toISOString(),
+      status: enrollment.status,
+    }));
+  }
+
+  private async calculateRevenueStats(course: any) {
+    const paidEnrollments = course.enrollments.filter(
+      (e) => e.paymentStatus === 'PAID',
+    );
+    const totalRevenue = paidEnrollments.reduce(
+      (sum, enrollment) => sum + (enrollment.amountPaid || 0),
+      0,
+    );
+    const totalPaidEnrollments = paidEnrollments.length;
+    const averageRevenuePerStudent =
+      totalPaidEnrollments > 0 ? totalRevenue / totalPaidEnrollments : 0;
+
+    const freeEnrollments = course.enrollments.filter(
+      (e) => e.paymentStatus === 'FREE',
+    ).length;
+    const conversionRate =
+      course.enrollments.length > 0
+        ? (totalPaidEnrollments / course.enrollments.length) * 100
+        : 0;
+
+    return {
+      totalRevenue,
+      averageRevenuePerStudent:
+        Math.round(averageRevenuePerStudent * 100) / 100,
+      totalPaidEnrollments,
+      conversionRate: Math.round(conversionRate * 100) / 100,
+    };
+  }
+
+  private calculateCourseQualityScore(course: any) {
+    // Calculate quality score based on various factors
+    const ratingScore = course.avgRating * 20; // Convert 5-star rating to 100 scale
+    const completionScore =
+      course.enrollments.length > 0
+        ? (course.enrollments.filter((e) => e.status === 'COMPLETED').length /
+            course.enrollments.length) *
+          30
+        : 0;
+    const reviewScore =
+      course.totalRatings > 0 ? Math.min(course.totalRatings * 2, 30) : 0;
+    const engagementScore = Math.min((course.views || 0) / 100, 20);
+
+    return Math.round(
+      ratingScore + completionScore + reviewScore + engagementScore,
+    );
+  }
+
+  private calculateInstructorRating(course: any) {
+    const instructorRatings = course.reviews
+      .filter((review) => review.instructorRating)
+      .map((review) => review.instructorRating);
+
+    return instructorRatings.length > 0
+      ? instructorRatings.reduce((sum, rating) => sum + rating, 0) /
+          instructorRatings.length
+      : 0;
   }
 
   async getEnrollmentTrend(
@@ -3963,7 +4341,20 @@ export class CourseService {
       if (userId) {
         // Check course access first
         accessInfo = await this.checkCourseAccess(courseId, userId);
-        enrollment = course.enrollments?.[0] || null;
+        // Use enrollment from accessInfo if available, otherwise fall back to course.enrollments
+        enrollment = accessInfo.enrollment || course.enrollments?.[0] || null;
+
+        // Debug logging
+        console.log('Course Preview Debug:', {
+          courseId,
+          userId,
+          hasAccess: accessInfo.hasAccess,
+          enrollmentFromAccessInfo: accessInfo.enrollment,
+          enrollmentFromCourse: course.enrollments?.[0],
+          finalEnrollment: enrollment,
+          accessInfoError: accessInfo.errorMessage,
+          enrollmentStatus: accessInfo.enrollment?.status,
+        });
 
         // Only get progress and completion status if user has access (enrolled)
         if (accessInfo.hasAccess) {
@@ -3996,9 +4387,20 @@ export class CourseService {
               id: enrollment.id,
               status: enrollment.status,
               progress: enrollment.progress,
-              currentLessonId: enrollment.currentLectureId,
+              currentLectureId: enrollment.currentLectureId,
               lastAccessedAt: enrollment.lastAccessedAt,
               completedAt: enrollment.completedAt,
+              enrolledAt: enrollment.enrolledAt,
+              type: enrollment.type,
+              source: enrollment.source,
+              paymentStatus: enrollment.paymentStatus,
+              amount: enrollment.amount,
+              currency: enrollment.currency,
+              completedLectures: enrollment.completedLectures,
+              totalLectures: enrollment.totalLectures,
+              totalTimeSpent: enrollment.totalTimeSpent,
+              streakDays: enrollment.streakDays,
+              certificateEarned: enrollment.certificateEarned,
             }
           : undefined,
         progress: progress || undefined,
@@ -4308,6 +4710,15 @@ export class CourseService {
       // Check course access (all courses require enrollment)
       const accessInfo = await this.checkCourseAccess(courseId, userId);
 
+      // Debug logging for course navigation
+      console.log('Course Navigation Debug:', {
+        courseId,
+        userId,
+        hasAccess: accessInfo.hasAccess,
+        enrollmentStatus: accessInfo.enrollment?.status,
+        accessInfoError: accessInfo.errorMessage,
+      });
+
       const sections = await this.prisma.section.findMany({
         where: { courseId },
         include: {
@@ -4349,11 +4760,30 @@ export class CourseService {
 
       // Add computed fields to sections
       const sectionsWithComputed = sections.map((section) => {
-        const lecturesWithProgress = section.lectures.map((lecture) => ({
-          ...lecture,
-          isCompleted: userProgressMap.get(lecture.id) || false,
-          isLocked: this.isLectureLockedSync(lecture, userId, accessInfo),
-        }));
+        const lecturesWithProgress = section.lectures.map((lecture) => {
+          const isLocked = this.isLectureLockedSync(
+            lecture,
+            userId,
+            accessInfo,
+          );
+
+          // Debug logging for each lecture
+          console.log('Navigation Lecture Lock Debug:', {
+            lectureId: lecture.id,
+            lectureTitle: lecture.title,
+            userId,
+            hasAccess: accessInfo.hasAccess,
+            enrollmentStatus: accessInfo.enrollment?.status,
+            isLocked,
+            isPreview: lecture.isPreview,
+          });
+
+          return {
+            ...lecture,
+            isCompleted: userProgressMap.get(lecture.id) || false,
+            isLocked,
+          };
+        });
 
         const completedLectures = lecturesWithProgress.filter(
           (l) => l.isCompleted,
@@ -5165,17 +5595,6 @@ export class CourseService {
         };
       }
 
-      // Check if course is public (only for non-instructors)
-      // Instructors can always access their own courses regardless of isPublic status
-      if (!course.isPublic && course.instructorId !== userId) {
-        return {
-          hasAccess: false,
-          isFree: false,
-          course,
-          errorMessage: 'This course is not publicly available',
-        };
-      }
-
       // Check if course is free
       const isFree = course.enrollmentType === 'FREE' || course.price === 0;
 
@@ -5195,11 +5614,31 @@ export class CourseService {
         },
       });
 
+      // Debug logging for enrollment check
+      console.log('Enrollment Check Debug:', {
+        courseId,
+        userId,
+        enrollmentFound: !!enrollment,
+        enrollmentStatus: enrollment?.status,
+        enrollmentId: enrollment?.id,
+      });
+
       if (!enrollment) {
-        const errorMessage = isFree 
+        // Check if course is public (only for non-enrolled users)
+        // Instructors can always access their own courses regardless of isPublic status
+        if (!course.isPublic && course.instructorId !== userId) {
+          return {
+            hasAccess: false,
+            isFree,
+            course,
+            errorMessage: 'This course is not publicly available',
+          };
+        }
+
+        const errorMessage = isFree
           ? `You are not enrolled in "${course.title}". Please enroll to access this free course.`
           : `You are not enrolled in "${course.title}". Please enroll to access this course.`;
-        
+
         return {
           hasAccess: false,
           isFree,
@@ -5208,12 +5647,55 @@ export class CourseService {
         };
       }
 
-      return {
+      // Check enrollment status - only ACTIVE and COMPLETED enrollments have access
+      console.log('Enrollment Status Check:', {
+        enrollmentStatus: enrollment.status,
+        isActive: enrollment.status === 'ACTIVE',
+        isCompleted: enrollment.status === 'COMPLETED',
+        hasAccess:
+          enrollment.status === 'ACTIVE' || enrollment.status === 'COMPLETED',
+      });
+
+      if (enrollment.status !== 'ACTIVE' && enrollment.status !== 'COMPLETED') {
+        const errorMessage = `Your enrollment in "${course.title}" is ${enrollment.status.toLowerCase()}. Please contact support if you believe this is an error.`;
+
+        return {
+          hasAccess: false,
+          isFree,
+          course,
+          enrollment,
+          errorMessage,
+        };
+      }
+
+      // Check if enrollment has expired (if expiration date is set)
+      if (enrollment.expiresAt && new Date() > enrollment.expiresAt) {
+        const errorMessage = `Your enrollment in "${course.title}" has expired. Please renew your enrollment to continue accessing the course.`;
+
+        return {
+          hasAccess: false,
+          isFree,
+          course,
+          enrollment,
+          errorMessage,
+        };
+      }
+
+      const result = {
         hasAccess: true,
         isFree,
         enrollment,
         course,
       };
+
+      console.log('Final Access Check Result:', {
+        hasAccess: result.hasAccess,
+        enrollmentStatus: result.enrollment.status,
+        courseId,
+        userId,
+      });
+
+      return result;
     } catch (error) {
       return {
         hasAccess: false,
@@ -5312,6 +5794,21 @@ export class CourseService {
 
       // If user doesn't have access (not enrolled), lectures are locked
       return true;
+    }
+
+    // Debug logging for troubleshooting - only log when there's an issue
+    if (!accessInfo || !accessInfo.hasAccess) {
+      console.log('Lecture Lock Debug - No Access:', {
+        lectureId: lecture.id,
+        lectureTitle: lecture.title,
+        userId,
+        hasAccessInfo: !!accessInfo,
+        accessInfoHasAccess: accessInfo?.hasAccess,
+        accessInfoError: accessInfo?.errorMessage,
+        enrollmentStatus: accessInfo?.enrollment?.status,
+        isPreview: lecture.isPreview,
+        isExplicitlyLocked: lecture.isLocked,
+      });
     }
 
     // If no access info available, assume locked for safety
@@ -5726,6 +6223,476 @@ export class CourseService {
         message: `Failed to update lecture duration: ${error.message}`,
         errors: [error.message],
       };
+    }
+  }
+
+  // ============================================
+  // COURSE RATING METHODS
+  // ============================================
+
+  async createCourseRating(
+    courseId: string,
+    userId: string,
+    ratingData: {
+      rating: number;
+      comment?: string;
+      courseQuality?: number;
+      instructorRating?: number;
+      difficultyRating?: number;
+      valueForMoney?: number;
+    },
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rating?: any;
+    errors?: string[];
+  }> {
+    try {
+      // Check if user is enrolled in the course
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+      });
+
+      if (!enrollment) {
+        return {
+          success: false,
+          message: 'You must be enrolled in this course to rate it',
+          errors: ['User not enrolled in course'],
+        };
+      }
+
+      // Check if user has already rated this course
+      const existingRating = await this.prisma.review.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+      });
+
+      if (existingRating) {
+        return {
+          success: false,
+          message: 'You have already rated this course',
+          errors: ['Rating already exists'],
+        };
+      }
+
+      // Create the rating
+      const rating = await this.prisma.review.create({
+        data: {
+          userId,
+          courseId,
+          rating: ratingData.rating,
+          comment: ratingData.comment,
+          courseQuality: ratingData.courseQuality,
+          instructorRating: ratingData.instructorRating,
+          difficultyRating: ratingData.difficultyRating,
+          valueForMoney: ratingData.valueForMoney,
+          isVerified: true, // Auto-verify for enrolled students
+          status: 'PUBLISHED',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      // Update course average rating
+      await this.recalculateCourseRating(courseId);
+
+      return {
+        success: true,
+        message: 'Course rating created successfully',
+        rating,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create course rating: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  async updateCourseRating(
+    ratingId: string,
+    userId: string,
+    updateData: {
+      rating?: number;
+      comment?: string;
+      courseQuality?: number;
+      instructorRating?: number;
+      difficultyRating?: number;
+      valueForMoney?: number;
+    },
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rating?: any;
+    errors?: string[];
+  }> {
+    try {
+      // Check if rating exists and belongs to user
+      const existingRating = await this.prisma.review.findFirst({
+        where: {
+          id: ratingId,
+          userId,
+        },
+      });
+
+      if (!existingRating) {
+        return {
+          success: false,
+          message:
+            'Rating not found or you do not have permission to update it',
+          errors: ['Rating not found'],
+        };
+      }
+
+      // Update the rating
+      const rating = await this.prisma.review.update({
+        where: { id: ratingId },
+        data: {
+          ...updateData,
+          updatedAt: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      // Update course average rating
+      await this.recalculateCourseRating(existingRating.courseId);
+
+      return {
+        success: true,
+        message: 'Course rating updated successfully',
+        rating,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update course rating: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  async deleteCourseRating(
+    ratingId: string,
+    userId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    errors?: string[];
+  }> {
+    try {
+      // Check if rating exists and belongs to user
+      const existingRating = await this.prisma.review.findFirst({
+        where: {
+          id: ratingId,
+          userId,
+        },
+      });
+
+      if (!existingRating) {
+        return {
+          success: false,
+          message:
+            'Rating not found or you do not have permission to delete it',
+          errors: ['Rating not found'],
+        };
+      }
+
+      // Delete the rating
+      await this.prisma.review.delete({
+        where: { id: ratingId },
+      });
+
+      // Update course average rating
+      await this.recalculateCourseRating(existingRating.courseId);
+
+      return {
+        success: true,
+        message: 'Course rating deleted successfully',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to delete course rating: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  async getCourseRatings(
+    courseId: string,
+    filters?: {
+      rating?: number;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<{
+    success: boolean;
+    message: string;
+    ratings?: any[];
+    totalCount?: number;
+    totalPages?: number;
+    currentPage?: number;
+    limit?: number;
+    errors?: string[];
+  }> {
+    try {
+      const limit = filters?.limit || 10;
+      const offset = filters?.offset || 0;
+
+      const where: any = {
+        courseId,
+        status: 'PUBLISHED',
+      };
+
+      if (filters?.rating) {
+        where.rating = filters.rating;
+      }
+
+      const [ratings, totalCount] = await Promise.all([
+        this.prisma.review.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profileImage: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: offset,
+          take: limit,
+        }),
+        this.prisma.review.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(totalCount / limit);
+      const currentPage = Math.floor(offset / limit) + 1;
+
+      return {
+        success: true,
+        message: 'Course ratings retrieved successfully',
+        ratings,
+        totalCount,
+        totalPages,
+        currentPage,
+        limit,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to get course ratings: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  async getCourseRatingStats(courseId: string): Promise<{
+    success: boolean;
+    message: string;
+    stats?: {
+      totalRatings: number;
+      averageRating: number;
+      ratingDistribution: {
+        one: number;
+        two: number;
+        three: number;
+        four: number;
+        five: number;
+      };
+      averageCourseQuality?: number;
+      averageInstructorRating?: number;
+      averageDifficultyRating?: number;
+      averageValueForMoney?: number;
+    };
+    errors?: string[];
+  }> {
+    try {
+      const ratings = await this.prisma.review.findMany({
+        where: {
+          courseId,
+          status: 'PUBLISHED',
+        },
+        select: {
+          rating: true,
+          courseQuality: true,
+          instructorRating: true,
+          difficultyRating: true,
+          valueForMoney: true,
+        },
+      });
+
+      if (ratings.length === 0) {
+        return {
+          success: true,
+          message: 'No ratings found for this course',
+          stats: {
+            totalRatings: 0,
+            averageRating: 0,
+            ratingDistribution: { one: 0, two: 0, three: 0, four: 0, five: 0 },
+          },
+        };
+      }
+
+      const totalRatings = ratings.length;
+      const averageRating =
+        ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+
+      const ratingDistribution = {
+        one: ratings.filter((r) => r.rating === 1).length,
+        two: ratings.filter((r) => r.rating === 2).length,
+        three: ratings.filter((r) => r.rating === 3).length,
+        four: ratings.filter((r) => r.rating === 4).length,
+        five: ratings.filter((r) => r.rating === 5).length,
+      };
+
+      const averageCourseQuality =
+        ratings
+          .filter((r) => r.courseQuality)
+          .reduce((sum, r) => sum + (r.courseQuality || 0), 0) /
+          ratings.filter((r) => r.courseQuality).length || 0;
+
+      const averageInstructorRating =
+        ratings
+          .filter((r) => r.instructorRating)
+          .reduce((sum, r) => sum + (r.instructorRating || 0), 0) /
+          ratings.filter((r) => r.instructorRating).length || 0;
+
+      const averageDifficultyRating =
+        ratings
+          .filter((r) => r.difficultyRating)
+          .reduce((sum, r) => sum + (r.difficultyRating || 0), 0) /
+          ratings.filter((r) => r.difficultyRating).length || 0;
+
+      const averageValueForMoney =
+        ratings
+          .filter((r) => r.valueForMoney)
+          .reduce((sum, r) => sum + (r.valueForMoney || 0), 0) /
+          ratings.filter((r) => r.valueForMoney).length || 0;
+
+      return {
+        success: true,
+        message: 'Course rating stats retrieved successfully',
+        stats: {
+          totalRatings,
+          averageRating: Math.round(averageRating * 10) / 10,
+          ratingDistribution,
+          averageCourseQuality: Math.round(averageCourseQuality * 10) / 10,
+          averageInstructorRating:
+            Math.round(averageInstructorRating * 10) / 10,
+          averageDifficultyRating:
+            Math.round(averageDifficultyRating * 10) / 10,
+          averageValueForMoney: Math.round(averageValueForMoney * 10) / 10,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to get course rating stats: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  async getUserCourseRating(
+    courseId: string,
+    userId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rating?: any;
+    errors?: string[];
+  }> {
+    try {
+      const rating = await this.prisma.review.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: rating ? 'User rating found' : 'No rating found',
+        rating,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to get user course rating: ${error.message}`,
+        errors: [error.message],
+      };
+    }
+  }
+
+  private async recalculateCourseRating(courseId: string): Promise<void> {
+    try {
+      const ratings = await this.prisma.review.findMany({
+        where: {
+          courseId,
+          status: 'PUBLISHED',
+        },
+        select: {
+          rating: true,
+        },
+      });
+
+      const totalRatings = ratings.length;
+      const avgRating =
+        totalRatings > 0
+          ? ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
+          : 0;
+
+      await this.prisma.course.update({
+        where: { id: courseId },
+        data: {
+          avgRating: Math.round(avgRating * 10) / 10,
+          totalRatings,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to recalculate course rating:', error);
     }
   }
 }

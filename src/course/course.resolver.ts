@@ -1,4 +1,4 @@
-import { Resolver, Mutation, Query, Args, Context } from '@nestjs/graphql';
+import { Resolver, Mutation, Query, Args, Context, Int } from '@nestjs/graphql';
 import { UseGuards, ForbiddenException } from '@nestjs/common';
 import { CourseService } from './course.service';
 import {
@@ -10,7 +10,6 @@ import {
   CourseProgress,
   LectureAnalytics,
   CourseNavigation,
-  CourseAnalyticsResponse,
   CourseViewResponse,
   LectureInteractionResponse,
   ProgressResponse,
@@ -31,6 +30,14 @@ import {
   ReplyResponse,
 } from './entities/course.entity';
 import {
+  CourseRatingResponse,
+  PaginatedCourseRatingsResponse,
+} from './dto/course-rating.dto';
+import {
+  CourseAnalyticsResponseData,
+  AnalyticsFilters,
+} from './dto/course-analytics.dto';
+import {
   CreateCourseInput,
   UpdateCourseInput,
   UpdateCourseBasicInfoInput,
@@ -42,6 +49,7 @@ import {
   PaginatedCoursesResponse,
 } from './dto/course-creation.dto';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '@prisma/client';
@@ -457,15 +465,22 @@ export class CourseResolver {
   // ============================================
 
   @Query(() => CoursePreview, { name: 'getCoursePreview' })
+  @UseGuards(OptionalAuthGuard)
   async getCoursePreview(
     @Args('courseId') courseId: string,
     @Context() context: any,
   ) {
     const user = context?.req?.user;
+    console.log('Course Preview Resolver Debug:', {
+      courseId,
+      user: user ? { id: user.id, email: user.email } : null,
+      contextKeys: Object.keys(context || {}),
+    });
     return this.courseService.getCoursePreview(courseId, user?.id);
   }
 
   @Query(() => LecturePreview, { name: 'getLecturePreview' })
+  @UseGuards(OptionalAuthGuard)
   async getLecturePreview(
     @Args('courseId') courseId: string,
     @Args('lectureId') lectureId: string,
@@ -502,15 +517,17 @@ export class CourseResolver {
     return this.courseService.getCourseNavigation(courseId, user?.id);
   }
 
-  @Query(() => CourseAnalyticsResponse, { name: 'courseAnalytics' })
+  @Query(() => CourseAnalyticsResponseData, { name: 'courseAnalytics' })
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getCourseAnalytics(
     @Args('courseId') courseId: string,
     @Context() context: any,
+    @Args('filters', { nullable: true, type: () => AnalyticsFilters })
+    filters?: AnalyticsFilters,
   ) {
     const user = context.req.user;
-    return this.courseService.getCourseAnalytics(courseId, user.id);
+    return this.courseService.getCourseAnalytics(courseId, user.id, filters);
   }
 
   // ============================================
@@ -606,7 +623,7 @@ export class CourseResolver {
     name: 'updateLectureDuration',
   })
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
+  @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   async updateLectureDuration(
     @Args('lectureId') lectureId: string,
     @Args('duration') duration: number,
@@ -912,5 +929,116 @@ export class CourseResolver {
       },
       errors: [],
     };
+  }
+
+  // ============================================
+  // COURSE RATING MUTATIONS & QUERIES
+  // ============================================
+
+  @Mutation(() => CourseRatingResponse)
+  @UseGuards(AuthGuard, RolesGuard)
+  async createCourseRating(
+    @Args('courseId') courseId: string,
+    @Args('rating', { type: () => Int }) rating: number,
+    @Context() context: any,
+    @Args('comment', { nullable: true }) comment?: string,
+    @Args('courseQuality', { nullable: true, type: () => Int })
+    courseQuality?: number,
+    @Args('instructorRating', { nullable: true, type: () => Int })
+    instructorRating?: number,
+    @Args('difficultyRating', { nullable: true, type: () => Int })
+    difficultyRating?: number,
+    @Args('valueForMoney', { nullable: true, type: () => Int })
+    valueForMoney?: number,
+  ): Promise<CourseRatingResponse> {
+    const user = context.req.user;
+    return this.courseService.createCourseRating(courseId, user.id, {
+      rating,
+      comment,
+      courseQuality,
+      instructorRating,
+      difficultyRating,
+      valueForMoney,
+    });
+  }
+
+  @Mutation(() => CourseRatingResponse)
+  @UseGuards(AuthGuard, RolesGuard)
+  async updateCourseRating(
+    @Args('ratingId') ratingId: string,
+    @Context() context: any,
+    @Args('rating', { nullable: true, type: () => Int }) rating?: number,
+    @Args('comment', { nullable: true }) comment?: string,
+    @Args('courseQuality', { nullable: true, type: () => Int })
+    courseQuality?: number,
+    @Args('instructorRating', { nullable: true, type: () => Int })
+    instructorRating?: number,
+    @Args('difficultyRating', { nullable: true, type: () => Int })
+    difficultyRating?: number,
+    @Args('valueForMoney', { nullable: true, type: () => Int })
+    valueForMoney?: number,
+  ): Promise<CourseRatingResponse> {
+    const user = context.req.user;
+    return this.courseService.updateCourseRating(ratingId, user.id, {
+      rating,
+      comment,
+      courseQuality,
+      instructorRating,
+      difficultyRating,
+      valueForMoney,
+    });
+  }
+
+  @Mutation(() => CourseRatingResponse)
+  @UseGuards(AuthGuard, RolesGuard)
+  async deleteCourseRating(
+    @Args('ratingId') ratingId: string,
+    @Context() context: any,
+  ): Promise<CourseRatingResponse> {
+    const user = context.req.user;
+    const result = await this.courseService.deleteCourseRating(
+      ratingId,
+      user.id,
+    );
+    return {
+      success: result.success,
+      message: result.message,
+      errors: result.errors,
+    };
+  }
+
+  @Query(() => PaginatedCourseRatingsResponse)
+  async getCourseRatings(
+    @Args('courseId') courseId: string,
+    @Args('rating', { nullable: true, type: () => Int }) rating?: number,
+    @Args('limit', { nullable: true, type: () => Int }) limit?: number,
+    @Args('offset', { nullable: true, type: () => Int }) offset?: number,
+  ): Promise<PaginatedCourseRatingsResponse> {
+    const result = await this.courseService.getCourseRatings(courseId, {
+      rating,
+      limit,
+      offset,
+    });
+
+    return {
+      success: result.success,
+      message: result.message,
+      ratings: result.ratings || [],
+      totalCount: result.totalCount || 0,
+      totalPages: result.totalPages || 0,
+      currentPage: result.currentPage || 1,
+      limit: result.limit || 10,
+      errors: result.errors,
+    };
+  }
+
+  @Query(() => CourseRatingResponse)
+  @UseGuards(AuthGuard, RolesGuard)
+  async getUserCourseRating(
+    @Args('courseId') courseId: string,
+    @Context() context: any,
+  ): Promise<CourseRatingResponse> {
+    const user = context.req.user;
+    return this.courseService.getUserCourseRating(courseId, user.id);
   }
 }

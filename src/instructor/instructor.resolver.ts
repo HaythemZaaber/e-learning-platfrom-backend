@@ -26,19 +26,18 @@ import {
   InstructorListFiltersInput,
 } from './dto/instructor.dto';
 
-
 @Resolver(() => InstructorProfile)
 export class InstructorResolver {
-  constructor(
-    private instructorService: InstructorService,
-  ) {}
+  constructor(private instructorService: InstructorService) {}
 
   // =============================================================================
   // LANDING PAGE QUERIES
   // =============================================================================
 
   @Query(() => FeaturedInstructorsResponse, { name: 'getFeaturedInstructors' })
-  async getFeaturedInstructors(@Args('limit', { nullable: true, type: () => Int }) limit?: number) {
+  async getFeaturedInstructors(
+    @Args('limit', { nullable: true, type: () => Int }) limit?: number,
+  ) {
     try {
       return await this.instructorService.getFeaturedInstructors(limit || 6);
     } catch (error) {
@@ -67,18 +66,29 @@ export class InstructorResolver {
     @Args('sortBy', { nullable: true }) sortBy?: string,
   ) {
     try {
-      return await this.instructorService.getInstructorsList(filters, page || 1, limit || 6, sortBy);
+      return await this.instructorService.getInstructorsList(
+        filters,
+        page || 1,
+        limit || 6,
+        sortBy,
+      );
     } catch (error) {
       throw new Error(`Failed to get instructors list: ${error.message}`);
     }
   }
 
   @Query(() => [InstructorProfile], { name: 'getAvailableTodayInstructors' })
-  async getAvailableTodayInstructors(@Args('limit', { nullable: true, type: () => Int }) limit?: number) {
+  async getAvailableTodayInstructors(
+    @Args('limit', { nullable: true, type: () => Int }) limit?: number,
+  ) {
     try {
-      return await this.instructorService.getAvailableTodayInstructors(limit || 10);
+      return await this.instructorService.getAvailableTodayInstructors(
+        limit || 10,
+      );
     } catch (error) {
-      throw new Error(`Failed to get available today instructors: ${error.message}`);
+      throw new Error(
+        `Failed to get available today instructors: ${error.message}`,
+      );
     }
   }
 
@@ -96,6 +106,8 @@ export class InstructorResolver {
   }
 
   @Query(() => InstructorProfile, { name: 'getMyInstructorProfile' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.INSTRUCTOR)
   async getMyInstructorProfile(@GetUser() user: any) {
     try {
       if (!user || !user.id) {
@@ -121,6 +133,8 @@ export class InstructorResolver {
   }
 
   @Query(() => InstructorStats, { name: 'getMyInstructorStats' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.INSTRUCTOR)
   async getMyInstructorStats(@GetUser() user: any) {
     try {
       if (!user || !user.id) {
@@ -137,9 +151,12 @@ export class InstructorResolver {
   // =============================================================================
 
   @Query(() => InstructorSearchResponse, { name: 'searchInstructors' })
-  async searchInstructors(@Args('filters', { nullable: true }) filters?: InstructorSearchFiltersInput) {
+  async searchInstructors(
+    @Args('filters', { nullable: true }) filters?: InstructorSearchFiltersInput,
+  ) {
     try {
-      const instructors = await this.instructorService.searchInstructors(filters);
+      const instructors =
+        await this.instructorService.searchInstructors(filters);
       return {
         instructors,
         total: instructors.length,
@@ -182,7 +199,10 @@ export class InstructorResolver {
       if (!user || !user.id) {
         throw new Error('User not authenticated');
       }
-      const result = await this.instructorService.updateProfileImage(user.id, input.profileImage);
+      const result = await this.instructorService.updateProfileImage(
+        user.id,
+        input.profileImage,
+      );
       return {
         success: true,
         message: 'Profile image updated successfully',
@@ -193,7 +213,9 @@ export class InstructorResolver {
     }
   }
 
-  @Mutation(() => InstructorProfile, { name: 'updateInstructorProfileByUserId' })
+  @Mutation(() => InstructorProfile, {
+    name: 'updateInstructorProfileByUserId',
+  })
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async updateInstructorProfileByUserId(
@@ -213,7 +235,10 @@ export class InstructorResolver {
   async deleteInstructorProfile(@Args('userId') userId: string) {
     try {
       await this.instructorService.deleteInstructorProfile(userId);
-      return { success: true, message: 'Instructor profile deleted successfully' };
+      return {
+        success: true,
+        message: 'Instructor profile deleted successfully',
+      };
     } catch (error) {
       throw new Error(`Failed to delete instructor profile: ${error.message}`);
     }
@@ -230,7 +255,10 @@ export class InstructorResolver {
     @Args('input') input: CreateInstructorProfileInput,
   ) {
     try {
-      return await this.instructorService.createInstructorProfile(input.userId, input.applicationData);
+      return await this.instructorService.createInstructorProfile(
+        input.userId,
+        input.applicationData,
+      );
     } catch (error) {
       throw new Error(`Failed to create instructor profile: ${error.message}`);
     }

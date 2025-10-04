@@ -1,4 +1,5 @@
 import { ObjectType, Field, ID, Float, Int } from '@nestjs/graphql';
+import { InstructorProfile } from 'src/instructor/entities/instructor.entity';
 import {
   UserRole,
   Gender,
@@ -133,4 +134,7 @@ export class UserObject {
 
   @Field({ nullable: true })
   updatedAt?: Date;
+
+  @Field(() => InstructorProfile, { nullable: true })
+  instructorProfile?: UserObject;
 }

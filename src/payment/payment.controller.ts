@@ -13,7 +13,12 @@ import {
   RawBodyRequest,
   Headers,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { Request } from 'express';
 
 interface AuthenticatedRequest extends Request {
@@ -27,7 +32,11 @@ interface AuthenticatedRequest extends Request {
 import { PaymentService } from './payment.service';
 import { CreatePaymentSessionDto } from './dto/create-payment-session.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
-import { CreateEnrollmentDto, EnrollmentType, EnrollmentSource } from './dto/create-enrollment.dto';
+import {
+  CreateEnrollmentDto,
+  EnrollmentType,
+  EnrollmentSource,
+} from './dto/create-enrollment.dto';
 import { CreateStripeConnectAccountDto } from './dto/stripe-connect.dto';
 import { RestAuthGuard } from '../auth/rest-auth.guard';
 
@@ -62,11 +71,11 @@ export class PaymentController {
   ) {
     const userId = req.user.id;
     const result = await this.paymentService.createPaymentSession(dto, userId);
-    
+
     if (!result.success) {
       throw new BadRequestException(result.error);
     }
-    
+
     return result;
   }
 
@@ -80,7 +89,10 @@ export class PaymentController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Payment session not found' })
-  async getPaymentSession(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async getPaymentSession(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const userId = req.user.id;
     return this.paymentService.getPaymentSession(id, userId);
   }
@@ -92,9 +104,12 @@ export class PaymentController {
     description: 'Payment session retrieved successfully',
   })
   @ApiResponse({ status: 404, description: 'Payment session not found' })
-  async getPaymentSessionByStripeId(@Param('stripeSessionId') stripeSessionId: string) {
+  async getPaymentSessionByStripeId(
+    @Param('stripeSessionId') stripeSessionId: string,
+  ) {
     try {
-      const session = await this.paymentService.getPaymentSessionByStripeId(stripeSessionId);
+      const session =
+        await this.paymentService.getPaymentSessionByStripeId(stripeSessionId);
       return {
         success: true,
         session,
@@ -120,7 +135,10 @@ export class PaymentController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Payment session not found' })
-  async cancelPaymentSession(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async cancelPaymentSession(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const userId = req.user.id;
     return this.paymentService.cancelPaymentSession(id, userId);
   }
@@ -162,15 +180,19 @@ export class PaymentController {
   @ApiOperation({ summary: 'Handle Stripe webhooks' })
   @ApiResponse({ status: 200, description: 'Webhook processed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid webhook signature' })
-  
-  async handleStripeWebhook(@Headers('stripe-signature') signature: string,
-  @Req() req: RawBodyRequest<Request>) {
-     console.log(signature);
+  async handleStripeWebhook(
+    @Headers('stripe-signature') signature: string,
+    @Req() req: RawBodyRequest<Request>,
+  ) {
+    console.log(signature);
     if (!signature) {
       throw new BadRequestException('Missing Stripe signature');
     }
 
-    const event = this.paymentService.constructWebhookEvent(req.rawBody, signature);
+    const event = this.paymentService.constructWebhookEvent(
+      req.rawBody,
+      signature,
+    );
     return this.paymentService.handleWebhook(event);
   }
 
@@ -198,12 +220,21 @@ export class PaymentController {
     @Req() req: AuthenticatedRequest,
   ) {
     const userId = req.user.id;
+
+    // Log the incoming request for debugging
+    console.log('CreateEnrollment request:', { dto, userId });
+
+    // Validate that courseId is present
+    if (!dto.courseId) {
+      throw new BadRequestException('Course ID is required');
+    }
+
     const result = await this.paymentService.createEnrollment(dto, userId);
-    
+
     if (!result.success) {
       throw new BadRequestException(result.error);
     }
-    
+
     return result;
   }
 
@@ -256,14 +287,17 @@ export class PaymentController {
     @Req() req: AuthenticatedRequest,
   ) {
     const userId = req.user.id;
-    
+
     // Validate free course enrollment first
-    const validation = await this.paymentService.validateFreeCourseEnrollment(dto.courseId, userId);
-    
+    const validation = await this.paymentService.validateFreeCourseEnrollment(
+      dto.courseId,
+      userId,
+    );
+
     if (!validation.canEnroll) {
       throw new BadRequestException(validation.error);
     }
-    
+
     const result = await this.paymentService.createEnrollment(
       {
         courseId: dto.courseId,
@@ -273,11 +307,11 @@ export class PaymentController {
       },
       userId,
     );
-    
+
     if (!result.success) {
       throw new BadRequestException(result.error);
     }
-    
+
     return result;
   }
 
@@ -311,14 +345,14 @@ export class PaymentController {
   ) {
     const userId = req.user.id;
     const enrollments = await this.paymentService.getUserEnrollments(userId);
-    const enrollment = enrollments.find(e => e.courseId === courseId);
-    
+    const enrollment = enrollments.find((e) => e.courseId === courseId);
+
     if (!enrollment) {
       throw new BadRequestException('Enrollment not found for this course');
     }
 
     console.log(enrollment);
-    
+
     return enrollment;
   }
 
@@ -330,51 +364,58 @@ export class PaymentController {
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create Stripe Connect account for instructor' })
-  @ApiResponse({ 
-    status: 201, 
-    description: 'Stripe Connect account created successfully' 
+  @ApiResponse({
+    status: 201,
+    description: 'Stripe Connect account created successfully',
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 'Bad request - validation errors or account already exists' 
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation errors or account already exists',
   })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized' 
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
   })
   @HttpCode(HttpStatus.CREATED)
   async createStripeConnectAccount(
     @Body() accountData: CreateStripeConnectAccountDto,
-    @Req() req: AuthenticatedRequest
+    @Req() req: AuthenticatedRequest,
   ) {
     // Only instructors can create Connect accounts
     if (req.user.role !== 'INSTRUCTOR') {
-      throw new BadRequestException('Only instructors can create Stripe Connect accounts');
+      throw new BadRequestException(
+        'Only instructors can create Stripe Connect accounts',
+      );
     }
 
-    return this.paymentService.createStripeConnectAccount(req.user.id, accountData);
+    return this.paymentService.createStripeConnectAccount(
+      req.user.id,
+      accountData,
+    );
   }
 
   @Get('connect/accounts')
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get instructor Stripe Connect account details' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Stripe Connect account retrieved successfully' 
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect account retrieved successfully',
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 'Instructor has not set up Stripe Connect account' 
+  @ApiResponse({
+    status: 400,
+    description: 'Instructor has not set up Stripe Connect account',
   })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized' 
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
   })
   async getStripeConnectAccount(@Req() req: AuthenticatedRequest) {
     // Only instructors can view their Connect accounts
     if (req.user.role !== 'INSTRUCTOR') {
-      throw new BadRequestException('Only instructors can view Stripe Connect accounts');
+      throw new BadRequestException(
+        'Only instructors can view Stripe Connect accounts',
+      );
     }
 
     return this.paymentService.getStripeConnectAccount(req.user.id);
@@ -384,22 +425,24 @@ export class PaymentController {
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create Stripe Connect account onboarding link' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Stripe Connect account link created successfully' 
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect account link created successfully',
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 'Instructor has not set up Stripe Connect account' 
+  @ApiResponse({
+    status: 400,
+    description: 'Instructor has not set up Stripe Connect account',
   })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized' 
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
   })
   async createStripeConnectAccountLink(@Req() req: AuthenticatedRequest) {
     // Only instructors can create account links
     if (req.user.role !== 'INSTRUCTOR') {
-      throw new BadRequestException('Only instructors can view Stripe Connect accounts');
+      throw new BadRequestException(
+        'Only instructors can view Stripe Connect accounts',
+      );
     }
 
     return this.paymentService.createStripeConnectAccountLink(req.user.id);
@@ -409,36 +452,42 @@ export class PaymentController {
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update Stripe Connect account capabilities' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Stripe Connect account capabilities updated successfully' 
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect account capabilities updated successfully',
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 'Instructor has not set up Stripe Connect account' 
+  @ApiResponse({
+    status: 400,
+    description: 'Instructor has not set up Stripe Connect account',
   })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized' 
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
   })
-  async updateStripeConnectAccountCapabilities(@Req() req: AuthenticatedRequest) {
+  async updateStripeConnectAccountCapabilities(
+    @Req() req: AuthenticatedRequest,
+  ) {
     // Only instructors can update their account capabilities
     if (req.user.role !== 'INSTRUCTOR') {
-      throw new BadRequestException('Only instructors can update Stripe Connect account capabilities');
+      throw new BadRequestException(
+        'Only instructors can update Stripe Connect account capabilities',
+      );
     }
 
-    return this.paymentService.updateStripeConnectAccountCapabilities(req.user.id);
+    return this.paymentService.updateStripeConnectAccountCapabilities(
+      req.user.id,
+    );
   }
 
   @Post('webhook/connect')
   @ApiOperation({ summary: 'Stripe Connect webhook handler' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Webhook processed successfully' 
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook processed successfully',
   })
   async handleStripeConnectWebhook(
     @Headers('stripe-signature') signature: string,
-    @Req() req: RawBodyRequest<Request>
+    @Req() req: RawBodyRequest<Request>,
   ) {
     return this.paymentService.handleStripeConnectWebhook(req.body);
   }

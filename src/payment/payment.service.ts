@@ -1,11 +1,24 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentSessionDto } from './dto/create-payment-session.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
-import { CreateEnrollmentDto, EnrollmentType, EnrollmentSource } from './dto/create-enrollment.dto';
-import { PaymentSessionResponse, CouponValidationResponse, EnrollmentResponse } from './interfaces/payment.interface';
+import {
+  CreateEnrollmentDto,
+  EnrollmentType,
+  EnrollmentSource,
+} from './dto/create-enrollment.dto';
+import {
+  PaymentSessionResponse,
+  CouponValidationResponse,
+  EnrollmentResponse,
+} from './interfaces/payment.interface';
 
 @Injectable()
 export class PaymentService {
@@ -25,7 +38,10 @@ export class PaymentService {
     });
   }
 
-  async createPaymentSession(dto: CreatePaymentSessionDto, userId: string): Promise<PaymentSessionResponse> {
+  async createPaymentSession(
+    dto: CreatePaymentSessionDto,
+    userId: string,
+  ): Promise<PaymentSessionResponse> {
     try {
       // Get course details
       const course = await this.prisma.course.findUnique({
@@ -62,11 +78,14 @@ export class PaymentService {
       });
 
       if (existingEnrollment) {
-        throw new BadRequestException('User is already enrolled in this course');
+        throw new BadRequestException(
+          'User is already enrolled in this course',
+        );
       }
 
       // Check if course is free
-      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+      const isFreeCourse =
+        course.enrollmentType === 'FREE' || course.price === 0;
 
       if (isFreeCourse) {
         // For free courses, create enrollment directly without payment session
@@ -105,7 +124,7 @@ export class PaymentService {
           courseId: dto.courseId,
           amount: course.price,
         });
-        
+
         if (couponValidation.isValid) {
           discountAmount = couponValidation.discountAmount;
           amount = couponValidation.finalAmount;
@@ -135,8 +154,12 @@ export class PaymentService {
           },
         ],
         mode: 'payment',
-        success_url: dto.returnUrl || `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: dto.cancelUrl || `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/cancel`,
+        success_url:
+          dto.returnUrl ||
+          `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url:
+          dto.cancelUrl ||
+          `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/cancel`,
         metadata: {
           courseId: dto.courseId,
           userId,
@@ -144,7 +167,7 @@ export class PaymentService {
           originalPrice: course.price.toString(),
           discountAmount: discountAmount.toString(),
         },
-        expires_at: Math.floor(Date.now() / 1000) + (30 * 60), // 30 minutes
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 minutes
       });
 
       // Create payment session record
@@ -173,7 +196,9 @@ export class PaymentService {
         });
       }
 
-      this.logger.log(`Payment session created: ${paymentSession.id} for course: ${dto.courseId}`);
+      this.logger.log(
+        `Payment session created: ${paymentSession.id} for course: ${dto.courseId}`,
+      );
 
       return {
         success: true,
@@ -192,13 +217,13 @@ export class PaymentService {
     }
   }
 
-  async validateCoupon(dto: ValidateCouponDto): Promise<CouponValidationResponse> {
+  async validateCoupon(
+    dto: ValidateCouponDto,
+  ): Promise<CouponValidationResponse> {
     try {
       const coupon = await this.prisma.coupon.findUnique({
         where: { code: dto.code },
       });
-
-    
 
       if (!coupon) {
         return {
@@ -208,8 +233,6 @@ export class PaymentService {
           error: 'Invalid coupon code',
         };
       }
-
-   
 
       // Check if coupon is active
       if (!coupon.isActive) {
@@ -262,7 +285,10 @@ export class PaymentService {
       }
 
       // Check if coupon applies to this course
-      if (coupon.applicableCourses.length > 0 && !coupon.applicableCourses.includes(dto.courseId)) {
+      if (
+        coupon.applicableCourses.length > 0 &&
+        !coupon.applicableCourses.includes(dto.courseId)
+      ) {
         return {
           isValid: false,
           discountAmount: 0,
@@ -286,8 +312,6 @@ export class PaymentService {
 
       const finalAmount = Math.max(0, dto.amount - discountAmount);
 
-     
-
       return {
         isValid: true,
         coupon,
@@ -305,8 +329,25 @@ export class PaymentService {
     }
   }
 
-  async createEnrollment(dto: CreateEnrollmentDto, userId: string): Promise<EnrollmentResponse> {
+  async createEnrollment(
+    dto: CreateEnrollmentDto,
+    userId: string,
+  ): Promise<EnrollmentResponse> {
     try {
+      // Log the incoming data for debugging
+      this.logger.log(
+        `Creating enrollment for user: ${userId}, courseId: ${dto.courseId}, dto: ${JSON.stringify(dto)}`,
+      );
+
+      // Validate required fields
+      if (!dto.courseId) {
+        throw new BadRequestException('Course ID is required for enrollment');
+      }
+
+      if (!userId) {
+        throw new BadRequestException('User ID is required for enrollment');
+      }
+
       // Check if user is already enrolled
       const existingEnrollment = await this.prisma.enrollment.findUnique({
         where: {
@@ -318,7 +359,9 @@ export class PaymentService {
       });
 
       if (existingEnrollment) {
-        throw new BadRequestException('User is already enrolled in this course');
+        throw new BadRequestException(
+          'User is already enrolled in this course',
+        );
       }
 
       // Get course details
@@ -343,7 +386,8 @@ export class PaymentService {
       }
 
       // Check if course is free
-      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+      const isFreeCourse =
+        course.enrollmentType === 'FREE' || course.price === 0;
 
       // Get payment session if provided (only required for paid courses)
       let paymentSession: any = null;
@@ -357,7 +401,9 @@ export class PaymentService {
         }
 
         if (paymentSession.userId !== userId) {
-          throw new BadRequestException('Payment session does not belong to user');
+          throw new BadRequestException(
+            'Payment session does not belong to user',
+          );
         }
 
         if (paymentSession.status !== 'COMPLETED') {
@@ -365,7 +411,9 @@ export class PaymentService {
         }
       } else if (!isFreeCourse) {
         // For paid courses, payment session is required
-        throw new BadRequestException('Payment session is required for paid courses');
+        throw new BadRequestException(
+          'Payment session is required for paid courses',
+        );
       }
 
       // Create enrollment
@@ -374,7 +422,9 @@ export class PaymentService {
           userId,
           courseId: dto.courseId,
           status: 'ACTIVE',
-          type: dto.type || (isFreeCourse ? EnrollmentType.FREE : EnrollmentType.PAID),
+          type:
+            dto.type ||
+            (isFreeCourse ? EnrollmentType.FREE : EnrollmentType.PAID),
           source: dto.source || EnrollmentSource.DIRECT,
           paymentStatus: paymentSession ? 'PAID' : 'FREE',
           paymentId: paymentSession?.id,
@@ -424,7 +474,9 @@ export class PaymentService {
         data: { totalCoursesEnrolled: { increment: 1 } },
       });
 
-      this.logger.log(`Enrollment created: ${enrollment.id} for user: ${userId}, course: ${dto.courseId}`);
+      this.logger.log(
+        `Enrollment created: ${enrollment.id} for user: ${userId}, course: ${dto.courseId}`,
+      );
 
       return {
         success: true,
@@ -510,7 +562,7 @@ export class PaymentService {
           course: paymentSession.course,
           user: paymentSession.user,
           createdAt: paymentSession.createdAt,
-          updatedAt: paymentSession.updatedAt
+          updatedAt: paymentSession.updatedAt,
         };
       }
 
@@ -574,7 +626,7 @@ export class PaymentService {
           timeSlot: bookingRequest.timeSlot,
           liveSession: bookingRequest.liveSession,
           createdAt: bookingRequest.createdAt,
-          updatedAt: bookingRequest.updatedAt
+          updatedAt: bookingRequest.updatedAt,
         };
       }
 
@@ -591,7 +643,6 @@ export class PaymentService {
       const enrollments = await this.prisma.enrollment.findMany({
         where: { userId },
         include: {
-          
           course: {
             select: {
               // Basic Course Info
@@ -602,27 +653,27 @@ export class PaymentService {
               thumbnail: true,
               trailer: true,
               galleryImages: true,
-              
+
               // Categorization
               category: true,
               subcategory: true,
               level: true,
               status: true,
-              
+
               // Pricing
               price: true,
               originalPrice: true,
               currency: true,
               discountPercent: true,
               discountValidUntil: true,
-              
+
               // Analytics & Performance
               views: true,
               uniqueViews: true,
               completionRate: true,
               avgRating: true,
               totalRatings: true,
-              
+
               // Content Counts
               totalSections: true,
               totalLectures: true,
@@ -631,12 +682,12 @@ export class PaymentService {
               totalContentItems: true,
               totalDiscussions: true,
               totalAnnouncements: true,
-              
+
               // Course Settings & Features
               isFeatured: true,
               isBestseller: true,
               isTrending: true,
-              
+
               // Instructor
               instructor: {
                 select: {
@@ -654,7 +705,7 @@ export class PaymentService {
                 },
               },
               instructorId: true,
-              
+
               // Content Structure
               sections: {
                 select: {
@@ -677,17 +728,17 @@ export class PaymentService {
                 },
                 orderBy: { order: 'asc' },
               },
-              
+
               // Requirements & Outcomes
               requirements: true,
               whatYouLearn: true,
               objectives: true,
               prerequisites: true,
-              
+
               // Course Details
               language: true,
               subtitleLanguages: true,
-              
+
               // Advanced Features
               hasLiveSessions: true,
               hasRecordings: true,
@@ -697,18 +748,18 @@ export class PaymentService {
               downloadableResources: true,
               offlineAccess: true,
               mobileOptimized: true,
-              
+
               // Scheduling
               enrollmentStartDate: true,
               enrollmentEndDate: true,
               courseStartDate: true,
               courseEndDate: true,
-              
+
               // Capacity
               maxStudents: true,
               currentEnrollments: true,
               waitlistEnabled: true,
-              
+
               // Reviews
               reviews: {
                 select: {
@@ -726,32 +777,32 @@ export class PaymentService {
                 take: 5, // Limit to 5 recent reviews
                 orderBy: { createdAt: 'desc' },
               },
-              
+
               // SEO & Marketing
               seoTitle: true,
               seoDescription: true,
               seoTags: true,
               marketingTags: true,
               targetAudience: true,
-              
+
               // Duration & Difficulty
               estimatedHours: true,
               estimatedMinutes: true,
               difficulty: true,
               intensityLevel: true,
-              
+
               // Certificates & Completion
               certificate: true,
               certificateTemplate: true,
               passingGrade: true,
               allowRetakes: true,
               maxAttempts: true,
-              
+
               // Course Settings
               enrollmentType: true,
               isPublic: true,
               version: true,
-              
+
               // Timestamps
               createdAt: true,
               updatedAt: true,
@@ -774,16 +825,24 @@ export class PaymentService {
     try {
       switch (event.type) {
         case 'checkout.session.completed':
-          await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+          await this.handleCheckoutSessionCompleted(
+            event.data.object as Stripe.Checkout.Session,
+          );
           break;
         case 'payment_intent.succeeded':
-          await this.handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
+          await this.handlePaymentIntentSucceeded(
+            event.data.object as Stripe.PaymentIntent,
+          );
           break;
         case 'payment_intent.payment_failed':
-          await this.handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+          await this.handlePaymentIntentFailed(
+            event.data.object as Stripe.PaymentIntent,
+          );
           break;
         case 'payment_intent.canceled':
-          await this.handlePaymentIntentCanceled(event.data.object as Stripe.PaymentIntent);
+          await this.handlePaymentIntentCanceled(
+            event.data.object as Stripe.PaymentIntent,
+          );
           break;
         default:
           this.logger.log(`Unhandled event type: ${event.type}`);
@@ -794,7 +853,9 @@ export class PaymentService {
     }
   }
 
-  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  private async handleCheckoutSessionCompleted(
+    session: Stripe.Checkout.Session,
+  ) {
     const paymentSession = await this.prisma.paymentSession.findFirst({
       where: { stripeSessionId: session.id },
     });
@@ -823,7 +884,9 @@ export class PaymentService {
     }
   }
 
-  private async handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  private async handlePaymentIntentSucceeded(
+    paymentIntent: Stripe.PaymentIntent,
+  ) {
     const paymentSession = await this.prisma.paymentSession.findFirst({
       where: { paymentIntentId: paymentIntent.id },
     });
@@ -849,7 +912,9 @@ export class PaymentService {
     }
   }
 
-  private async handlePaymentIntentCanceled(paymentIntent: Stripe.PaymentIntent) {
+  private async handlePaymentIntentCanceled(
+    paymentIntent: Stripe.PaymentIntent,
+  ) {
     const paymentSession = await this.prisma.paymentSession.findFirst({
       where: { paymentIntentId: paymentIntent.id },
     });
@@ -884,10 +949,7 @@ export class PaymentService {
       const coupons = await this.prisma.coupon.findMany({
         where: {
           isActive: true,
-          OR: [
-            { validUntil: null },
-            { validUntil: { gt: new Date() } },
-          ],
+          OR: [{ validUntil: null }, { validUntil: { gt: new Date() } }],
         },
         select: {
           id: true,
@@ -957,12 +1019,14 @@ export class PaymentService {
       }
 
       // Check if course is free
-      const isFreeCourse = course.enrollmentType === 'FREE' || course.price === 0;
+      const isFreeCourse =
+        course.enrollmentType === 'FREE' || course.price === 0;
 
       if (!isFreeCourse) {
         return {
           canEnroll: false,
-          error: 'This course is not free. Please use the payment enrollment process.',
+          error:
+            'This course is not free. Please use the payment enrollment process.',
         };
       }
 
@@ -1013,7 +1077,10 @@ export class PaymentService {
         data: { status: 'CANCELED' },
       });
 
-      return { success: true, message: 'Payment session canceled successfully' };
+      return {
+        success: true,
+        message: 'Payment session canceled successfully',
+      };
     } catch (error) {
       this.logger.error('Error canceling payment session:', error);
       throw error;
@@ -1029,15 +1096,15 @@ export class PaymentService {
     amount: number,
     currency: string,
     returnUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
   ) {
     try {
       // Get offering details
       const offering = await this.prisma.sessionOffering.findUnique({
         where: { id: offeringId },
         include: {
-          instructor: true
-        }
+          instructor: true,
+        },
       });
 
       if (!offering) {
@@ -1050,7 +1117,7 @@ export class PaymentService {
 
       // Get student details
       const student = await this.prisma.user.findUnique({
-        where: { id: studentId }
+        where: { id: studentId },
       });
 
       if (!student) {
@@ -1059,28 +1126,37 @@ export class PaymentService {
 
       // Check if instructor has Stripe Connect account
       if (!(offering.instructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor has not set up payment processing');
+        throw new BadRequestException(
+          'Instructor has not set up payment processing',
+        );
       }
 
       // Verify instructor's Stripe account capabilities
       try {
-        const instructorAccount = await this.stripe.accounts.retrieve((offering.instructor as any).stripeAccountId);
-        
-        if (!instructorAccount.charges_enabled || !instructorAccount.payouts_enabled) {
+        const instructorAccount = await this.stripe.accounts.retrieve(
+          (offering.instructor as any).stripeAccountId,
+        );
+
+        if (
+          !instructorAccount.charges_enabled ||
+          !instructorAccount.payouts_enabled
+        ) {
           throw new BadRequestException(
-            'Instructor account is not ready for payments. Please complete the onboarding process first.'
+            'Instructor account is not ready for payments. Please complete the onboarding process first.',
           );
         }
       } catch (error) {
         if (error.message.includes('not ready for payments')) {
           throw error;
         }
-        throw new BadRequestException('Unable to verify instructor payment setup. Please try again.');
+        throw new BadRequestException(
+          'Unable to verify instructor payment setup. Please try again.',
+        );
       }
 
       // Convert to cents for Stripe
       const amountInCents = Math.round(amount * 100);
-      const platformFeeInCents = Math.round(amount * 0.20 * 100); // 20% platform fee
+      const platformFeeInCents = Math.round(amount * 0.2 * 100); // 20% platform fee
 
       // Create Stripe Checkout Session with PaymentIntent
       const session = await this.stripe.checkout.sessions.create({
@@ -1096,7 +1172,7 @@ export class PaymentService {
             offeringId,
             studentId,
             instructorId,
-            sessionType: 'LIVE_SESSION'
+            sessionType: 'LIVE_SESSION',
           },
           description: `Live session booking: ${offering.title}`,
           receipt_email: student.email,
@@ -1111,7 +1187,9 @@ export class PaymentService {
               product_data: {
                 name: offering.title,
                 description: offering.description,
-                images: offering.instructor.profileImage ? [offering.instructor.profileImage] : [],
+                images: offering.instructor.profileImage
+                  ? [offering.instructor.profileImage]
+                  : [],
               },
               unit_amount: amountInCents,
             },
@@ -1122,8 +1200,8 @@ export class PaymentService {
           bookingRequestId,
           offeringId,
           studentId,
-          instructorId
-        }
+          instructorId,
+        },
       });
 
       return {
@@ -1133,18 +1211,18 @@ export class PaymentService {
           clientSecret: null,
           amount: amountInCents,
           currency: currency.toLowerCase(),
-          status: 'requires_payment_method' // Will change when payment is completed
+          status: 'requires_payment_method', // Will change when payment is completed
         },
         checkoutSession: {
           id: session.id,
-          url: session.url
-        }
+          url: session.url,
+        },
       };
     } catch (error) {
       this.logger.error('Error creating session booking payment:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1152,38 +1230,45 @@ export class PaymentService {
   async captureSessionPayment(paymentIntentId: string) {
     try {
       // First, retrieve the payment intent to check its status
-      const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
-      
+      const paymentIntent =
+        await this.stripe.paymentIntents.retrieve(paymentIntentId);
+
       if (paymentIntent.status !== 'requires_capture') {
         throw new BadRequestException(
-          `PaymentIntent cannot be captured. Current status: ${paymentIntent.status}. Expected status: requires_capture`
+          `PaymentIntent cannot be captured. Current status: ${paymentIntent.status}. Expected status: requires_capture`,
         );
       }
 
-      const capturedPayment = await this.stripe.paymentIntents.capture(paymentIntentId);
+      const capturedPayment =
+        await this.stripe.paymentIntents.capture(paymentIntentId);
       return {
         success: true,
-        paymentIntent: capturedPayment
+        paymentIntent: capturedPayment,
       };
     } catch (error) {
       this.logger.error('Error capturing session payment:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   async getPaymentIntentFromCheckoutSession(checkoutSessionId: string) {
     try {
-      const session = await this.stripe.checkout.sessions.retrieve(checkoutSessionId);
-      
+      const session =
+        await this.stripe.checkout.sessions.retrieve(checkoutSessionId);
+
       if (!session.payment_intent) {
-        throw new BadRequestException('No PaymentIntent found for this checkout session');
+        throw new BadRequestException(
+          'No PaymentIntent found for this checkout session',
+        );
       }
 
-      const paymentIntent = await this.stripe.paymentIntents.retrieve(session.payment_intent as string);
-      
+      const paymentIntent = await this.stripe.paymentIntents.retrieve(
+        session.payment_intent as string,
+      );
+
       return {
         success: true,
         paymentIntent: {
@@ -1191,33 +1276,39 @@ export class PaymentService {
           status: paymentIntent.status,
           amount: paymentIntent.amount,
           currency: paymentIntent.currency,
-          client_secret: paymentIntent.client_secret
-        }
+          client_secret: paymentIntent.client_secret,
+        },
       };
     } catch (error) {
-      this.logger.error('Error retrieving PaymentIntent from checkout session:', error);
+      this.logger.error(
+        'Error retrieving PaymentIntent from checkout session:',
+        error,
+      );
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
-  async refundSessionPayment(paymentIntentId: string, reason: string = 'requested_by_customer') {
+  async refundSessionPayment(
+    paymentIntentId: string,
+    reason: string = 'requested_by_customer',
+  ) {
     try {
       const refund = await this.stripe.refunds.create({
         payment_intent: paymentIntentId,
-        reason: reason as any
+        reason: reason as any,
       });
       return {
         success: true,
-        refund
+        refund,
       };
     } catch (error) {
       this.logger.error('Error refunding session payment:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1230,7 +1321,7 @@ export class PaymentService {
     try {
       // Check if instructor already has a Stripe account
       const existingInstructor = await this.prisma.user.findUnique({
-        where: { id: instructorId }
+        where: { id: instructorId },
       });
 
       if (!existingInstructor) {
@@ -1238,7 +1329,9 @@ export class PaymentService {
       }
 
       if ((existingInstructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor already has a Stripe Connect account');
+        throw new BadRequestException(
+          'Instructor already has a Stripe Connect account',
+        );
       }
 
       // Create Stripe Connect account
@@ -1260,16 +1353,19 @@ export class PaymentService {
       await this.prisma.user.update({
         where: { id: instructorId },
         data: {
-          stripeAccountId: account.id
-        }
+          stripeAccountId: account.id,
+        },
       });
 
       // Create account link for onboarding
-      const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
-      
+      const frontendUrl =
+        this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+
       // Ensure the URL has a protocol
-      const baseUrl = frontendUrl.startsWith('http') ? frontendUrl : `http://${frontendUrl}`;
-      
+      const baseUrl = frontendUrl.startsWith('http')
+        ? frontendUrl
+        : `http://${frontendUrl}`;
+
       const accountLink = await this.stripe.accountLinks.create({
         account: account.id,
         refresh_url: `${baseUrl}/instructor/connect/refresh`,
@@ -1288,13 +1384,13 @@ export class PaymentService {
           country: account.country,
           email: account.email,
           requirements: account.requirements,
-        }
+        },
       };
     } catch (error) {
       this.logger.error('Error creating Stripe Connect account:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1302,7 +1398,7 @@ export class PaymentService {
   async getStripeConnectAccount(instructorId: string) {
     try {
       const instructor = await this.prisma.user.findUnique({
-        where: { id: instructorId }
+        where: { id: instructorId },
       });
 
       if (!instructor) {
@@ -1310,10 +1406,14 @@ export class PaymentService {
       }
 
       if (!(instructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor has not set up Stripe Connect account');
+        throw new BadRequestException(
+          'Instructor has not set up Stripe Connect account',
+        );
       }
 
-      const account = await this.stripe.accounts.retrieve((instructor as any).stripeAccountId);
+      const account = await this.stripe.accounts.retrieve(
+        (instructor as any).stripeAccountId,
+      );
 
       return {
         success: true,
@@ -1327,13 +1427,13 @@ export class PaymentService {
           charges_enabled: account.charges_enabled,
           payouts_enabled: account.payouts_enabled,
           details_submitted: account.details_submitted,
-        }
+        },
       };
     } catch (error) {
       this.logger.error('Error retrieving Stripe Connect account:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1341,7 +1441,7 @@ export class PaymentService {
   async createStripeConnectAccountLink(instructorId: string) {
     try {
       const instructor = await this.prisma.user.findUnique({
-        where: { id: instructorId }
+        where: { id: instructorId },
       });
 
       if (!instructor) {
@@ -1349,14 +1449,19 @@ export class PaymentService {
       }
 
       if (!(instructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor has not set up Stripe Connect account');
+        throw new BadRequestException(
+          'Instructor has not set up Stripe Connect account',
+        );
       }
 
-      const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
-      
+      const frontendUrl =
+        this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+
       // Ensure the URL has a protocol
-      const baseUrl = frontendUrl.startsWith('http') ? frontendUrl : `http://${frontendUrl}`;
-      
+      const baseUrl = frontendUrl.startsWith('http')
+        ? frontendUrl
+        : `http://${frontendUrl}`;
+
       const accountLink = await this.stripe.accountLinks.create({
         account: (instructor as any).stripeAccountId,
         refresh_url: `${baseUrl}/instructor/connect/refresh`,
@@ -1366,13 +1471,13 @@ export class PaymentService {
 
       return {
         success: true,
-        accountLink: accountLink.url
+        accountLink: accountLink.url,
       };
     } catch (error) {
       this.logger.error('Error creating Stripe Connect account link:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1380,7 +1485,7 @@ export class PaymentService {
   async updateStripeConnectAccountCapabilities(instructorId: string) {
     try {
       const instructor = await this.prisma.user.findUnique({
-        where: { id: instructorId }
+        where: { id: instructorId },
       });
 
       if (!instructor) {
@@ -1388,17 +1493,22 @@ export class PaymentService {
       }
 
       if (!(instructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor has not set up Stripe Connect account');
+        throw new BadRequestException(
+          'Instructor has not set up Stripe Connect account',
+        );
       }
 
       // Update account to request additional capabilities
-      const updatedAccount = await this.stripe.accounts.update((instructor as any).stripeAccountId, {
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-          legacy_payments: { requested: true },
+      const updatedAccount = await this.stripe.accounts.update(
+        (instructor as any).stripeAccountId,
+        {
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+            legacy_payments: { requested: true },
+          },
         },
-      });
+      );
 
       return {
         success: true,
@@ -1407,13 +1517,16 @@ export class PaymentService {
           charges_enabled: updatedAccount.charges_enabled,
           payouts_enabled: updatedAccount.payouts_enabled,
           requirements: updatedAccount.requirements,
-        }
+        },
       };
     } catch (error) {
-      this.logger.error('Error updating Stripe Connect account capabilities:', error);
+      this.logger.error(
+        'Error updating Stripe Connect account capabilities:',
+        error,
+      );
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -1459,11 +1572,13 @@ export class PaymentService {
     try {
       // Get instructor's Stripe Connect account
       const instructor = await this.prisma.user.findUnique({
-        where: { id: instructorId }
+        where: { id: instructorId },
       });
 
       if (!instructor || !(instructor as any).stripeAccountId) {
-        throw new BadRequestException('Instructor has not set up payment processing');
+        throw new BadRequestException(
+          'Instructor has not set up payment processing',
+        );
       }
 
       // Get completed sessions that need payout
@@ -1472,11 +1587,11 @@ export class PaymentService {
           id: { in: sessionIds },
           instructorId,
           status: 'COMPLETED',
-          payoutStatus: 'PENDING'
+          payoutStatus: 'PENDING',
         },
         include: {
-          bookingRequest: true
-        }
+          bookingRequest: true,
+        },
       });
 
       if (sessions.length === 0) {
@@ -1493,14 +1608,15 @@ export class PaymentService {
       }> = [];
 
       for (const session of sessions) {
-        const instructorPayout = session.instructorPayout || ((session.totalPrice || 0) * 0.80);
+        const instructorPayout =
+          session.instructorPayout || (session.totalPrice || 0) * 0.8;
         totalPayoutAmount += instructorPayout;
-        
+
         payoutSessions.push({
           sessionId: session.id,
           sessionAmount: session.totalPrice || 0,
           platformFee: session.platformFee,
-          netAmount: instructorPayout
+          netAmount: instructorPayout,
         });
       }
 
@@ -1513,8 +1629,8 @@ export class PaymentService {
         metadata: {
           instructorId,
           sessionCount: sessions.length.toString(),
-          sessionIds: sessionIds.join(',')
-        }
+          sessionIds: sessionIds.join(','),
+        },
       });
 
       // Create payout record
@@ -1522,14 +1638,17 @@ export class PaymentService {
         data: {
           instructorId,
           amount: totalPayoutAmount,
-          platformFee: sessions.reduce((sum, session) => sum + session.platformFee, 0),
+          platformFee: sessions.reduce(
+            (sum, session) => sum + session.platformFee,
+            0,
+          ),
           netAmount: totalPayoutAmount,
           currency: sessions[0].currency,
           status: 'PROCESSING',
           payoutMethod: 'stripe_transfer',
           scheduledDate: new Date(),
-          stripePayoutId: transfer.id
-        }
+          stripePayoutId: transfer.id,
+        },
       });
 
       // Create payout session records
@@ -1540,19 +1659,19 @@ export class PaymentService {
             sessionId: payoutSession.sessionId,
             sessionAmount: payoutSession.sessionAmount,
             platformFee: payoutSession.platformFee,
-            netAmount: payoutSession.netAmount
-          }
+            netAmount: payoutSession.netAmount,
+          },
         });
       }
 
       // Update session payout status
       await this.prisma.liveSession.updateMany({
         where: {
-          id: { in: sessionIds }
+          id: { in: sessionIds },
         },
         data: {
-          payoutStatus: 'PROCESSING'
-        }
+          payoutStatus: 'PROCESSING',
+        },
       });
 
       return {
@@ -1562,15 +1681,15 @@ export class PaymentService {
           amount: payout.amount,
           currency: payout.currency,
           status: payout.status,
-          stripeTransferId: transfer.id
+          stripeTransferId: transfer.id,
         },
-        sessionsProcessed: sessions.length
+        sessionsProcessed: sessions.length,
       };
     } catch (error) {
       this.logger.error('Error processing instructor payout:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }

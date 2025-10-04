@@ -12,33 +12,34 @@ export class GraphQLAwareValidationPipe implements PipeTransform {
   transform(value: any, metadata: ArgumentMetadata) {
     // Skip validation for GraphQL input types
     if (metadata.metatype && this.isGraphQLInputType(metadata.metatype)) {
-      console.log(`🔍 GraphQL input detected: ${metadata.metatype.name}, skipping validation`);
+      console.log(
+        `🔍 GraphQL input detected: ${metadata.metatype.name}, skipping validation`,
+      );
       return value;
     }
-    
-    console.log(`🔍 REST input detected: ${metadata.metatype?.name || 'unknown'}, applying validation`);
+
+    console.log(
+      `🔍 REST input detected: ${metadata.metatype?.name || 'unknown'}, applying validation`,
+    );
     return this.validationPipe.transform(value, metadata);
   }
 
   private isGraphQLInputType(metatype: any): boolean {
     // Check if the class has GraphQL @InputType() decorator
     if (!metatype || !metatype.name) return false;
-    
-    // Check for GraphQL input type naming patterns
-    const isGraphQLInput = metatype.name.includes('Input') || 
-                          metatype.name.includes('Create') ||
-                          metatype.name.includes('Update') ||
-                          metatype.name.includes('Submit') ||
-                          metatype.name.includes('Save') ||
-                          metatype.name.includes('Add') ||
-                          metatype.name.includes('Delete');
-    
+
+    // Check for GraphQL input type naming patterns - be more specific
+    const isGraphQLInput =
+      metatype.name.includes('Input') ||
+      metatype.name.endsWith('Input') ||
+      metatype.name.includes('GraphQL');
+
     // Also check if the class has GraphQL metadata
-    const hasGraphQLMetadata = metatype.prototype && 
-                              (metatype.prototype.constructor.name.includes('Input') ||
-                               metatype.prototype.constructor.name.includes('Create') ||
-                               metatype.prototype.constructor.name.includes('Update'));
-    
+    const hasGraphQLMetadata =
+      metatype.prototype &&
+      (metatype.prototype.constructor.name.includes('Input') ||
+        metatype.prototype.constructor.name.endsWith('Input'));
+
     return isGraphQLInput || hasGraphQLMetadata;
   }
 }
