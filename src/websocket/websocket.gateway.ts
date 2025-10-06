@@ -313,6 +313,124 @@ export class WebSocketGatewayService
     await this.broadcastToAll('system_announcement', payload.notification);
   }
 
+  // =============================================================================
+  // CHAT EVENTS
+  // =============================================================================
+
+  // Event listener for new messages
+  @OnEvent('message.sent')
+  async handleMessageSent(payload: { message: any; conversationId: string }) {
+    this.logger.log(
+      `💬 New message in conversation ${payload.conversationId} from ${payload.message.senderId} to ${payload.message.receiverId}`,
+    );
+
+    // Send message to receiver via WebSocket
+    const receiverId = payload.message.receiverId;
+    const socketId = this.connectedUsers.get(receiverId);
+
+    if (socketId) {
+      this.server.to(socketId).emit('new_message', {
+        message: payload.message,
+        conversationId: payload.conversationId,
+      });
+      this.logger.log(`   ✅ Message delivered to user ${receiverId}`);
+    } else {
+      this.logger.warn(`   ⚠️  Receiver ${receiverId} is not online`);
+    }
+
+    // Also send to sender for confirmation (if they're on a different device)
+    const senderId = payload.message.senderId;
+    const senderSocketId = this.connectedUsers.get(senderId);
+
+    if (senderSocketId && senderSocketId !== socketId) {
+      this.server.to(senderSocketId).emit('message_sent', {
+        message: payload.message,
+        conversationId: payload.conversationId,
+      });
+    }
+  }
+
+  // Event listener for messages read
+  @OnEvent('messages.read')
+  async handleMessagesRead(payload: {
+    conversationId: string;
+    userId: string;
+    count: number;
+  }) {
+    this.logger.log(
+      `👁️ User ${payload.userId} read ${payload.count} messages in conversation ${payload.conversationId}`,
+    );
+
+    // Notify the other user that their messages were read
+    // We need to find the other participant in the conversation
+    // For now, we can emit to all users in a conversation room
+    this.server
+      .to(`conversation:${payload.conversationId}`)
+      .emit('messages_read', {
+        conversationId: payload.conversationId,
+        readBy: payload.userId,
+        count: payload.count,
+      });
+  }
+
+  // Subscribe to join a conversation room
+  @SubscribeMessage('join_conversation')
+  handleJoinConversation(
+    @MessageBody() conversationId: string,
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    const roomName = `conversation:${conversationId}`;
+    client.join(roomName);
+    this.logger.log(
+      `User ${client.userId} joined conversation room: ${roomName}`,
+    );
+    client.emit('joined_conversation', { conversationId });
+  }
+
+  // Subscribe to leave a conversation room
+  @SubscribeMessage('leave_conversation')
+  handleLeaveConversation(
+    @MessageBody() conversationId: string,
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    const roomName = `conversation:${conversationId}`;
+    client.leave(roomName);
+    this.logger.log(
+      `User ${client.userId} left conversation room: ${roomName}`,
+    );
+    client.emit('left_conversation', { conversationId });
+  }
+
+  // Subscribe to typing indicator
+  @SubscribeMessage('typing_start')
+  handleTypingStart(
+    @MessageBody() data: { conversationId: string; receiverId: string },
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    const receiverSocketId = this.connectedUsers.get(data.receiverId);
+    if (receiverSocketId) {
+      this.server.to(receiverSocketId).emit('user_typing', {
+        conversationId: data.conversationId,
+        userId: client.userId,
+      });
+    }
+  }
+
+  // Subscribe to stop typing indicator
+  @SubscribeMessage('typing_stop')
+  handleTypingStop(
+    @MessageBody() data: { conversationId: string; receiverId: string },
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    const receiverSocketId = this.connectedUsers.get(data.receiverId);
+    if (receiverSocketId) {
+      this.server.to(receiverSocketId).emit('user_stopped_typing', {
+        conversationId: data.conversationId,
+        userId: client.userId,
+      });
+    }
+  }
+
   // Helper method to sync Clerk user to database
   private async syncUserToDatabase(clerkUser: any) {
     // Check if user exists

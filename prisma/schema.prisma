@@ -154,6 +154,14 @@ model User {
   instructorFollowers    InstructorFollow[] @relation("InstructorFollowers")
   studentFollowing       InstructorFollow[] @relation("StudentFollowing")
 
+  // =============================================================================
+  // CHAT RELATIONS
+  // =============================================================================
+  conversationsAsParticipant1 Conversation[] @relation("ConversationParticipant1")
+  conversationsAsParticipant2 Conversation[] @relation("ConversationParticipant2")
+  sentMessages                Message[]      @relation("SentMessages")
+  receivedMessages            Message[]      @relation("ReceivedMessages")
+
   @@map("users")
 }
 
@@ -2371,6 +2379,10 @@ enum NotificationType {
   // Follow System
   NEW_FOLLOWER
   UNFOLLOWED
+  
+  // Chat System
+  NEW_MESSAGE
+  MESSAGE_READ
 }
 
 enum NotificationPriority {
@@ -2638,4 +2650,80 @@ model InstructorFollow {
 
   @@unique([instructorId, studentId])
   @@map("instructor_follows")
+}
+
+// =============================================================================
+// REAL-TIME CHAT SYSTEM
+// =============================================================================
+
+model Conversation {
+  id String @id @default(cuid())
+  
+  // Participants
+  participant1Id String
+  participant1   User   @relation("ConversationParticipant1", fields: [participant1Id], references: [id], onDelete: Cascade)
+  participant2Id String
+  participant2   User   @relation("ConversationParticipant2", fields: [participant2Id], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  lastMessageAt  DateTime?
+  lastMessagePreview String?
+  
+  // Status
+  isActive Boolean @default(true)
+  isBlocked Boolean @default(false)
+  blockedBy String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  messages Message[]
+  
+  @@unique([participant1Id, participant2Id])
+  @@index([participant1Id])
+  @@index([participant2Id])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  senderId   String
+  sender     User   @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User   @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  // Content
+  content     String
+  messageType MessageType @default(TEXT)
+  
+  // Attachments (optional)
+  attachments Json @default("[]")
+  
+  // Status
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+  isDeleted  Boolean   @default(false)
+  deletedAt  DateTime?
+  isEdited   Boolean   @default(false)
+  editedAt   DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@map("messages")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
 }

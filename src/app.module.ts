@@ -20,6 +20,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
 import { WebSocketModule } from './websocket/websocket.module';
 import { NotificationModule } from './notifications/notification.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { NotificationModule } from './notifications/notification.module';
     AIAssistantModule,
     WebSocketModule,
     NotificationModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
