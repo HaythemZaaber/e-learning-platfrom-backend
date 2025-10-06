@@ -5,18 +5,22 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InstructorFollowService } from './instructor-follow.service';
 
 @Injectable()
 export class InstructorService {
   private readonly logger = new Logger(InstructorService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private instructorFollowService: InstructorFollowService,
+  ) {}
 
   // =============================================================================
   // INSTRUCTOR PROFILE METHODS
   // =============================================================================
 
-  async getInstructorProfile(userId: string) {
+  async getInstructorProfile(userId: string, currentUserId?: string) {
     try {
       const profile = await this.prisma.instructorProfile.findUnique({
         where: { userId },
@@ -39,13 +43,22 @@ export class InstructorService {
         throw new NotFoundException('Instructor profile not found');
       }
 
-      // Compute availability fields and real-time statistics
-      const [preferredSchedule, availableTimeSlots, instructorStats] =
-        await Promise.all([
-          this.computePreferredSchedule(userId),
-          this.computeAvailableTimeSlots(userId),
-          this.computeInstructorStatsForList(userId),
-        ]);
+      // Compute availability fields, real-time statistics, and follow data
+      const [
+        preferredSchedule,
+        availableTimeSlots,
+        instructorStats,
+        followStats,
+        isFollowing,
+      ] = await Promise.all([
+        this.computePreferredSchedule(userId),
+        this.computeAvailableTimeSlots(userId),
+        this.computeInstructorStatsForList(userId),
+        this.instructorFollowService.getInstructorFollowStats(userId),
+        currentUserId
+          ? this.instructorFollowService.isFollowing(currentUserId, userId)
+          : false,
+      ]);
 
       // Add computed fields to the profile
       const profileWithAvailability = {
@@ -60,6 +73,11 @@ export class InstructorService {
         totalCourses: instructorStats.totalCourses,
         totalRevenue: instructorStats.totalRevenue,
         averageCourseRating: instructorStats.averageCourseRating,
+        // Add follow data
+        totalFollowers: followStats.totalFollowers,
+        newFollowersThisWeek: followStats.newFollowersThisWeek,
+        newFollowersThisMonth: followStats.newFollowersThisMonth,
+        isFollowing: isFollowing,
       };
 
       return profileWithAvailability;
@@ -354,13 +372,18 @@ export class InstructorService {
         },
       });
 
-      // Compute availability fields and real-time statistics for response
-      const [preferredSchedule, availableTimeSlots, instructorStats] =
-        await Promise.all([
-          this.computePreferredSchedule(userId),
-          this.computeAvailableTimeSlots(userId),
-          this.computeInstructorStatsForList(userId),
-        ]);
+      // Compute availability fields, real-time statistics, and follow data for response
+      const [
+        preferredSchedule,
+        availableTimeSlots,
+        instructorStats,
+        followStats,
+      ] = await Promise.all([
+        this.computePreferredSchedule(userId),
+        this.computeAvailableTimeSlots(userId),
+        this.computeInstructorStatsForList(userId),
+        this.instructorFollowService.getInstructorFollowStats(userId),
+      ]);
 
       const profileWithAvailability = {
         ...updatedProfile,
@@ -374,6 +397,11 @@ export class InstructorService {
         totalCourses: instructorStats.totalCourses,
         totalRevenue: instructorStats.totalRevenue,
         averageCourseRating: instructorStats.averageCourseRating,
+        // Add follow data
+        totalFollowers: followStats.totalFollowers,
+        newFollowersThisWeek: followStats.newFollowersThisWeek,
+        newFollowersThisMonth: followStats.newFollowersThisMonth,
+        isFollowing: false, // For profile updates, we don't need to check if current user is following
       };
 
       this.logger.log(`Updated instructor profile for user: ${userId}`);
@@ -968,15 +996,22 @@ export class InstructorService {
         take: limit,
       });
 
-      // Add computed availability fields and statistics to each instructor
+      // Add computed availability fields, statistics, and follow data to each instructor
       const featuredInstructorsWithAvailability = await Promise.all(
         featuredInstructors.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots, instructorStats] =
-            await Promise.all([
-              this.computePreferredSchedule(instructor.userId),
-              this.computeAvailableTimeSlots(instructor.userId),
-              this.computeInstructorStatsForList(instructor.userId),
-            ]);
+          const [
+            preferredSchedule,
+            availableTimeSlots,
+            instructorStats,
+            followStats,
+          ] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+            this.computeInstructorStatsForList(instructor.userId),
+            this.instructorFollowService.getInstructorFollowStats(
+              instructor.userId,
+            ),
+          ]);
 
           return {
             ...instructor,
@@ -994,6 +1029,11 @@ export class InstructorService {
             totalInstructorRatings: instructorStats.totalInstructorRatings,
             publishedCourses: instructorStats.publishedCourses,
             totalEnrollments: instructorStats.totalEnrollments,
+            // Add follow data
+            totalFollowers: followStats.totalFollowers,
+            newFollowersThisWeek: followStats.newFollowersThisWeek,
+            newFollowersThisMonth: followStats.newFollowersThisMonth,
+            isFollowing: false, // For featured instructors list, we don't check individual following status
           };
         }),
       );
@@ -1215,15 +1255,29 @@ export class InstructorService {
         this.prisma.instructorProfile.count({ where }),
       ]);
 
-      // Add computed availability fields, ratings, and course statistics to each instructor
+      // Add computed availability fields, ratings, course statistics, and follow data to each instructor
       const instructorsWithComputedData = await Promise.all(
         instructors.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots, instructorStats] =
-            await Promise.all([
-              this.computePreferredSchedule(instructor.userId),
-              this.computeAvailableTimeSlots(instructor.userId),
-              this.computeInstructorStatsForList(instructor.userId),
-            ]);
+          const [
+            preferredSchedule,
+            availableTimeSlots,
+            instructorStats,
+            followStats,
+            isFollowing,
+          ] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+            this.computeInstructorStatsForList(instructor.userId),
+            this.instructorFollowService.getInstructorFollowStats(
+              instructor.userId,
+            ),
+            currentUserId
+              ? this.instructorFollowService.isFollowing(
+                  currentUserId,
+                  instructor.userId,
+                )
+              : false,
+          ]);
 
           return {
             ...instructor,
@@ -1241,6 +1295,11 @@ export class InstructorService {
             totalInstructorRatings: instructorStats.totalInstructorRatings,
             publishedCourses: instructorStats.publishedCourses,
             totalEnrollments: instructorStats.totalEnrollments,
+            // Add follow data
+            totalFollowers: followStats.totalFollowers,
+            newFollowersThisWeek: followStats.newFollowersThisWeek,
+            newFollowersThisMonth: followStats.newFollowersThisMonth,
+            isFollowing: isFollowing,
           };
         }),
       );
@@ -1318,15 +1377,29 @@ export class InstructorService {
         }
       }
 
-      // Add computed availability fields and statistics to each instructor
+      // Add computed availability fields, statistics, and follow data to each instructor
       const availableTodayWithAvailability = await Promise.all(
         availableToday.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots, instructorStats] =
-            await Promise.all([
-              this.computePreferredSchedule(instructor.userId),
-              this.computeAvailableTimeSlots(instructor.userId),
-              this.computeInstructorStatsForList(instructor.userId),
-            ]);
+          const [
+            preferredSchedule,
+            availableTimeSlots,
+            instructorStats,
+            followStats,
+            isFollowing,
+          ] = await Promise.all([
+            this.computePreferredSchedule(instructor.userId),
+            this.computeAvailableTimeSlots(instructor.userId),
+            this.computeInstructorStatsForList(instructor.userId),
+            this.instructorFollowService.getInstructorFollowStats(
+              instructor.userId,
+            ),
+            currentUserId
+              ? this.instructorFollowService.isFollowing(
+                  currentUserId,
+                  instructor.userId,
+                )
+              : false,
+          ]);
 
           return {
             ...instructor,
@@ -1344,6 +1417,11 @@ export class InstructorService {
             totalInstructorRatings: instructorStats.totalInstructorRatings,
             publishedCourses: instructorStats.publishedCourses,
             totalEnrollments: instructorStats.totalEnrollments,
+            // Add follow data
+            totalFollowers: followStats.totalFollowers,
+            newFollowersThisWeek: followStats.newFollowersThisWeek,
+            newFollowersThisMonth: followStats.newFollowersThisMonth,
+            isFollowing: isFollowing,
           };
         }),
       );

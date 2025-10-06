@@ -27,8 +27,6 @@ export class User {
 
   @Field()
   instructorStatus: string;
-
- 
 }
 
 // =============================================================================
@@ -159,6 +157,19 @@ export class InstructorProfile {
 
   @Field(() => Int, { nullable: true })
   maxStudentsPerCourse?: number;
+
+  // Follow data
+  @Field(() => Int)
+  totalFollowers: number;
+
+  @Field(() => Int)
+  newFollowersThisWeek: number;
+
+  @Field(() => Int)
+  newFollowersThisMonth: number;
+
+  @Field(() => Boolean, { nullable: true })
+  isFollowing?: boolean;
 
   // Computed availability fields (for frontend compatibility)
   @Field(() => GraphQLJSON)
@@ -353,8 +364,6 @@ export class InstructorSearchResponse {
   @Field()
   hasMore: boolean;
 }
-
-
 
 // =============================================================================
 // PROFILE IMAGE UPDATE RESPONSE

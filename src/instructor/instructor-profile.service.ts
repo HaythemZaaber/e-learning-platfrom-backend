@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InstructorFollowService } from './instructor-follow.service';
 import {
   CreateInstructorProfileDto,
   UpdateInstructorProfileDto,
@@ -13,7 +14,10 @@ import { SessionType, SessionFormat, CancellationPolicy } from '@prisma/client';
 
 @Injectable()
 export class InstructorProfileService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private instructorFollowService: InstructorFollowService,
+  ) {}
 
   async getInstructorProfile(userId: string) {
     const profile = await this.prisma.instructorProfile.findUnique({
@@ -646,7 +650,7 @@ export class InstructorProfileService {
     };
   }
 
-  async getInstructorDetails(instructorId: string) {
+  async getInstructorDetails(instructorId: string, currentUserId?: string) {
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
       where: { id: instructorId },
@@ -656,13 +660,25 @@ export class InstructorProfileService {
       throw new NotFoundException('Instructor not found');
     }
 
-    // Get comprehensive instructor details
-    const [profile, stats, courses, reviews, availability] = await Promise.all([
+    // Get comprehensive instructor details including follow data
+    const [
+      profile,
+      stats,
+      courses,
+      reviews,
+      availability,
+      followStats,
+      isFollowing,
+    ] = await Promise.all([
       this.getInstructorProfile(instructorId),
       this.getInstructorStats(instructorId),
       this.getInstructorCourses(instructorId, { page: 1, limit: 5 }),
       this.getInstructorReviews(instructorId, { page: 1, limit: 5 }),
       this.getInstructorAvailability(instructorId, {}),
+      this.instructorFollowService.getInstructorFollowStats(instructorId),
+      currentUserId
+        ? this.instructorFollowService.isFollowing(currentUserId, instructorId)
+        : false,
     ]);
 
     return {
@@ -685,6 +701,12 @@ export class InstructorProfileService {
       recentCourses: courses.courses,
       recentReviews: reviews.reviews,
       availability,
+      follow: {
+        totalFollowers: followStats.totalFollowers,
+        newFollowersThisWeek: followStats.newFollowersThisWeek,
+        newFollowersThisMonth: followStats.newFollowersThisMonth,
+        isFollowing: isFollowing,
+      },
       summary: {
         totalCourses: stats.totalCourses || 0,
         publishedCourses: stats.publishedCourses || 0,
@@ -696,6 +718,7 @@ export class InstructorProfileService {
         totalRevenue: stats.totalRevenueCombined || 0,
         courseRevenue: stats.courseRevenue || 0,
         sessionRevenue: stats.totalRevenue || 0,
+        totalFollowers: followStats.totalFollowers,
       },
     };
   }

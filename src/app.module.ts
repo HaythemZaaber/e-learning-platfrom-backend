@@ -16,7 +16,10 @@ import { InstructorModule } from './instructor/instructor.module';
 import { LiveSessionsModule } from './live-sessions/live-sessions.module';
 import { StreamModule } from './stream/stream.module';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
+import { WebSocketModule } from './websocket/websocket.module';
+import { NotificationModule } from './notifications/notification.module';
 
 @Module({
   imports: [
@@ -38,6 +41,7 @@ import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
       isGlobal: true,
       envFilePath: '.env', // optional if your .env is in the root
     }),
+    EventEmitterModule.forRoot(),
     AuthModule,
     UploadModule,
     UserModule,
@@ -50,6 +54,8 @@ import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
     LiveSessionsModule,
     StreamModule,
     AIAssistantModule,
+    WebSocketModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

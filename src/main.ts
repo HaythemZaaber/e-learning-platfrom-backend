@@ -12,18 +12,26 @@ async function bootstrap() {
     rawBody: true,
   });
 
-
-
   // Configure payload size limits
-  app.use(require('express').json({ limit: '10mb' ,verify: (req, res, buf) => {
-    req.rawBody = buf;
-  }}));
+  app.use(
+    require('express').json({
+      limit: '10mb',
+      verify: (req, res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
 
   // Enable CORS
   app.enableCors({
-    origin: ['http://localhost:3000', 'https://your-frontend-domain.com'],
+    origin: [
+      process.env.FRONTEND_URL || 'http://localhost:3000',
+      'https://your-frontend-domain.com',
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
 
   // Global validation pipe (GraphQL-aware)

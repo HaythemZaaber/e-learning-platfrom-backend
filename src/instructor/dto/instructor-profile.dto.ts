@@ -1,5 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsArray, IsNumber, IsBoolean, IsObject, IsUrl, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsNumber,
+  IsBoolean,
+  IsObject,
+  IsUrl,
+  IsEnum,
+} from 'class-validator';
 
 export class CreateInstructorProfileDto {
   @ApiProperty({ description: 'User ID' })
@@ -478,6 +487,14 @@ export class InstructorDetailsResponseDto {
   @ApiProperty({ description: 'Instructor availability' })
   availability: any;
 
+  @ApiProperty({ description: 'Follow data' })
+  follow: {
+    totalFollowers: number;
+    newFollowersThisWeek: number;
+    newFollowersThisMonth: number;
+    isFollowing: boolean;
+  };
+
   @ApiProperty({ description: 'Summary statistics' })
   summary: {
     totalCourses: number;
@@ -485,5 +502,6 @@ export class InstructorDetailsResponseDto {
     averageRating: number;
     totalStudents: number;
     totalSessions: number;
+    totalFollowers: number;
   };
 }

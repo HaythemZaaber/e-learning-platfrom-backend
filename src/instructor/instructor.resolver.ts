@@ -118,9 +118,17 @@ export class InstructorResolver {
   // =============================================================================
 
   @Query(() => InstructorProfile, { name: 'getInstructorProfile' })
-  async getInstructorProfile(@Args('userId') userId: string) {
+  @UseGuards(OptionalAuthGuard)
+  async getInstructorProfile(
+    @Args('userId') userId: string,
+    @Context() context?: any,
+  ) {
     try {
-      return await this.instructorService.getInstructorProfile(userId);
+      const currentUserId = context?.req?.user?.id;
+      return await this.instructorService.getInstructorProfile(
+        userId,
+        currentUserId,
+      );
     } catch (error) {
       throw new Error(`Failed to get instructor profile: ${error.message}`);
     }

@@ -18,10 +18,10 @@
 ALTER TABLE "public"."ai_interactions" DROP CONSTRAINT "ai_interactions_courseId_fkey";
 
 -- DropIndex
-DROP INDEX "public"."idx_live_sessions_meeting_room_id";
+DROP INDEX IF EXISTS "public"."idx_live_sessions_meeting_room_id";
 
 -- DropIndex
-DROP INDEX "public"."idx_users_stripe_account_id";
+DROP INDEX IF EXISTS "public"."idx_users_stripe_account_id";
 
 -- AlterTable
 ALTER TABLE "public"."ai_interactions" DROP COLUMN "confidence",
@@ -37,12 +37,12 @@ DROP COLUMN "response",
 ADD COLUMN     "response" JSONB NOT NULL;
 
 -- AlterTable
-ALTER TABLE "public"."live_sessions" DROP COLUMN "meeting_link",
-DROP COLUMN "meeting_room_id";
+ALTER TABLE "public"."live_sessions" DROP COLUMN IF EXISTS "meeting_link",
+DROP COLUMN IF EXISTS "meeting_room_id";
 
 -- AlterTable
-ALTER TABLE "public"."users" DROP COLUMN "stripe_account_id",
-ADD COLUMN     "stripeAccountId" TEXT;
+ALTER TABLE "public"."users" DROP COLUMN IF EXISTS "stripe_account_id",
+ADD COLUMN IF NOT EXISTS "stripeAccountId" TEXT;
 
 -- CreateTable
 CREATE TABLE "public"."ai_cache_entries" (
