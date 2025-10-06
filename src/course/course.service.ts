@@ -2705,6 +2705,7 @@ export class CourseService {
   async getAllCourses(
     filters?: CourseFiltersInput,
     pagination?: PaginationInput,
+    currentUserId?: string,
   ): Promise<PaginatedCoursesResponse> {
     try {
       const page = pagination?.page || 1;
@@ -2715,6 +2716,14 @@ export class CourseService {
         // isPublic: true,
         status: CourseStatus.PUBLISHED,
       };
+
+      // Exclude courses created by the current user (if they are an instructor)
+      if (currentUserId) {
+        where.instructorId = { not: currentUserId };
+        console.log('Filtering out courses created by user:', currentUserId);
+      } else {
+        console.log('No current user ID provided, showing all courses');
+      }
 
       // Apply comprehensive filters
       if (filters) {

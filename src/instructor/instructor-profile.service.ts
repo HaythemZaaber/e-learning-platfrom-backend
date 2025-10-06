@@ -1,8 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { 
-  CreateInstructorProfileDto, 
-  UpdateInstructorProfileDto 
+import {
+  CreateInstructorProfileDto,
+  UpdateInstructorProfileDto,
 } from './dto/instructor-profile.dto';
 import { SessionStatsDto } from './dto/session-stats.dto';
 import { SessionType, SessionFormat, CancellationPolicy } from '@prisma/client';
@@ -25,9 +29,9 @@ export class InstructorProfileService {
             teachingRating: true,
             totalStudents: true,
             totalCourses: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     if (!profile) {
@@ -40,7 +44,7 @@ export class InstructorProfileService {
   async createInstructorProfile(createDto: CreateInstructorProfileDto) {
     // Check if user exists
     const user = await this.prisma.user.findUnique({
-      where: { id: createDto.userId }
+      where: { id: createDto.userId },
     });
 
     if (!user) {
@@ -49,7 +53,7 @@ export class InstructorProfileService {
 
     // Check if profile already exists
     const existingProfile = await this.prisma.instructorProfile.findUnique({
-      where: { userId: createDto.userId }
+      where: { userId: createDto.userId },
     });
 
     if (existingProfile) {
@@ -76,7 +80,9 @@ export class InstructorProfileService {
         teachingMethodology: createDto.teachingMethodology,
         liveSessionsEnabled: createDto.liveSessionsEnabled || false,
         defaultSessionDuration: createDto.defaultSessionDuration || 60,
-        defaultSessionType: createDto.defaultSessionType as SessionType || SessionType.INDIVIDUAL,
+        defaultSessionType:
+          (createDto.defaultSessionType as SessionType) ||
+          SessionType.INDIVIDUAL,
         preferredGroupSize: createDto.preferredGroupSize || 5,
         bufferBetweenSessions: createDto.bufferBetweenSessions || 15,
         maxSessionsPerDay: createDto.maxSessionsPerDay || 8,
@@ -87,8 +93,12 @@ export class InstructorProfileService {
         groupSessionRate: createDto.groupSessionRate,
         currency: createDto.currency || 'USD',
         platformFeeRate: createDto.platformFeeRate || 20,
-        defaultCancellationPolicy: createDto.defaultCancellationPolicy as CancellationPolicy || CancellationPolicy.MODERATE,
-        defaultSessionFormat: createDto.defaultSessionFormat as SessionFormat || SessionFormat.ONLINE,
+        defaultCancellationPolicy:
+          (createDto.defaultCancellationPolicy as CancellationPolicy) ||
+          CancellationPolicy.MODERATE,
+        defaultSessionFormat:
+          (createDto.defaultSessionFormat as SessionFormat) ||
+          SessionFormat.ONLINE,
         isAcceptingStudents: createDto.isAcceptingStudents !== false,
         maxStudentsPerCourse: createDto.maxStudentsPerCourse,
       },
@@ -103,17 +113,20 @@ export class InstructorProfileService {
             teachingRating: true,
             totalStudents: true,
             totalCourses: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     return profile;
   }
 
-  async updateInstructorProfile(userId: string, updateDto: UpdateInstructorProfileDto) {
+  async updateInstructorProfile(
+    userId: string,
+    updateDto: UpdateInstructorProfileDto,
+  ) {
     const profile = await this.prisma.instructorProfile.findUnique({
-      where: { userId }
+      where: { userId },
     });
 
     if (!profile) {
@@ -125,13 +138,16 @@ export class InstructorProfileService {
 
     // Handle enum fields properly
     if (updateDto.defaultSessionType) {
-      updateData.defaultSessionType = updateDto.defaultSessionType as SessionType;
+      updateData.defaultSessionType =
+        updateDto.defaultSessionType as SessionType;
     }
     if (updateDto.defaultCancellationPolicy) {
-      updateData.defaultCancellationPolicy = updateDto.defaultCancellationPolicy as CancellationPolicy;
+      updateData.defaultCancellationPolicy =
+        updateDto.defaultCancellationPolicy as CancellationPolicy;
     }
     if (updateDto.defaultSessionFormat) {
-      updateData.defaultSessionFormat = updateDto.defaultSessionFormat as SessionFormat;
+      updateData.defaultSessionFormat =
+        updateDto.defaultSessionFormat as SessionFormat;
     }
 
     // Handle array fields properly
@@ -151,7 +167,6 @@ export class InstructorProfileService {
       updateData.languagesSpoken = updateDto.languagesSpoken;
     }
 
-
     const updatedProfile = await this.prisma.instructorProfile.update({
       where: { userId },
       data: updateData,
@@ -166,9 +181,9 @@ export class InstructorProfileService {
             teachingRating: true,
             totalStudents: true,
             totalCourses: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     return updatedProfile;
@@ -176,7 +191,7 @@ export class InstructorProfileService {
 
   async enableLiveSessions(userId: string) {
     const profile = await this.prisma.instructorProfile.findUnique({
-      where: { userId }
+      where: { userId },
     });
 
     if (!profile) {
@@ -199,9 +214,9 @@ export class InstructorProfileService {
             teachingRating: true,
             totalStudents: true,
             totalCourses: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     return updatedProfile;
@@ -214,70 +229,147 @@ export class InstructorProfileService {
         user: {
           include: {
             instructedSessions: {
-              where: { status: 'COMPLETED' }
-            }
-          }
-        }
-      }
+              where: { status: 'COMPLETED' },
+            },
+          },
+        },
+      },
     });
 
     if (!profile) {
       throw new NotFoundException('Instructor profile not found');
     }
 
-    // Calculate stats
+    // Calculate course statistics
+    const courseStats = await this.prisma.course.findMany({
+      where: { instructorId: userId },
+      select: {
+        id: true,
+        status: true,
+        currentEnrollments: true,
+        price: true,
+        avgRating: true,
+        totalRatings: true,
+        enrollments: {
+          select: {
+            id: true,
+            status: true,
+            userId: true,
+          },
+        },
+      },
+    });
+
+    // Calculate live session stats
     const totalSessions = await this.prisma.liveSession.count({
-      where: { 
+      where: {
         instructorId: userId,
-        status: 'COMPLETED'
-      }
+        status: 'COMPLETED',
+      },
     });
 
     const totalRevenue = await this.prisma.liveSession.aggregate({
-      where: { 
+      where: {
         instructorId: userId,
-        status: 'COMPLETED'
+        status: 'COMPLETED',
       },
       _sum: {
-        instructorPayout: true
-      }
+        instructorPayout: true,
+      },
     });
 
-    const avgRating = await this.prisma.sessionReview.aggregate({
+    // Calculate instructor rating stats
+    const instructorRatings = await this.prisma.instructorRating.findMany({
       where: {
-        session: {
-          instructorId: userId
-        }
+        instructorId: userId,
+        isPublic: true,
       },
-      _avg: {
-        overallRating: true
-      }
+      select: {
+        rating: true,
+      },
     });
+
+    const totalInstructorRatings = instructorRatings.length;
+    const averageInstructorRating =
+      instructorRatings.length > 0
+        ? instructorRatings.reduce((sum, r) => sum + r.rating, 0) /
+          instructorRatings.length
+        : 0;
+
+    // Use instructor rating as the primary average rating
+    const avgRating = { _avg: { overallRating: averageInstructorRating } };
+
+    // Calculate course-based statistics
+    const totalCourses = courseStats.length;
+    const publishedCourses = courseStats.filter(
+      (c) => c.status === 'PUBLISHED',
+    ).length;
+
+    // Calculate total unique students across all courses
+    const allEnrollments = courseStats.flatMap((c) => c.enrollments);
+    const uniqueStudents = new Set(allEnrollments.map((e) => e.userId)).size;
+
+    // Calculate total enrollments (including duplicates)
+    const totalEnrollments = allEnrollments.length;
+
+    // Calculate course revenue using actual enrollments instead of cached field
+    const courseRevenue = courseStats.reduce((sum, course) => {
+      const actualEnrollments = course.enrollments.length;
+      return sum + course.price * actualEnrollments;
+    }, 0);
+
+    // Calculate average course rating
+    const coursesWithRatings = courseStats.filter((c) => c.totalRatings > 0);
+    const averageCourseRating =
+      coursesWithRatings.length > 0
+        ? coursesWithRatings.reduce((sum, c) => sum + (c.avgRating || 0), 0) /
+          coursesWithRatings.length
+        : 0;
 
     const stats = {
+      // Live session stats
       totalSessions,
       totalRevenue: totalRevenue._sum.instructorPayout || 0,
-      averageRating: avgRating._avg.overallRating || 0
+      averageRating: avgRating._avg.overallRating || 0,
+
+      // Course stats
+      totalCourses,
+      publishedCourses,
+      totalStudents: uniqueStudents, // Unique students across all courses
+      totalEnrollments, // Total enrollments (may include same student in multiple courses)
+      courseRevenue,
+      averageCourseRating,
+
+      // Instructor rating stats
+      totalInstructorRatings,
+      averageInstructorRating: Math.round(averageInstructorRating * 100) / 100,
+
+      // Combined stats
+      totalRevenueCombined:
+        (totalRevenue._sum.instructorPayout || 0) + courseRevenue,
     };
 
     return {
       ...profile,
-      ...stats
+      ...stats,
     };
   }
 
   async updateProfileStats(userId: string) {
     // Get current stats
     const stats = await this.getInstructorStats(userId);
-    
+
     // Update the profile with calculated stats
     await this.prisma.instructorProfile.update({
       where: { userId },
       data: {
         totalLiveSessions: stats.totalSessions,
-        totalRevenue: stats.totalRevenue,
+        totalRevenue: stats.totalRevenueCombined, // Use combined revenue
         averageSessionRating: stats.averageRating,
-      }
+        totalCourses: stats.totalCourses,
+        totalStudents: stats.totalStudents,
+        averageCourseRating: stats.averageCourseRating,
+      },
     });
 
     // Also update user table
@@ -285,14 +377,44 @@ export class InstructorProfileService {
       where: { id: userId },
       data: {
         teachingRating: stats.averageRating,
-      }
+        totalStudents: stats.totalStudents,
+        totalCourses: stats.totalCourses,
+      },
     });
+
+    // Update course enrollment counts to keep them in sync
+    await this.updateCourseEnrollmentCounts(userId);
+  }
+
+  async updateCourseEnrollmentCounts(instructorId: string) {
+    // Get all courses for this instructor
+    const courses = await this.prisma.course.findMany({
+      where: { instructorId },
+      select: {
+        id: true,
+        enrollments: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    // Update currentEnrollments for each course
+    for (const course of courses) {
+      const actualEnrollments = course.enrollments.length;
+
+      await this.prisma.course.update({
+        where: { id: course.id },
+        data: { currentEnrollments: actualEnrollments },
+      });
+    }
   }
 
   async getSessionStats(instructorId: string): Promise<SessionStatsDto> {
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
-      where: { id: instructorId }
+      where: { id: instructorId },
     });
 
     if (!instructor) {
@@ -307,72 +429,78 @@ export class InstructorProfileService {
         reviews: true,
         payments: true,
         reservations: true,
-      }
+      },
     });
 
     // Get booking requests
     const bookingRequests = await this.prisma.bookingRequest.findMany({
       where: {
         offering: {
-          instructorId
-        }
-      }
+          instructorId,
+        },
+      },
     });
 
     // Get payouts
     const payouts = await this.prisma.instructorPayout.findMany({
-      where: { instructorId }
+      where: { instructorId },
     });
 
     // Calculate statistics
     const totalSessions = sessions.length;
-    const completedSessions = sessions.filter(s => s.status === 'COMPLETED').length;
-    const cancelledSessions = sessions.filter(s => s.status === 'CANCELLED').length;
-    const upcomingSessions = sessions.filter(s => 
-      s.status === 'SCHEDULED' && s.scheduledStart > new Date()
+    const completedSessions = sessions.filter(
+      (s) => s.status === 'COMPLETED',
+    ).length;
+    const cancelledSessions = sessions.filter(
+      (s) => s.status === 'CANCELLED',
+    ).length;
+    const upcomingSessions = sessions.filter(
+      (s) => s.status === 'SCHEDULED' && s.scheduledStart > new Date(),
     ).length;
 
-    const pendingRequests = bookingRequests.filter(b => b.status === 'PENDING').length;
+    const pendingRequests = bookingRequests.filter(
+      (b) => b.status === 'PENDING',
+    ).length;
 
     // Calculate total earnings
     const totalEarnings = sessions
-      .filter(s => s.status === 'COMPLETED')
+      .filter((s) => s.status === 'COMPLETED')
       .reduce((sum, s) => sum + (s.totalRevenue || 0), 0);
 
     // Calculate completion rate
-    const completionRate = totalSessions > 0 
-      ? (completedSessions / totalSessions) * 100 
-      : 0;
+    const completionRate =
+      totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0;
 
     // Calculate average bid (from booking requests)
-    const averageBid = bookingRequests.length > 0
-      ? bookingRequests.reduce((sum, b) => sum + (b.offeredPrice || 0), 0) / bookingRequests.length
-      : 0;
+    const averageBid =
+      bookingRequests.length > 0
+        ? bookingRequests.reduce((sum, b) => sum + (b.offeredPrice || 0), 0) /
+          bookingRequests.length
+        : 0;
 
     // Calculate average rating
     const allRatings = sessions
-      .flatMap(s => s.reviews)
-      .map(r => r.overallRating)
-      .filter(r => r > 0);
-    
-    const averageRating = allRatings.length > 0
-      ? allRatings.reduce((sum, r) => sum + r, 0) / allRatings.length
-      : 0;
+      .flatMap((s) => s.reviews)
+      .map((r) => r.overallRating)
+      .filter((r) => r > 0);
+
+    const averageRating =
+      allRatings.length > 0
+        ? allRatings.reduce((sum, r) => sum + r, 0) / allRatings.length
+        : 0;
 
     // Get unique learners/students
     const uniqueLearners = new Set(
-      sessions.flatMap(s => s.participants.map(p => p.userId))
+      sessions.flatMap((s) => s.participants.map((p) => p.userId)),
     );
     const totalLearners = uniqueLearners.size;
 
     // Get total students (from reservations)
-    const totalStudents = sessions
-      .flatMap(s => s.reservations)
-      .length;
+    const totalStudents = sessions.flatMap((s) => s.reservations).length;
 
     // Calculate payouts
-    const totalPayouts = payouts.filter(p => p.status === 'PAID').length;
-    const pendingPayouts = payouts.filter(p => p.status === 'PENDING').length;
+    const totalPayouts = payouts.filter((p) => p.status === 'PAID').length;
+    const pendingPayouts = payouts.filter((p) => p.status === 'PENDING').length;
 
     // Get popular time slots (simplified - you can enhance this)
     const popularTimeSlots = this.getPopularTimeSlots(sessions);
@@ -398,8 +526,8 @@ export class InstructorProfileService {
   private getPopularTimeSlots(sessions: any[]): string[] {
     // Group sessions by hour and find most popular times
     const timeSlots: { [key: string]: number } = {};
-    
-    sessions.forEach(session => {
+
+    sessions.forEach((session) => {
       const hour = new Date(session.scheduledStart).getHours();
       const timeSlot = `${hour}:00`;
       timeSlots[timeSlot] = (timeSlots[timeSlot] || 0) + 1;
@@ -407,7 +535,7 @@ export class InstructorProfileService {
 
     // Return top 3 most popular time slots
     return Object.entries(timeSlots)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([time]) => time);
   }
@@ -430,7 +558,7 @@ export class InstructorProfileService {
       maxPrice,
       availability,
       page = 1,
-      limit = 10
+      limit = 10,
     } = query;
 
     const skip = (page - 1) * limit;
@@ -446,12 +574,14 @@ export class InstructorProfileService {
         { bio: { contains: search, mode: 'insensitive' } },
         { subjectsTeaching: { hasSome: [search] } },
         { expertise: { hasSome: [search] } },
-        { user: { 
-          OR: [
-            { firstName: { contains: search, mode: 'insensitive' } },
-            { lastName: { contains: search, mode: 'insensitive' } }
-          ]
-        }}
+        {
+          user: {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        },
       ];
     }
 
@@ -475,8 +605,8 @@ export class InstructorProfileService {
       where.availabilities = {
         some: {
           isActive: true,
-          specificDate: { gte: new Date() }
-        }
+          specificDate: { gte: new Date() },
+        },
       };
     }
 
@@ -496,15 +626,15 @@ export class InstructorProfileService {
               teachingRating: true,
               totalStudents: true,
               totalCourses: true,
-            }
-          }
+            },
+          },
         },
         orderBy: [
           { averageSessionRating: 'desc' },
-          { totalLiveSessions: 'desc' }
-        ]
+          { totalLiveSessions: 'desc' },
+        ],
       }),
-      this.prisma.instructorProfile.count({ where })
+      this.prisma.instructorProfile.count({ where }),
     ]);
 
     return {
@@ -512,14 +642,14 @@ export class InstructorProfileService {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
   async getInstructorDetails(instructorId: string) {
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
-      where: { id: instructorId }
+      where: { id: instructorId },
     });
 
     if (!instructor) {
@@ -532,7 +662,7 @@ export class InstructorProfileService {
       this.getInstructorStats(instructorId),
       this.getInstructorCourses(instructorId, { page: 1, limit: 5 }),
       this.getInstructorReviews(instructorId, { page: 1, limit: 5 }),
-      this.getInstructorAvailability(instructorId, {})
+      this.getInstructorAvailability(instructorId, {}),
     ]);
 
     return {
@@ -543,8 +673,8 @@ export class InstructorProfileService {
         email: instructor.email,
         profileImage: instructor.profileImage,
         teachingRating: instructor.teachingRating,
-        totalStudents: instructor.totalStudents,
-        totalCourses: instructor.totalCourses,
+        totalStudents: stats.totalStudents || 0, // Use calculated stats
+        totalCourses: stats.totalCourses || 0, // Use calculated stats
         expertise: instructor.expertise,
         qualifications: instructor.qualifications,
         experience: instructor.experience,
@@ -556,26 +686,34 @@ export class InstructorProfileService {
       recentReviews: reviews.reviews,
       availability,
       summary: {
-        totalCourses: courses.total,
+        totalCourses: stats.totalCourses || 0,
+        publishedCourses: stats.publishedCourses || 0,
         totalReviews: reviews.total,
-        averageRating: stats.averageRating || 0,
+        averageRating: reviews.stats.averageOverallRating || 0,
         totalStudents: stats.totalStudents || 0,
+        totalEnrollments: stats.totalEnrollments || 0,
         totalSessions: stats.totalSessions || 0,
-      }
+        totalRevenue: stats.totalRevenueCombined || 0,
+        courseRevenue: stats.courseRevenue || 0,
+        sessionRevenue: stats.totalRevenue || 0,
+      },
     };
   }
 
-  async getInstructorCourses(instructorId: string, options: {
-    page?: number;
-    limit?: number;
-    status?: string;
-  }) {
+  async getInstructorCourses(
+    instructorId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      status?: string;
+    },
+  ) {
     const { page = 1, limit = 10, status } = options;
     const skip = (page - 1) * limit;
 
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
-      where: { id: instructorId }
+      where: { id: instructorId },
     });
 
     if (!instructor) {
@@ -584,7 +722,8 @@ export class InstructorProfileService {
 
     const where: any = {
       instructorId,
-      isPublic: true,
+      // Remove isPublic filter to show all courses for the instructor
+      // isPublic: true, // Commented out to show all courses
     };
 
     if (status) {
@@ -596,7 +735,26 @@ export class InstructorProfileService {
         where,
         skip,
         take: limit,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          shortDescription: true,
+          category: true,
+          subcategory: true,
+          level: true,
+          status: true,
+          isPublic: true,
+          price: true,
+          currency: true,
+          thumbnail: true,
+          avgRating: true,
+          totalRatings: true,
+          views: true,
+          currentEnrollments: true,
+          createdAt: true,
+          updatedAt: true,
+          publishedAt: true,
           sections: {
             include: {
               lectures: {
@@ -605,43 +763,50 @@ export class InstructorProfileService {
                   title: true,
                   duration: true,
                   isPreview: true,
-                }
-              }
-            }
+                },
+              },
+            },
           },
           enrollments: {
             select: {
               id: true,
               status: true,
-            }
+            },
           },
           reviews: {
             select: {
               id: true,
               rating: true,
               comment: true,
-            }
-          }
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.course.count({ where })
+      this.prisma.course.count({ where }),
     ]);
 
     // Calculate additional stats for each course
-    const coursesWithStats = courses.map(course => {
+    const coursesWithStats = courses.map((course) => {
       const totalLectures = course.sections.reduce(
-        (total, section) => total + section.lectures.length, 0
+        (total, section) => total + section.lectures.length,
+        0,
       );
       const totalDuration = course.sections.reduce(
-        (total, section) => total + section.lectures.reduce(
-          (lectureTotal, lecture) => lectureTotal + (lecture.duration || 0), 0
-        ), 0
+        (total, section) =>
+          total +
+          section.lectures.reduce(
+            (lectureTotal, lecture) => lectureTotal + (lecture.duration || 0),
+            0,
+          ),
+        0,
       );
       const totalEnrollments = course.enrollments.length;
-      const averageRating = course.reviews.length > 0
-        ? course.reviews.reduce((sum, review) => sum + review.rating, 0) / course.reviews.length
-        : 0;
+      const averageRating =
+        course.reviews.length > 0
+          ? course.reviews.reduce((sum, review) => sum + review.rating, 0) /
+            course.reviews.length
+          : 0;
 
       return {
         ...course,
@@ -658,21 +823,24 @@ export class InstructorProfileService {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
-  async getInstructorReviews(instructorId: string, options: {
-    page?: number;
-    limit?: number;
-    rating?: number;
-  }) {
+  async getInstructorReviews(
+    instructorId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      rating?: number;
+    },
+  ) {
     const { page = 1, limit = 10, rating } = options;
     const skip = (page - 1) * limit;
 
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
-      where: { id: instructorId }
+      where: { id: instructorId },
     });
 
     if (!instructor) {
@@ -680,85 +848,58 @@ export class InstructorProfileService {
     }
 
     const where: any = {
-      session: {
-        instructorId
-      },
+      instructorId,
       isPublic: true,
     };
 
     if (rating) {
-      where.overallRating = rating;
+      where.rating = { gte: rating, lt: rating + 1 };
     }
 
     const [reviews, total] = await Promise.all([
-      this.prisma.sessionReview.findMany({
+      this.prisma.instructorRating.findMany({
         where,
         skip,
         take: limit,
         include: {
-          reviewer: {
+          student: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
               profileImage: true,
-            }
+            },
           },
-          session: {
-            select: {
-              id: true,
-              title: true,
-              sessionType: true,
-              scheduledStart: true,
-            }
-          }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.sessionReview.count({ where })
+      this.prisma.instructorRating.count({ where }),
     ]);
 
     // Calculate review statistics
-    const allReviews = await this.prisma.sessionReview.findMany({
+    const allReviews = await this.prisma.instructorRating.findMany({
       where: {
-        session: {
-          instructorId
-        },
+        instructorId,
         isPublic: true,
       },
       select: {
-        overallRating: true,
-        contentQuality: true,
-        instructorRating: true,
-        technicalQuality: true,
-        valueForMoney: true,
-      }
+        rating: true,
+      },
     });
 
     const stats = {
       totalReviews: allReviews.length,
-      averageOverallRating: allReviews.length > 0
-        ? allReviews.reduce((sum, r) => sum + r.overallRating, 0) / allReviews.length
-        : 0,
-      averageContentQuality: allReviews.length > 0
-        ? allReviews.reduce((sum, r) => sum + (r.contentQuality || 0), 0) / allReviews.length
-        : 0,
-      averageInstructorRating: allReviews.length > 0
-        ? allReviews.reduce((sum, r) => sum + (r.instructorRating || 0), 0) / allReviews.length
-        : 0,
-      averageTechnicalQuality: allReviews.length > 0
-        ? allReviews.reduce((sum, r) => sum + (r.technicalQuality || 0), 0) / allReviews.length
-        : 0,
-      averageValueForMoney: allReviews.length > 0
-        ? allReviews.reduce((sum, r) => sum + (r.valueForMoney || 0), 0) / allReviews.length
-        : 0,
+      averageOverallRating:
+        allReviews.length > 0
+          ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+          : 0,
       ratingDistribution: {
-        1: allReviews.filter(r => r.overallRating === 1).length,
-        2: allReviews.filter(r => r.overallRating === 2).length,
-        3: allReviews.filter(r => r.overallRating === 3).length,
-        4: allReviews.filter(r => r.overallRating === 4).length,
-        5: allReviews.filter(r => r.overallRating === 5).length,
-      }
+        1: allReviews.filter((r) => Math.floor(r.rating) === 1).length,
+        2: allReviews.filter((r) => Math.floor(r.rating) === 2).length,
+        3: allReviews.filter((r) => Math.floor(r.rating) === 3).length,
+        4: allReviews.filter((r) => Math.floor(r.rating) === 4).length,
+        5: allReviews.filter((r) => Math.floor(r.rating) === 5).length,
+      },
     };
 
     return {
@@ -767,19 +908,22 @@ export class InstructorProfileService {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
-  async getInstructorAvailability(instructorId: string, options: {
-    startDate?: Date;
-    endDate?: Date;
-  }) {
+  async getInstructorAvailability(
+    instructorId: string,
+    options: {
+      startDate?: Date;
+      endDate?: Date;
+    },
+  ) {
     const { startDate, endDate } = options;
 
     // Check if instructor exists
     const instructor = await this.prisma.user.findUnique({
-      where: { id: instructorId }
+      where: { id: instructorId },
     });
 
     if (!instructor) {
@@ -790,12 +934,12 @@ export class InstructorProfileService {
     const defaultStartDate = new Date();
     defaultStartDate.setHours(0, 0, 0, 0); // Start of today
 
-    const where: any = { 
+    const where: any = {
       instructorId,
       isActive: true, // Only active availabilities
       specificDate: {
-        gte: startDate || defaultStartDate // From provided start date or today
-      }
+        gte: startDate || defaultStartDate, // From provided start date or today
+      },
     };
 
     if (endDate) {
@@ -811,35 +955,32 @@ export class InstructorProfileService {
             OR: [
               {
                 date: {
-                  gt: new Date() // Future dates
-                }
+                  gt: new Date(), // Future dates
+                },
               },
               {
                 AND: [
                   {
                     date: {
-                      gte: new Date(new Date().setHours(0, 0, 0, 0)) // Start of today
-                    }
+                      gte: new Date(new Date().setHours(0, 0, 0, 0)), // Start of today
+                    },
                   },
                   {
                     startTime: {
-                      gt: new Date() // Current time
-                    }
-                  }
-                ]
-              }
+                      gt: new Date(), // Current time
+                    },
+                  },
+                ],
+              },
             ],
             isAvailable: true, // Only available slots
             isBooked: false, // Not booked
             isBlocked: false, // Not blocked
           },
-          orderBy: { startTime: 'asc' }
-        }
+          orderBy: { startTime: 'asc' },
+        },
       },
-      orderBy: [
-        { specificDate: 'asc' },
-        { startTime: 'asc' }
-      ]
+      orderBy: [{ specificDate: 'asc' }, { startTime: 'asc' }],
     });
 
     // Get instructor profile for default settings
@@ -853,12 +994,12 @@ export class InstructorProfileService {
         currency: true,
         bufferBetweenSessions: true,
         maxSessionsPerDay: true,
-      }
+      },
     });
 
     // Filter availabilities to only include those with available slots
-    const filteredAvailabilities = availabilities.filter(availability => 
-      availability.generatedSlots.length > 0
+    const filteredAvailabilities = availabilities.filter(
+      (availability) => availability.generatedSlots.length > 0,
     );
 
     // Calculate summary statistics
@@ -867,14 +1008,17 @@ export class InstructorProfileService {
 
     const summary = {
       totalAvailabilities: filteredAvailabilities.length,
-      activeAvailabilities: filteredAvailabilities.filter(a => a.isActive).length,
-      upcomingAvailabilities: filteredAvailabilities.filter(a => 
-        a.specificDate > now || 
-        (a.specificDate >= today && 
-         a.startTime > now.toTimeString().slice(0, 5))
+      activeAvailabilities: filteredAvailabilities.filter((a) => a.isActive)
+        .length,
+      upcomingAvailabilities: filteredAvailabilities.filter(
+        (a) =>
+          a.specificDate > now ||
+          (a.specificDate >= today &&
+            a.startTime > now.toTimeString().slice(0, 5)),
       ).length,
-      totalAvailableSlots: filteredAvailabilities.reduce((total, a) => 
-        total + a.generatedSlots.length, 0
+      totalAvailableSlots: filteredAvailabilities.reduce(
+        (total, a) => total + a.generatedSlots.length,
+        0,
       ),
       nextAvailableSlot: this.getNextAvailableSlot(filteredAvailabilities, now),
     };
@@ -887,13 +1031,16 @@ export class InstructorProfileService {
         startDate: startDate || defaultStartDate,
         endDate: endDate || null,
         currentTime: now.toISOString(),
-      }
+      },
     };
   }
 
-  async updateAutoApprovalSettings(userId: string, autoAcceptBookings: boolean) {
+  async updateAutoApprovalSettings(
+    userId: string,
+    autoAcceptBookings: boolean,
+  ) {
     const profile = await this.prisma.instructorProfile.findUnique({
-      where: { userId }
+      where: { userId },
     });
 
     if (!profile) {
@@ -903,7 +1050,7 @@ export class InstructorProfileService {
     const updatedProfile = await this.prisma.instructorProfile.update({
       where: { userId },
       data: {
-        autoAcceptBookings
+        autoAcceptBookings,
       },
       include: {
         user: {
@@ -916,15 +1063,15 @@ export class InstructorProfileService {
             teachingRating: true,
             totalStudents: true,
             totalCourses: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     return {
       success: true,
       message: `Auto-approval ${autoAcceptBookings ? 'enabled' : 'disabled'} successfully`,
-      profile: updatedProfile
+      profile: updatedProfile,
     };
   }
 
@@ -935,9 +1082,16 @@ export class InstructorProfileService {
     for (const availability of availabilities) {
       for (const slot of availability.generatedSlots) {
         const slotDate = slot.date || availability.specificDate;
-        const slotDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-        
-        if (slotDateOnly > today || (slotDateOnly.getTime() === today.getTime() && slot.startTime > now)) {
+        const slotDateOnly = new Date(
+          slotDate.getFullYear(),
+          slotDate.getMonth(),
+          slotDate.getDate(),
+        );
+
+        if (
+          slotDateOnly > today ||
+          (slotDateOnly.getTime() === today.getTime() && slot.startTime > now)
+        ) {
           return {
             date: slotDateOnly.toISOString().split('T')[0],
             startTime: slot.startTime,

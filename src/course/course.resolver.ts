@@ -435,11 +435,20 @@ export class CourseResolver {
   }
 
   @Query(() => PaginatedCoursesResponse, { name: 'getAllCourses' })
+  @UseGuards(OptionalAuthGuard)
   async getAllCourses(
     @Args('filters', { nullable: true }) filters?: CourseFiltersInput,
     @Args('pagination', { nullable: true }) pagination?: PaginationInput,
+    @Context() context?: any,
   ) {
-    return this.courseService.getAllCourses(filters, pagination);
+    const userId = context?.req?.user?.id;
+    console.log(
+      'getAllCourses resolver - userId:',
+      userId,
+      'context keys:',
+      Object.keys(context || {}),
+    );
+    return this.courseService.getAllCourses(filters, pagination, userId);
   }
 
   @Query(() => [Course], { name: 'getMyCourses' })

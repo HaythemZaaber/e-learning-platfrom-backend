@@ -142,6 +142,12 @@ model User {
   conductedInterviews   InstructorInterview[]     @relation("InterviewerInterviews")
   documentVerifications DocumentVerificationLog[]
 
+  // =============================================================================
+  // INSTRUCTOR RATING RELATIONS
+  // =============================================================================
+  instructorRatings      InstructorRating[] @relation("InstructorRatings")
+  studentRatings         InstructorRating[] @relation("StudentRatings")
+
   @@map("users")
 }
 
@@ -2574,4 +2580,31 @@ enum InterviewFormat {
   PHONE_CALL
   IN_PERSON
   ASYNCHRONOUS_VIDEO
+}
+
+// =============================================================================
+// INSTRUCTOR RATING SYSTEM
+// =============================================================================
+
+model InstructorRating {
+  id           String  @id @default(cuid())
+  instructorId String
+  instructor   User    @relation("InstructorRatings", fields: [instructorId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User    @relation("StudentRatings", fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Simple rating details
+  rating       Float   // 1.0 to 5.0 stars
+  comment      String?
+
+  // Metadata
+  isVerified   Boolean @default(false)
+  isPublic     Boolean @default(true)
+  helpfulVotes Int     @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([instructorId, studentId])
+  @@map("instructor_ratings")
 }

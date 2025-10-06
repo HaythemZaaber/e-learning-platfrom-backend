@@ -1,13 +1,16 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class InstructorService {
   private readonly logger = new Logger(InstructorService.name);
 
-  constructor(
-    private prisma: PrismaService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   // =============================================================================
   // INSTRUCTOR PROFILE METHODS
@@ -36,11 +39,13 @@ export class InstructorService {
         throw new NotFoundException('Instructor profile not found');
       }
 
-      // Compute availability fields
-      const [preferredSchedule, availableTimeSlots] = await Promise.all([
-        this.computePreferredSchedule(userId),
-        this.computeAvailableTimeSlots(userId),
-      ]);
+      // Compute availability fields and real-time statistics
+      const [preferredSchedule, availableTimeSlots, instructorStats] =
+        await Promise.all([
+          this.computePreferredSchedule(userId),
+          this.computeAvailableTimeSlots(userId),
+          this.computeInstructorStatsForList(userId),
+        ]);
 
       // Add computed fields to the profile
       const profileWithAvailability = {
@@ -49,6 +54,12 @@ export class InstructorService {
         availableTimeSlots,
         individualSessionRate: profile.individualSessionRate || 50,
         groupSessionRate: profile.groupSessionRate || 30,
+        // Override with real-time calculated values
+        teachingRating: instructorStats.averageRating,
+        totalStudents: instructorStats.totalStudents,
+        totalCourses: instructorStats.totalCourses,
+        totalRevenue: instructorStats.totalRevenue,
+        averageCourseRating: instructorStats.averageCourseRating,
       };
 
       return profileWithAvailability;
@@ -67,7 +78,9 @@ export class InstructorService {
       });
 
       if (existingProfile) {
-        this.logger.warn(`Instructor profile already exists for user: ${userId}`);
+        this.logger.warn(
+          `Instructor profile already exists for user: ${userId}`,
+        );
         // Update existing profile instead of creating new one
         return await this.updateInstructorProfile(userId, application);
       }
@@ -79,21 +92,27 @@ export class InstructorService {
       const documents = application.documents || {};
 
       // Extract subjects to teach from teaching information
-      const subjectsToTeach = teachingInformation.subjectsToTeach?.map((subject: any) => 
-        typeof subject === 'string' ? subject : subject.subject
-      ) || application.subjectsToTeach || [];
+      const subjectsToTeach =
+        teachingInformation.subjectsToTeach?.map((subject: any) =>
+          typeof subject === 'string' ? subject : subject.subject,
+        ) ||
+        application.subjectsToTeach ||
+        [];
 
       // Extract teaching categories from subjects
-      const teachingCategories = teachingInformation.subjectsToTeach?.map((subject: any) => 
-        typeof subject === 'string' ? 'General' : subject.category
-      ) || [];
+      const teachingCategories =
+        teachingInformation.subjectsToTeach?.map((subject: any) =>
+          typeof subject === 'string' ? 'General' : subject.category,
+        ) || [];
 
       // Extract languages spoken from personal info
-      const languagesSpoken = personalInfo.languagesSpoken?.map((lang: any) => ({
-        language: typeof lang === 'string' ? lang : lang.language,
-        proficiency: typeof lang === 'string' ? 'intermediate' : lang.proficiency,
-        canTeachIn: typeof lang === 'string' ? true : lang.canTeachIn
-      })) || [];
+      const languagesSpoken =
+        personalInfo.languagesSpoken?.map((lang: any) => ({
+          language: typeof lang === 'string' ? lang : lang.language,
+          proficiency:
+            typeof lang === 'string' ? 'intermediate' : lang.proficiency,
+          canTeachIn: typeof lang === 'string' ? true : lang.canTeachIn,
+        })) || [];
 
       // Extract social links and contact info
       const socialLinks = {
@@ -101,26 +120,29 @@ export class InstructorService {
         phone: personalInfo.phoneNumber,
         website: personalInfo.personalWebsite,
         linkedin: personalInfo.linkedinProfile,
-        ...personalInfo.socialLinks
+        ...personalInfo.socialLinks,
       };
 
       // Extract qualifications from education and certifications
       const qualifications = [
-        ...(professionalBackground.education?.map((edu: any) => 
-          `${edu.degree} in ${edu.field} from ${edu.institution}`
+        ...(professionalBackground.education?.map(
+          (edu: any) => `${edu.degree} in ${edu.field} from ${edu.institution}`,
         ) || []),
-        ...(documents.professionalCertifications?.map((cert: any) => 
-          cert.name || 'Professional Certification'
-        ) || [])
+        ...(documents.professionalCertifications?.map(
+          (cert: any) => cert.name || 'Professional Certification',
+        ) || []),
       ];
 
       // Create comprehensive instructor profile
       const profile = await this.prisma.instructorProfile.create({
         data: {
           userId,
-          
+
           // Professional Information
-          title: professionalBackground.currentJobTitle || personalInfo.title || 'Instructor',
+          title:
+            professionalBackground.currentJobTitle ||
+            personalInfo.title ||
+            'Instructor',
           bio: teachingInformation.teachingMotivation || '',
           shortBio: teachingInformation.teachingPhilosophy || '',
           expertise: subjectsToTeach,
@@ -135,8 +157,8 @@ export class InstructorService {
           teachingCategories: teachingCategories,
           languagesSpoken: languagesSpoken,
           teachingStyle: teachingInformation.teachingStyle,
-          targetAudience: Array.isArray(teachingInformation.targetAudience) 
-            ? teachingInformation.targetAudience.join(', ') 
+          targetAudience: Array.isArray(teachingInformation.targetAudience)
+            ? teachingInformation.targetAudience.join(', ')
             : teachingInformation.targetAudience,
           teachingMethodology: teachingInformation.teachingMethodology,
 
@@ -175,16 +197,16 @@ export class InstructorService {
           payoutSettings: {
             preferredMethod: 'bank_transfer',
             currency: 'USD',
-            minimumPayout: 50
+            minimumPayout: 50,
           },
           taxInformation: {
             taxId: personalInfo.taxId,
             country: personalInfo.country,
-            taxStatus: 'individual'
+            taxStatus: 'individual',
           },
           paymentPreferences: {
             autoPayout: false,
-            payoutFrequency: 'monthly'
+            payoutFrequency: 'monthly',
           },
           revenueSharing: 70, // Default 70% instructor keeps
 
@@ -203,7 +225,9 @@ export class InstructorService {
 
       console.log('Profile:', profile);
 
-      this.logger.log(`Created comprehensive instructor profile for user: ${userId}`);
+      this.logger.log(
+        `Created comprehensive instructor profile for user: ${userId}`,
+      );
       return profile;
     } catch (error) {
       this.logger.error('Error creating instructor profile:', error);
@@ -218,21 +242,27 @@ export class InstructorService {
     const documents = application.documents || {};
 
     // Extract subjects to teach from teaching information
-    const subjectsToTeach = teachingInformation.subjectsToTeach?.map((subject: any) => 
-      typeof subject === 'string' ? subject : subject.subject
-    ) || application.subjectsToTeach || [];
+    const subjectsToTeach =
+      teachingInformation.subjectsToTeach?.map((subject: any) =>
+        typeof subject === 'string' ? subject : subject.subject,
+      ) ||
+      application.subjectsToTeach ||
+      [];
 
     // Extract teaching categories from subjects
-    const teachingCategories = teachingInformation.subjectsToTeach?.map((subject: any) => 
-      typeof subject === 'string' ? 'General' : subject.category
-    ) || [];
+    const teachingCategories =
+      teachingInformation.subjectsToTeach?.map((subject: any) =>
+        typeof subject === 'string' ? 'General' : subject.category,
+      ) || [];
 
     // Extract languages spoken from personal info
-    const languagesSpoken = personalInfo.languagesSpoken?.map((lang: any) => ({
-      language: typeof lang === 'string' ? lang : lang.language,
-      proficiency: typeof lang === 'string' ? 'intermediate' : lang.proficiency,
-      canTeachIn: typeof lang === 'string' ? true : lang.canTeachIn
-    })) || [];
+    const languagesSpoken =
+      personalInfo.languagesSpoken?.map((lang: any) => ({
+        language: typeof lang === 'string' ? lang : lang.language,
+        proficiency:
+          typeof lang === 'string' ? 'intermediate' : lang.proficiency,
+        canTeachIn: typeof lang === 'string' ? true : lang.canTeachIn,
+      })) || [];
 
     // Extract social links and contact info
     const socialLinks = {
@@ -240,24 +270,27 @@ export class InstructorService {
       phone: personalInfo.phoneNumber,
       website: personalInfo.personalWebsite,
       linkedin: personalInfo.linkedinProfile,
-      ...personalInfo.socialLinks
+      ...personalInfo.socialLinks,
     };
 
     // Extract qualifications from education and certifications
     const qualifications = [
-      ...(professionalBackground.education?.map((edu: any) => 
-        `${edu.degree} in ${edu.field} from ${edu.institution}`
+      ...(professionalBackground.education?.map(
+        (edu: any) => `${edu.degree} in ${edu.field} from ${edu.institution}`,
       ) || []),
-      ...(documents.professionalCertifications?.map((cert: any) => 
-        cert.name || 'Professional Certification'
-      ) || [])
+      ...(documents.professionalCertifications?.map(
+        (cert: any) => cert.name || 'Professional Certification',
+      ) || []),
     ];
 
     const profile = await this.prisma.instructorProfile.update({
       where: { userId },
       data: {
         // Professional Information
-        title: professionalBackground.currentJobTitle || personalInfo.title || 'Instructor',
+        title:
+          professionalBackground.currentJobTitle ||
+          personalInfo.title ||
+          'Instructor',
         bio: teachingInformation.teachingMotivation || '',
         shortBio: teachingInformation.teachingPhilosophy || '',
         expertise: subjectsToTeach,
@@ -272,8 +305,8 @@ export class InstructorService {
         teachingCategories: teachingCategories,
         languagesSpoken: languagesSpoken,
         teachingStyle: teachingInformation.teachingStyle,
-        targetAudience: Array.isArray(teachingInformation.targetAudience) 
-          ? teachingInformation.targetAudience.join(', ') 
+        targetAudience: Array.isArray(teachingInformation.targetAudience)
+          ? teachingInformation.targetAudience.join(', ')
           : teachingInformation.targetAudience,
         teachingMethodology: teachingInformation.teachingMethodology,
 
@@ -290,7 +323,7 @@ export class InstructorService {
         taxInformation: {
           taxId: personalInfo.taxId,
           country: personalInfo.country,
-          taxStatus: 'individual'
+          taxStatus: 'individual',
         },
 
         // Marketing & Promotion
@@ -321,11 +354,13 @@ export class InstructorService {
         },
       });
 
-      // Compute availability fields for response
-      const [preferredSchedule, availableTimeSlots] = await Promise.all([
-        this.computePreferredSchedule(userId),
-        this.computeAvailableTimeSlots(userId),
-      ]);
+      // Compute availability fields and real-time statistics for response
+      const [preferredSchedule, availableTimeSlots, instructorStats] =
+        await Promise.all([
+          this.computePreferredSchedule(userId),
+          this.computeAvailableTimeSlots(userId),
+          this.computeInstructorStatsForList(userId),
+        ]);
 
       const profileWithAvailability = {
         ...updatedProfile,
@@ -333,6 +368,12 @@ export class InstructorService {
         availableTimeSlots,
         individualSessionRate: updatedProfile.individualSessionRate || 50,
         groupSessionRate: updatedProfile.groupSessionRate || 30,
+        // Override with real-time calculated values
+        teachingRating: instructorStats.averageRating,
+        totalStudents: instructorStats.totalStudents,
+        totalCourses: instructorStats.totalCourses,
+        totalRevenue: instructorStats.totalRevenue,
+        averageCourseRating: instructorStats.averageCourseRating,
       };
 
       this.logger.log(`Updated instructor profile for user: ${userId}`);
@@ -342,7 +383,6 @@ export class InstructorService {
       throw error;
     }
   }
-
 
   async updateProfileImage(userId: string, profileImage: string) {
     try {
@@ -377,7 +417,10 @@ export class InstructorService {
       });
 
       this.logger.log(`Deleted instructor profile for user: ${userId}`);
-      return { success: true, message: 'Instructor profile deleted successfully' };
+      return {
+        success: true,
+        message: 'Instructor profile deleted successfully',
+      };
     } catch (error) {
       this.logger.error('Error deleting instructor profile:', error);
       throw error;
@@ -415,12 +458,22 @@ export class InstructorService {
 
       // Calculate statistics
       const totalCourses = courses.length;
-      const publishedCourses = courses.filter(c => c.status === 'PUBLISHED').length;
-      const totalEnrollments = courses.reduce((sum, c) => sum + c.currentEnrollments, 0);
-      const totalRevenue = courses.reduce((sum, c) => sum + (c.price * c.currentEnrollments), 0);
-      const averageRating = courses.length > 0 
-        ? courses.reduce((sum, c) => sum + (c.avgRating || 0), 0) / courses.length 
-        : 0;
+      const publishedCourses = courses.filter(
+        (c) => c.status === 'PUBLISHED',
+      ).length;
+      const totalEnrollments = courses.reduce(
+        (sum, c) => sum + c.currentEnrollments,
+        0,
+      );
+      const totalRevenue = courses.reduce(
+        (sum, c) => sum + c.price * c.currentEnrollments,
+        0,
+      );
+      const averageRating =
+        courses.length > 0
+          ? courses.reduce((sum, c) => sum + (c.avgRating || 0), 0) /
+            courses.length
+          : 0;
 
       return {
         profile,
@@ -471,13 +524,17 @@ export class InstructorService {
 
       if (filters?.expertise) {
         where.expertise = {
-          hasSome: Array.isArray(filters.expertise) ? filters.expertise : [filters.expertise],
+          hasSome: Array.isArray(filters.expertise)
+            ? filters.expertise
+            : [filters.expertise],
         };
       }
 
       if (filters?.teachingCategories) {
         where.teachingCategories = {
-          hasSome: Array.isArray(filters.teachingCategories) ? filters.teachingCategories : [filters.teachingCategories],
+          hasSome: Array.isArray(filters.teachingCategories)
+            ? filters.teachingCategories
+            : [filters.teachingCategories],
         };
       }
 
@@ -496,7 +553,9 @@ export class InstructorService {
       if (filters?.languages) {
         where.languagesSpoken = {
           path: ['$[*].language'],
-          array_contains: Array.isArray(filters.languages) ? filters.languages : [filters.languages],
+          array_contains: Array.isArray(filters.languages)
+            ? filters.languages
+            : [filters.languages],
         };
       }
 
@@ -533,6 +592,96 @@ export class InstructorService {
   // HELPER METHODS
   // =============================================================================
 
+  /**
+   * Compute instructor statistics for list display
+   * This method calculates real-time statistics including ratings and course data
+   */
+  async computeInstructorStatsForList(instructorId: string) {
+    try {
+      // Get instructor ratings from the InstructorRating table
+      const instructorRatings = await this.prisma.instructorRating.findMany({
+        where: {
+          instructorId,
+          isPublic: true,
+        },
+        select: {
+          rating: true,
+        },
+      });
+
+      // Calculate instructor rating statistics
+      const totalInstructorRatings = instructorRatings.length;
+      const averageRating =
+        totalInstructorRatings > 0
+          ? instructorRatings.reduce((sum, r) => sum + r.rating, 0) /
+            totalInstructorRatings
+          : 0;
+
+      // Get course statistics
+      const courses = await this.prisma.course.findMany({
+        where: { instructorId },
+        select: {
+          id: true,
+          status: true,
+          currentEnrollments: true,
+          price: true,
+          avgRating: true,
+          totalRatings: true,
+        },
+      });
+
+      // Calculate course-based statistics
+      const totalCourses = courses.length;
+      const publishedCourses = courses.filter(
+        (c) => c.status === 'PUBLISHED',
+      ).length;
+      const totalEnrollments = courses.reduce(
+        (sum, c) => sum + c.currentEnrollments,
+        0,
+      );
+      const totalRevenue = courses.reduce(
+        (sum, c) => sum + c.price * c.currentEnrollments,
+        0,
+      );
+      const averageCourseRating =
+        courses.length > 0
+          ? courses.reduce((sum, c) => sum + (c.avgRating || 0), 0) /
+            courses.length
+          : 0;
+
+      // Get total students from enrollments
+      const totalStudents = await this.prisma.enrollment.count({
+        where: {
+          course: { instructorId },
+        },
+      });
+
+      return {
+        averageRating: Math.round(averageRating * 100) / 100,
+        totalInstructorRatings,
+        totalCourses,
+        publishedCourses,
+        totalEnrollments,
+        totalStudents,
+        totalRevenue,
+        averageCourseRating: Math.round(averageCourseRating * 100) / 100,
+      };
+    } catch (error) {
+      this.logger.error('Error computing instructor stats for list:', error);
+      // Return default values if there's an error
+      return {
+        averageRating: 0,
+        totalInstructorRatings: 0,
+        totalCourses: 0,
+        publishedCourses: 0,
+        totalEnrollments: 0,
+        totalStudents: 0,
+        totalRevenue: 0,
+        averageCourseRating: 0,
+      };
+    }
+  }
+
   // =============================================================================
   // AVAILABILITY COMPUTATION METHODS (For Profile Display Only)
   // =============================================================================
@@ -541,10 +690,13 @@ export class InstructorService {
     try {
       // Get all availabilities to build a comprehensive weekly schedule
       // Don't filter by date to ensure we get all availabilities including today's
-      const availabilities = await this.getInstructorAvailabilities(instructorId);
-      
-      this.logger.log(`Found ${availabilities.length} availabilities for instructor ${instructorId}`);
-      
+      const availabilities =
+        await this.getInstructorAvailabilities(instructorId);
+
+      this.logger.log(
+        `Found ${availabilities.length} availabilities for instructor ${instructorId}`,
+      );
+
       const weeklySchedule: any = {
         monday: { available: false, timeSlots: [] },
         tuesday: { available: false, timeSlots: [] },
@@ -555,17 +707,27 @@ export class InstructorService {
         sunday: { available: false, timeSlots: [] },
       };
 
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayNames = [
+        'sunday',
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+      ];
 
       // Group availabilities by day of week
       const availabilitiesByDay: { [key: string]: any[] } = {};
-      dayNames.forEach(day => {
+      dayNames.forEach((day) => {
         availabilitiesByDay[day] = [];
       });
 
-      availabilities.forEach(availability => {
-        this.logger.log(`Processing availability: ${availability.id}, date: ${availability.specificDate}, active: ${availability.isActive}, slots: ${availability.generatedSlots.length}`);
-        
+      availabilities.forEach((availability) => {
+        this.logger.log(
+          `Processing availability: ${availability.id}, date: ${availability.specificDate}, active: ${availability.isActive}, slots: ${availability.generatedSlots.length}`,
+        );
+
         if (availability.isActive && availability.generatedSlots.length > 0) {
           const dayOfWeek = availability.specificDate.getDay();
           const dayName = dayNames[dayOfWeek];
@@ -574,40 +736,42 @@ export class InstructorService {
       });
 
       // Build weekly schedule from grouped availabilities
-      dayNames.forEach(dayName => {
+      dayNames.forEach((dayName) => {
         const dayAvailabilities = availabilitiesByDay[dayName];
         if (dayAvailabilities.length > 0) {
           weeklySchedule[dayName].available = true;
-          
+
           // Get all unique time slots for this day
           const allSlots: any[] = [];
-          dayAvailabilities.forEach(availability => {
+          dayAvailabilities.forEach((availability) => {
             const slots = availability.generatedSlots
-              .filter(slot => 
-                slot.isAvailable && 
-                !slot.isBooked && 
-                !slot.isBlocked &&
-                slot.startTime > new Date() // Only show future slots
+              .filter(
+                (slot) =>
+                  slot.isAvailable &&
+                  !slot.isBooked &&
+                  !slot.isBlocked &&
+                  slot.startTime > new Date(), // Only show future slots
               )
-              .map(slot => ({
+              .map((slot) => ({
                 start: slot.startTime.toTimeString().slice(0, 5), // HH:MM format
-                end: slot.endTime.toTimeString().slice(0, 5),     // HH:MM format
+                end: slot.endTime.toTimeString().slice(0, 5), // HH:MM format
                 duration: slot.slotDuration,
                 slotId: slot.id,
                 isAvailable: slot.isAvailable,
                 isBooked: slot.isBooked,
                 isBlocked: slot.isBlocked,
                 currentBookings: slot.currentBookings,
-                maxBookings: slot.maxBookings
+                maxBookings: slot.maxBookings,
               }));
             allSlots.push(...slots);
           });
-          
+
           // Remove duplicates based on start time
-          const uniqueSlots = allSlots.filter((slot, index, self) => 
-            index === self.findIndex(s => s.start === slot.start)
+          const uniqueSlots = allSlots.filter(
+            (slot, index, self) =>
+              index === self.findIndex((s) => s.start === slot.start),
           );
-          
+
           weeklySchedule[dayName].timeSlots = uniqueSlots;
           this.logger.log(`${dayName}: ${uniqueSlots.length} unique slots`);
         }
@@ -637,17 +801,19 @@ export class InstructorService {
       for (let i = 0; i < 7; i++) {
         const date = new Date(today);
         date.setDate(today.getDate() + i);
-        
+
         const slots = await this.getAvailableTimeSlots(instructorId, date);
-        availableSlots.push(...slots.map(slot => ({
-          date: slot.startTime,
-          start: slot.startTime.toTimeString().slice(0, 5),
-          end: slot.endTime.toTimeString().slice(0, 5),
-          duration: slot.duration,
-          availabilityId: slot.availabilityId,
-          priceOverride: slot.priceOverride,
-          currency: slot.currency,
-        })));
+        availableSlots.push(
+          ...slots.map((slot) => ({
+            date: slot.startTime,
+            start: slot.startTime.toTimeString().slice(0, 5),
+            end: slot.endTime.toTimeString().slice(0, 5),
+            duration: slot.duration,
+            availabilityId: slot.availabilityId,
+            priceOverride: slot.priceOverride,
+            currency: slot.currency,
+          })),
+        );
       }
 
       return availableSlots;
@@ -661,7 +827,11 @@ export class InstructorService {
   // AVAILABILITY READ-ONLY METHODS (For Profile Display)
   // =============================================================================
 
-  async getInstructorAvailabilities(instructorId: string, startDate?: Date, endDate?: Date) {
+  async getInstructorAvailabilities(
+    instructorId: string,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     try {
       const where: any = { instructorId };
 
@@ -712,8 +882,8 @@ export class InstructorService {
         },
       });
 
-      const availableSlots = availabilities.flatMap(availability => 
-        availability.generatedSlots.map(slot => ({
+      const availableSlots = availabilities.flatMap((availability) =>
+        availability.generatedSlots.map((slot) => ({
           id: slot.id,
           startTime: slot.startTime,
           endTime: slot.endTime,
@@ -721,7 +891,7 @@ export class InstructorService {
           availabilityId: availability.id,
           priceOverride: availability.priceOverride,
           currency: availability.currency,
-        }))
+        })),
       );
 
       return availableSlots;
@@ -731,7 +901,9 @@ export class InstructorService {
     }
   }
 
-  async checkInstructorAvailabilityToday(instructorId: string): Promise<boolean> {
+  async checkInstructorAvailabilityToday(
+    instructorId: string,
+  ): Promise<boolean> {
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -796,13 +968,15 @@ export class InstructorService {
         take: limit,
       });
 
-      // Add computed availability fields to each instructor
+      // Add computed availability fields and statistics to each instructor
       const featuredInstructorsWithAvailability = await Promise.all(
         featuredInstructors.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots] = await Promise.all([
-            this.computePreferredSchedule(instructor.userId),
-            this.computeAvailableTimeSlots(instructor.userId),
-          ]);
+          const [preferredSchedule, availableTimeSlots, instructorStats] =
+            await Promise.all([
+              this.computePreferredSchedule(instructor.userId),
+              this.computeAvailableTimeSlots(instructor.userId),
+              this.computeInstructorStatsForList(instructor.userId),
+            ]);
 
           return {
             ...instructor,
@@ -810,8 +984,18 @@ export class InstructorService {
             availableTimeSlots,
             individualSessionRate: instructor.individualSessionRate || 50,
             groupSessionRate: instructor.groupSessionRate || 30,
+            // Override with real-time calculated values
+            teachingRating: instructorStats.averageRating,
+            totalStudents: instructorStats.totalStudents,
+            totalCourses: instructorStats.totalCourses,
+            totalRevenue: instructorStats.totalRevenue,
+            averageCourseRating: instructorStats.averageCourseRating,
+            // Add additional computed fields
+            totalInstructorRatings: instructorStats.totalInstructorRatings,
+            publishedCourses: instructorStats.publishedCourses,
+            totalEnrollments: instructorStats.totalEnrollments,
           };
-        })
+        }),
       );
 
       return {
@@ -854,17 +1038,20 @@ export class InstructorService {
       ]);
 
       // Count instructors available today
-      const availableTodayInstructors = await this.prisma.instructorProfile.findMany({
-        where: {
-          isVerified: true,
-          isAcceptingStudents: true,
-        },
-        select: { userId: true },
-      });
+      const availableTodayInstructors =
+        await this.prisma.instructorProfile.findMany({
+          where: {
+            isVerified: true,
+            isAcceptingStudents: true,
+          },
+          select: { userId: true },
+        });
 
       let availableToday = 0;
       for (const instructor of availableTodayInstructors) {
-        const isAvailableToday = await this.checkInstructorAvailabilityToday(instructor.userId);
+        const isAvailableToday = await this.checkInstructorAvailabilityToday(
+          instructor.userId,
+        );
         if (isAvailableToday) {
           availableToday++;
         }
@@ -888,18 +1075,40 @@ export class InstructorService {
   // INSTRUCTORS PAGE METHODS
   // =============================================================================
 
-  async getInstructorsList(filters: any, page: number = 1, limit: number = 6, sortBy: string = 'featured') {
+  async getInstructorsList(
+    filters: any,
+    page: number = 1,
+    limit: number = 6,
+    sortBy: string = 'featured',
+    currentUserId?: string,
+  ) {
     try {
       const where: any = {
         isVerified: true,
         isAcceptingStudents: true,
       };
 
+      // Exclude the current user from the results (if they are an instructor)
+      if (currentUserId) {
+        where.userId = { not: currentUserId };
+        console.log('Filtering out instructor with user ID:', currentUserId);
+      } else {
+        console.log('No current user ID provided for instructor list');
+      }
+
       // Apply filters
       if (filters?.searchQuery) {
         where.OR = [
-          { user: { firstName: { contains: filters.searchQuery, mode: 'insensitive' } } },
-          { user: { lastName: { contains: filters.searchQuery, mode: 'insensitive' } } },
+          {
+            user: {
+              firstName: { contains: filters.searchQuery, mode: 'insensitive' },
+            },
+          },
+          {
+            user: {
+              lastName: { contains: filters.searchQuery, mode: 'insensitive' },
+            },
+          },
           { title: { contains: filters.searchQuery, mode: 'insensitive' } },
           { bio: { contains: filters.searchQuery, mode: 'insensitive' } },
           { expertise: { hasSome: [filters.searchQuery] } },
@@ -965,7 +1174,10 @@ export class InstructorService {
           orderBy = [{ user: { firstName: 'asc' } }];
           break;
         case 'available-today':
-          orderBy = [{ liveSessionsEnabled: 'desc' }, { teachingRating: 'desc' }];
+          orderBy = [
+            { liveSessionsEnabled: 'desc' },
+            { teachingRating: 'desc' },
+          ];
           break;
         case 'most-booked':
           orderBy = [{ totalStudents: 'desc' }, { teachingRating: 'desc' }];
@@ -1003,13 +1215,15 @@ export class InstructorService {
         this.prisma.instructorProfile.count({ where }),
       ]);
 
-      // Add computed availability fields to each instructor
-      const instructorsWithAvailability = await Promise.all(
+      // Add computed availability fields, ratings, and course statistics to each instructor
+      const instructorsWithComputedData = await Promise.all(
         instructors.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots] = await Promise.all([
-            this.computePreferredSchedule(instructor.userId),
-            this.computeAvailableTimeSlots(instructor.userId),
-          ]);
+          const [preferredSchedule, availableTimeSlots, instructorStats] =
+            await Promise.all([
+              this.computePreferredSchedule(instructor.userId),
+              this.computeAvailableTimeSlots(instructor.userId),
+              this.computeInstructorStatsForList(instructor.userId),
+            ]);
 
           return {
             ...instructor,
@@ -1017,14 +1231,24 @@ export class InstructorService {
             availableTimeSlots,
             individualSessionRate: instructor.individualSessionRate || 50,
             groupSessionRate: instructor.groupSessionRate || 30,
+            // Override with real-time calculated values
+            teachingRating: instructorStats.averageRating,
+            totalStudents: instructorStats.totalStudents,
+            totalCourses: instructorStats.totalCourses,
+            totalRevenue: instructorStats.totalRevenue,
+            averageCourseRating: instructorStats.averageCourseRating,
+            // Add additional computed fields
+            totalInstructorRatings: instructorStats.totalInstructorRatings,
+            publishedCourses: instructorStats.publishedCourses,
+            totalEnrollments: instructorStats.totalEnrollments,
           };
-        })
+        }),
       );
 
       const totalPages = Math.ceil(total / limit);
 
       return {
-        instructors: instructorsWithAvailability,
+        instructors: instructorsWithComputedData,
         total,
         page,
         limit,
@@ -1038,50 +1262,71 @@ export class InstructorService {
     }
   }
 
-  async getAvailableTodayInstructors(limit: number = 10) {
+  async getAvailableTodayInstructors(
+    limit: number = 10,
+    currentUserId?: string,
+  ) {
     try {
-      const availableInstructors = await this.prisma.instructorProfile.findMany({
-        where: {
-          isVerified: true,
-          isAcceptingStudents: true,
-          liveSessionsEnabled: true,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profileImage: true,
-              email: true,
-              role: true,
-              instructorStatus: true,
+      const where: any = {
+        isVerified: true,
+        isAcceptingStudents: true,
+        liveSessionsEnabled: true,
+      };
+
+      // Exclude the current user from the results (if they are an instructor)
+      if (currentUserId) {
+        where.userId = { not: currentUserId };
+        console.log(
+          'Filtering out instructor with user ID from available today:',
+          currentUserId,
+        );
+      } else {
+        console.log(
+          'No current user ID provided for available today instructors',
+        );
+      }
+
+      const availableInstructors = await this.prisma.instructorProfile.findMany(
+        {
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profileImage: true,
+                email: true,
+                role: true,
+                instructorStatus: true,
+              },
             },
           },
+          orderBy: [{ teachingRating: 'desc' }, { totalStudents: 'desc' }],
+          take: limit,
         },
-        orderBy: [
-          { teachingRating: 'desc' },
-          { totalStudents: 'desc' },
-        ],
-        take: limit,
-      });
+      );
 
       // Filter instructors who are actually available today
       const availableToday: typeof availableInstructors = [];
       for (const instructor of availableInstructors) {
-        const isAvailableToday = await this.checkInstructorAvailabilityToday(instructor.userId);
+        const isAvailableToday = await this.checkInstructorAvailabilityToday(
+          instructor.userId,
+        );
         if (isAvailableToday) {
           availableToday.push(instructor);
         }
       }
 
-      // Add computed availability fields to each instructor
+      // Add computed availability fields and statistics to each instructor
       const availableTodayWithAvailability = await Promise.all(
         availableToday.map(async (instructor) => {
-          const [preferredSchedule, availableTimeSlots] = await Promise.all([
-            this.computePreferredSchedule(instructor.userId),
-            this.computeAvailableTimeSlots(instructor.userId),
-          ]);
+          const [preferredSchedule, availableTimeSlots, instructorStats] =
+            await Promise.all([
+              this.computePreferredSchedule(instructor.userId),
+              this.computeAvailableTimeSlots(instructor.userId),
+              this.computeInstructorStatsForList(instructor.userId),
+            ]);
 
           return {
             ...instructor,
@@ -1089,8 +1334,18 @@ export class InstructorService {
             availableTimeSlots,
             individualSessionRate: instructor.individualSessionRate || 50,
             groupSessionRate: instructor.groupSessionRate || 30,
+            // Override with real-time calculated values
+            teachingRating: instructorStats.averageRating,
+            totalStudents: instructorStats.totalStudents,
+            totalCourses: instructorStats.totalCourses,
+            totalRevenue: instructorStats.totalRevenue,
+            averageCourseRating: instructorStats.averageCourseRating,
+            // Add additional computed fields
+            totalInstructorRatings: instructorStats.totalInstructorRatings,
+            publishedCourses: instructorStats.publishedCourses,
+            totalEnrollments: instructorStats.totalEnrollments,
           };
-        })
+        }),
       );
 
       return availableTodayWithAvailability;

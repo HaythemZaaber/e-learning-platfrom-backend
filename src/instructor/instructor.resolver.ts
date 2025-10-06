@@ -1,6 +1,7 @@
 import { Resolver, Query, Mutation, Args, Context, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '@prisma/client';
@@ -59,18 +60,28 @@ export class InstructorResolver {
   // =============================================================================
 
   @Query(() => InstructorListResponse, { name: 'getInstructorsList' })
+  @UseGuards(OptionalAuthGuard)
   async getInstructorsList(
     @Args('filters', { nullable: true }) filters?: InstructorListFiltersInput,
     @Args('page', { nullable: true, type: () => Int }) page?: number,
     @Args('limit', { nullable: true, type: () => Int }) limit?: number,
     @Args('sortBy', { nullable: true }) sortBy?: string,
+    @Context() context?: any,
   ) {
     try {
+      const userId = context?.req?.user?.id;
+      console.log(
+        'getInstructorsList resolver - userId:',
+        userId,
+        'context keys:',
+        Object.keys(context || {}),
+      );
       return await this.instructorService.getInstructorsList(
         filters,
         page || 1,
         limit || 6,
         sortBy,
+        userId,
       );
     } catch (error) {
       throw new Error(`Failed to get instructors list: ${error.message}`);
@@ -78,12 +89,22 @@ export class InstructorResolver {
   }
 
   @Query(() => [InstructorProfile], { name: 'getAvailableTodayInstructors' })
+  @UseGuards(OptionalAuthGuard)
   async getAvailableTodayInstructors(
     @Args('limit', { nullable: true, type: () => Int }) limit?: number,
+    @Context() context?: any,
   ) {
     try {
+      const userId = context?.req?.user?.id;
+      console.log(
+        'getAvailableTodayInstructors resolver - userId:',
+        userId,
+        'context keys:',
+        Object.keys(context || {}),
+      );
       return await this.instructorService.getAvailableTodayInstructors(
         limit || 10,
+        userId,
       );
     } catch (error) {
       throw new Error(
