@@ -21,6 +21,8 @@ import { AIAssistantModule } from './ai-assistant/ai-assistant-module';
 import { WebSocketModule } from './websocket/websocket.module';
 import { NotificationModule } from './notifications/notification.module';
 import { ChatModule } from './chat/chat.module';
+import { StoriesReelsModule } from './stories-reels/stories-reels.module';
+import { VideoProcessingModule } from './video-processing/video-processing.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { ChatModule } from './chat/chat.module';
     WebSocketModule,
     NotificationModule,
     ChatModule,
+    StoriesReelsModule,
+    VideoProcessingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

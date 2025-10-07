@@ -162,6 +162,16 @@ model User {
   sentMessages                Message[]      @relation("SentMessages")
   receivedMessages            Message[]      @relation("ReceivedMessages")
 
+  // =============================================================================
+  // STORIES & REELS RELATIONS
+  // =============================================================================
+  stories        Story[]
+  reels          Reel[]
+  storyLikes     StoryLike[]
+  reelLikes      ReelLike[]
+  storyViews     StoryView[] @relation("StoryViews")
+  reelViews      ReelView[]  @relation("ReelViews")
+
   @@map("users")
 }
 
@@ -2383,6 +2393,10 @@ enum NotificationType {
   // Chat System
   NEW_MESSAGE
   MESSAGE_READ
+  
+  // Stories & Reels
+  NEW_STORY
+  NEW_REEL
 }
 
 enum NotificationPriority {
@@ -2725,5 +2739,136 @@ enum MessageType {
   IMAGE
   FILE
   AUDIO
+  VIDEO
+}
+
+// =============================================================================
+// STORIES & REELS SYSTEM
+// =============================================================================
+
+model Story {
+  id           String @id @default(cuid())
+  instructorId String
+  instructor   User   @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  // Content
+  mediaUrl     String
+  mediaType    MediaType
+  caption      String?
+  duration     Int? // Duration in seconds (for videos)
+
+  // Privacy
+  isPublic     Boolean @default(true) // Public or private story
+
+  // Metadata
+  views        Int    @default(0)
+  likesCount   Int    @default(0)
+  isActive     Boolean @default(true)
+
+  // Timestamps
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime // Stories expire after 24 hours
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  likes        StoryLike[]
+  storyViews   StoryView[]
+
+  @@index([instructorId, createdAt])
+  @@index([expiresAt])
+  @@index([isPublic])
+  @@map("stories")
+}
+
+model Reel {
+  id           String @id @default(cuid())
+  instructorId String
+  instructor   User   @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  // Content
+  mediaUrl     String
+  mediaType    MediaType
+  caption      String?
+  duration     Int // Duration in seconds (required for reels)
+
+  // Privacy
+  isPublic     Boolean @default(true) // Public or private reel
+
+  // Metadata
+  views        Int    @default(0)
+  likesCount   Int    @default(0)
+  isActive     Boolean @default(true)
+
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  likes        ReelLike[]
+  reelViews    ReelView[]
+
+  @@index([instructorId, createdAt])
+  @@index([isPublic])
+  @@map("reels")
+}
+
+model StoryLike {
+  id           String @id @default(cuid())
+  storyId      String
+  story        Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([storyId, userId])
+  @@map("story_likes")
+}
+
+model ReelLike {
+  id           String @id @default(cuid())
+  reelId       String
+  reel         Reel   @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([reelId, userId])
+  @@map("reel_likes")
+}
+
+model StoryView {
+  id           String @id @default(cuid())
+  storyId      String
+  story        Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation("StoryViews", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([storyId, userId])
+  @@index([storyId])
+  @@index([userId])
+  @@map("story_views")
+}
+
+model ReelView {
+  id           String @id @default(cuid())
+  reelId       String
+  reel         Reel   @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation("ReelViews", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@unique([reelId, userId])
+  @@index([reelId])
+  @@index([userId])
+  @@map("reel_views")
+}
+
+enum MediaType {
+  IMAGE
   VIDEO
 }
