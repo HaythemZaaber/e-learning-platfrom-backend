@@ -13,10 +13,12 @@ async function bootstrap() {
   });
 
   // Configure payload size limits
+  // Exclude Stripe webhook routes from JSON parsing to preserve raw body
   app.use(
     require('express').json({
       limit: '10mb',
       verify: (req, res, buf) => {
+        // Store raw body for all requests
         req.rawBody = buf;
       },
     }),

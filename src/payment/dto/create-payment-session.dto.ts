@@ -40,4 +40,14 @@ export class CreatePaymentSessionDto {
   @IsOptional()
   @IsString()
   cancelUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment provider (STRIPE or PAYPAL)',
+    example: 'STRIPE',
+    enum: ['STRIPE', 'PAYPAL'],
+    default: 'STRIPE',
+  })
+  @IsOptional()
+  @IsString()
+  provider?: 'STRIPE' | 'PAYPAL';
 }

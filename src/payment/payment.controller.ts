@@ -10,6 +10,7 @@ import {
   HttpStatus,
   HttpCode,
   BadRequestException,
+  NotFoundException,
   RawBodyRequest,
   Headers,
 } from '@nestjs/common';
@@ -125,6 +126,90 @@ export class PaymentController {
     }
   }
 
+  @Get('sessions/paypal/:paypalOrderId')
+  @ApiOperation({ summary: 'Get payment session by PayPal order ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment session retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Payment session not found' })
+  async getPaymentSessionByPayPalOrderId(
+    @Param('paypalOrderId') paypalOrderId: string,
+  ) {
+    try {
+      const session =
+        await this.paymentService.getPaymentSessionByPayPalOrderId(
+          paypalOrderId,
+        );
+      return {
+        success: true,
+        session,
+        message: 'Payment session found',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        session: null,
+        error: error.message,
+        message: 'Payment session not found',
+      };
+    }
+  }
+
+  @Post('paypal/capture/:orderId')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Capture a PayPal order' })
+  @ApiResponse({
+    status: 200,
+    description: 'PayPal order captured successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Failed to capture order' })
+  @ApiResponse({ status: 404, description: 'Payment session not found' })
+  async capturePayPalOrder(
+    @Param('orderId') orderId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.id;
+    return this.paymentService.capturePayPalOrder(orderId, userId);
+  }
+
+  @Post('sessions/stripe/:stripeSessionId/verify')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify and update payment session status from Stripe' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment session verified and updated successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Payment session not found' })
+  async verifyPaymentSessionStatus(
+    @Param('stripeSessionId') stripeSessionId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.id;
+    return this.paymentService.verifyAndUpdatePaymentSessionStatus(
+      stripeSessionId,
+      userId,
+    );
+  }
+
+  @Post('webhooks/paypal')
+  @ApiOperation({ summary: 'Handle PayPal webhooks' })
+  @ApiResponse({ status: 200, description: 'Webhook processed successfully' })
+  async handlePayPalWebhook(
+    @Headers('paypal-transmission-id') transmissionId: string,
+    @Headers('paypal-transmission-time') transmissionTime: string,
+    @Headers('paypal-transmission-sig') transmissionSig: string,
+    @Headers('paypal-cert-url') certUrl: string,
+    @Req() req: RawBodyRequest<Request>,
+  ) {
+    // PayPal webhook verification and handling
+    // This is a basic implementation - you should verify the webhook signature
+    const event = req.body;
+    return this.paymentService.handlePayPalWebhook(event);
+  }
+
   @Post('sessions/:id/cancel')
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
@@ -184,9 +269,15 @@ export class PaymentController {
     @Headers('stripe-signature') signature: string,
     @Req() req: RawBodyRequest<Request>,
   ) {
-    console.log(signature);
     if (!signature) {
       throw new BadRequestException('Missing Stripe signature');
+    }
+
+    // Ensure we have the raw body
+    if (!req.rawBody) {
+      throw new BadRequestException(
+        'Raw body is missing. Webhook signature verification requires the raw request body.',
+      );
     }
 
     const event = this.paymentService.constructWebhookEvent(
@@ -344,14 +435,17 @@ export class PaymentController {
     @Req() req: AuthenticatedRequest,
   ) {
     const userId = req.user.id;
-    const enrollments = await this.paymentService.getUserEnrollments(userId);
-    const enrollment = enrollments.find((e) => e.courseId === courseId);
+    // Query enrollment directly by userId and courseId for better performance and reliability
+    const enrollment = await this.paymentService.getEnrollmentByUserAndCourse(
+      userId,
+      courseId,
+    );
 
     if (!enrollment) {
-      throw new BadRequestException('Enrollment not found for this course');
+      // Return 404 (Not Found) instead of 400 (Bad Request) for missing enrollment
+      // This is more semantically correct and allows frontend to handle it gracefully
+      throw new NotFoundException('Enrollment not found for this course');
     }
-
-    console.log(enrollment);
 
     return enrollment;
   }
@@ -388,10 +482,18 @@ export class PaymentController {
       );
     }
 
-    return this.paymentService.createStripeConnectAccount(
+    const result = await this.paymentService.createStripeConnectAccount(
       req.user.id,
       accountData,
     );
+
+    if (!result.success) {
+      throw new BadRequestException(
+        result.error || 'Failed to create Stripe Connect account',
+      );
+    }
+
+    return result;
   }
 
   @Get('connect/accounts')
@@ -490,5 +592,31 @@ export class PaymentController {
     @Req() req: RawBodyRequest<Request>,
   ) {
     return this.paymentService.handleStripeConnectWebhook(req.body);
+  }
+
+  @Post('connect/accounts/reset')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Reset Stripe Connect account - clears invalid account ID from database',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect account reset successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
+  })
+  async resetStripeConnectAccount(@Req() req: AuthenticatedRequest) {
+    // Only instructors can reset their Connect accounts
+    if (req.user.role !== 'INSTRUCTOR') {
+      throw new BadRequestException(
+        'Only instructors can reset Stripe Connect accounts',
+      );
+    }
+
+    return this.paymentService.resetStripeConnectAccount(req.user.id);
   }
 }

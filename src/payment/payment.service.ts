@@ -19,6 +19,7 @@ import {
   CouponValidationResponse,
   EnrollmentResponse,
 } from './interfaces/payment.interface';
+import { PayPalService } from './paypal.service';
 
 @Injectable()
 export class PaymentService {
@@ -28,6 +29,7 @@ export class PaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly paypalService: PayPalService,
   ) {
     const stripeKey = this.configService.get('STRIPE_SECRET_KEY');
     if (!stripeKey) {
@@ -132,43 +134,87 @@ export class PaymentService {
         }
       }
 
-      // Convert to cents for Stripe
+      // Determine payment provider
+      const provider = dto.provider || 'STRIPE';
+
+      // Convert to cents
       const amountInCents = Math.round(amount * 100);
       const discountInCents = Math.round(discountAmount * 100);
 
-      // Create Stripe Checkout Session
-      const session = await this.stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
+      const frontendUrl =
+        this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+      const defaultCancelUrl = `${frontendUrl}/payment/cancel`;
+
+      let redirectUrl: string | undefined;
+      let paymentProviderId: string | undefined;
+
+      if (provider === 'PAYPAL') {
+        // PayPal doesn't support placeholders in return URL
+        // PayPal will redirect with ?token=ORDER_ID in the URL
+        const paypalReturnUrl =
+          dto.returnUrl || `${frontendUrl}/payment/success?provider=PAYPAL`;
+
+        // Create PayPal order
+        const paypalOrder = await this.paypalService.createOrder(
+          amountInCents,
+          course.currency,
+          course.title,
+          paypalReturnUrl,
+          dto.cancelUrl || defaultCancelUrl,
           {
-            price_data: {
-              currency: course.currency.toLowerCase(),
-              product_data: {
-                name: course.title,
-                description: course.shortDescription || course.description,
-                images: course.thumbnail ? [course.thumbnail] : [],
-              },
-              unit_amount: amountInCents,
-            },
-            quantity: 1,
+            courseId: dto.courseId,
+            userId,
+            couponCode: dto.couponCode,
           },
-        ],
-        mode: 'payment',
-        success_url:
-          dto.returnUrl ||
-          `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:
-          dto.cancelUrl ||
-          `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/payment/cancel`,
-        metadata: {
-          courseId: dto.courseId,
-          userId,
-          couponCode: dto.couponCode ?? '',
-          originalPrice: course.price.toString(),
-          discountAmount: discountAmount.toString(),
-        },
-        expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 minutes
-      });
+        );
+
+        if (!paypalOrder) {
+          throw new BadRequestException('Failed to create PayPal order');
+        }
+
+        paymentProviderId = paypalOrder.id;
+        redirectUrl =
+          this.paypalService.getApprovalUrl(paypalOrder.links) || undefined;
+
+        if (!redirectUrl) {
+          throw new BadRequestException('Failed to get PayPal approval URL');
+        }
+      } else {
+        // Create Stripe Checkout Session
+        const session = await this.stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          line_items: [
+            {
+              price_data: {
+                currency: course.currency.toLowerCase(),
+                product_data: {
+                  name: course.title,
+                  description: course.shortDescription || course.description,
+                  images: course.thumbnail ? [course.thumbnail] : [],
+                },
+                unit_amount: amountInCents,
+              },
+              quantity: 1,
+            },
+          ],
+          mode: 'payment',
+          success_url:
+            dto.returnUrl ||
+            `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&provider=STRIPE`,
+          cancel_url: dto.cancelUrl || defaultCancelUrl,
+          metadata: {
+            courseId: dto.courseId,
+            userId,
+            couponCode: dto.couponCode ?? '',
+            originalPrice: course.price.toString(),
+            discountAmount: discountAmount.toString(),
+          },
+          expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 minutes
+        });
+
+        paymentProviderId = session.id;
+        redirectUrl = session.url ?? undefined;
+      }
 
       // Create payment session record
       const paymentSession = await this.prisma.paymentSession.create({
@@ -182,7 +228,10 @@ export class PaymentService {
           discountAmount: discountAmount,
           finalAmount: amount,
           couponCode: dto.couponCode ?? undefined,
-          stripeSessionId: session.id,
+          provider: provider,
+          stripeSessionId:
+            provider === 'STRIPE' ? paymentProviderId : undefined,
+          paypalOrderId: provider === 'PAYPAL' ? paymentProviderId : undefined,
           metadata: dto.metadata ?? {},
           expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
         },
@@ -197,13 +246,13 @@ export class PaymentService {
       }
 
       this.logger.log(
-        `Payment session created: ${paymentSession.id} for course: ${dto.courseId}`,
+        `Payment session created: ${paymentSession.id} for course: ${dto.courseId} with provider: ${provider}`,
       );
 
       return {
         success: true,
         session: paymentSession,
-        redirectUrl: session.url ?? undefined,
+        redirectUrl: redirectUrl,
         isFreeCourse: false,
       };
     } catch (error) {
@@ -348,7 +397,7 @@ export class PaymentService {
         throw new BadRequestException('User ID is required for enrollment');
       }
 
-      // Check if user is already enrolled
+      // Check if user is already enrolled (idempotent: return existing enrollment)
       const existingEnrollment = await this.prisma.enrollment.findUnique({
         where: {
           userId_courseId: {
@@ -356,12 +405,34 @@ export class PaymentService {
             courseId: dto.courseId,
           },
         },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              shortDescription: true,
+              price: true,
+              currency: true,
+              status: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
       });
 
       if (existingEnrollment) {
-        throw new BadRequestException(
-          'User is already enrolled in this course',
-        );
+        return {
+          success: true,
+          enrollment: existingEnrollment,
+        };
       }
 
       // Get course details
@@ -519,6 +590,177 @@ export class PaymentService {
       return session;
     } catch (error) {
       this.logger.error('Error getting payment session:', error);
+      throw error;
+    }
+  }
+
+  async getPaymentSessionByPayPalOrderId(paypalOrderId: string) {
+    try {
+      const paymentSession = await this.prisma.paymentSession.findFirst({
+        where: {
+          paypalOrderId,
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              price: true,
+              currency: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!paymentSession) {
+        throw new NotFoundException('Payment session not found');
+      }
+
+      return {
+        type: 'course_enrollment',
+        session: paymentSession,
+        paypalOrderId: paymentSession.paypalOrderId,
+        status: paymentSession.status,
+        amount: paymentSession.amount,
+        currency: paymentSession.currency,
+        course: paymentSession.course,
+        user: paymentSession.user,
+        createdAt: paymentSession.createdAt,
+        updatedAt: paymentSession.updatedAt,
+      };
+    } catch (error) {
+      this.logger.error(
+        'Error getting payment session by PayPal order ID:',
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async handlePayPalWebhook(event: any) {
+    try {
+      this.logger.log('PayPal webhook received:', event.event_type);
+
+      // Handle different webhook event types
+      if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+        // Payment was captured
+        const orderId =
+          event.resource?.supplementary_data?.related_ids?.order_id;
+        if (orderId) {
+          // Find payment session
+          const paymentSession = await this.prisma.paymentSession.findFirst({
+            where: { paypalOrderId: orderId },
+          });
+
+          if (paymentSession && paymentSession.status !== 'COMPLETED') {
+            await this.capturePayPalOrder(orderId, paymentSession.userId);
+          }
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error handling PayPal webhook:', error);
+      throw error;
+    }
+  }
+
+  async capturePayPalOrder(orderId: string, userId: string) {
+    try {
+      // Find payment session
+      const paymentSession = await this.prisma.paymentSession.findFirst({
+        where: {
+          paypalOrderId: orderId,
+          userId,
+        },
+        include: {
+          course: true,
+        },
+      });
+
+      if (!paymentSession) {
+        throw new NotFoundException('Payment session not found');
+      }
+
+      if (paymentSession.status === 'COMPLETED') {
+        return {
+          success: true,
+          session: paymentSession,
+          message: 'Payment already completed',
+        };
+      }
+
+      // Capture PayPal order
+      const captureResult = await this.paypalService.captureOrder(orderId);
+
+      if (!captureResult) {
+        throw new BadRequestException('Failed to capture PayPal order');
+      }
+
+      const capture =
+        captureResult.purchase_units?.[0]?.payments?.captures?.[0];
+
+      // Update payment session
+      const updatedSession = await this.prisma.paymentSession.update({
+        where: { id: paymentSession.id },
+        data: {
+          status: 'COMPLETED',
+          paypalPaymentId: capture?.id,
+          paymentIntentId: capture?.id, // Reuse paymentIntentId field for PayPal payment ID
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              price: true,
+              currency: true,
+              shortDescription: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      // Create enrollment
+      const enrollmentResult = await this.createEnrollment(
+        {
+          courseId: paymentSession.courseId,
+          type: EnrollmentType.PAID,
+          source: EnrollmentSource.DIRECT,
+          paymentSessionId: paymentSession.id,
+        },
+        userId,
+      );
+
+      this.logger.log(
+        `PayPal order captured: ${orderId} for payment session: ${paymentSession.id}`,
+      );
+
+      return {
+        success: true,
+        session: updatedSession,
+        enrollment: enrollmentResult.enrollment,
+      };
+    } catch (error) {
+      this.logger.error('Error capturing PayPal order:', error);
       throw error;
     }
   }
@@ -821,6 +1063,48 @@ export class PaymentService {
     }
   }
 
+  async getEnrollmentByUserAndCourse(userId: string, courseId: string) {
+    try {
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              shortDescription: true,
+              price: true,
+              currency: true,
+              status: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      return enrollment;
+    } catch (error) {
+      this.logger.error(
+        `Error getting enrollment for user ${userId} and course ${courseId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
   async handleWebhook(event: Stripe.Event) {
     try {
       switch (event.type) {
@@ -933,8 +1217,22 @@ export class PaymentService {
       if (!webhookSecret) {
         throw new Error('STRIPE_WEBHOOK_SECRET is not configured');
       }
+
+      // Ensure payload is in the correct format (Buffer or string)
+      let bodyToVerify = payload;
+      if (Buffer.isBuffer(payload)) {
+        bodyToVerify = payload.toString('utf8');
+      }
+
+      this.logger.debug('Verifying webhook signature...');
+      this.logger.debug(`Signature: ${signature.substring(0, 20)}...`);
+      this.logger.debug(`Payload type: ${typeof bodyToVerify}`);
+      this.logger.debug(
+        `Payload length: ${bodyToVerify?.length || 'undefined'}`,
+      );
+
       return this.stripe.webhooks.constructEvent(
-        payload,
+        bodyToVerify,
         signature,
         webhookSecret,
       );
@@ -1291,6 +1589,102 @@ export class PaymentService {
     }
   }
 
+  async verifyAndUpdatePaymentSessionStatus(
+    stripeSessionId: string,
+    userId: string,
+  ) {
+    try {
+      // Find the payment session
+      const paymentSession = await this.prisma.paymentSession.findFirst({
+        where: {
+          stripeSessionId,
+          userId,
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              thumbnail: true,
+              price: true,
+              currency: true,
+            },
+          },
+        },
+      });
+
+      if (!paymentSession) {
+        throw new NotFoundException('Payment session not found');
+      }
+
+      // If already completed, return it
+      if (paymentSession.status === 'COMPLETED') {
+        return {
+          success: true,
+          session: paymentSession,
+          updated: false,
+        };
+      }
+
+      // Verify with Stripe
+      const stripeSession =
+        await this.stripe.checkout.sessions.retrieve(stripeSessionId);
+
+      // Check if payment is completed
+      if (stripeSession.payment_status === 'paid') {
+        // Update payment session status
+        const updatedSession = await this.prisma.paymentSession.update({
+          where: { id: paymentSession.id },
+          data: {
+            status: 'COMPLETED',
+            paymentIntentId:
+              (stripeSession.payment_intent as string) ||
+              paymentSession.paymentIntentId,
+          },
+          include: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                thumbnail: true,
+                price: true,
+                currency: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        });
+
+        this.logger.log(
+          `Payment session ${paymentSession.id} status updated to COMPLETED`,
+        );
+
+        return {
+          success: true,
+          session: updatedSession,
+          updated: true,
+        };
+      }
+
+      // Payment not completed yet
+      return {
+        success: false,
+        session: paymentSession,
+        error: `Payment status is ${stripeSession.payment_status}, not paid`,
+      };
+    } catch (error) {
+      this.logger.error('Error verifying payment session status:', error);
+      throw error;
+    }
+  }
+
   async refundSessionPayment(
     paymentIntentId: string,
     reason: string = 'requested_by_customer',
@@ -1328,13 +1722,93 @@ export class PaymentService {
         throw new NotFoundException('Instructor not found');
       }
 
+      // If instructor already has a Stripe account ID, verify it exists in Stripe
       if ((existingInstructor as any).stripeAccountId) {
-        throw new BadRequestException(
-          'Instructor already has a Stripe Connect account',
-        );
+        try {
+          // Try to retrieve the account from Stripe
+          const existingAccount = await this.stripe.accounts.retrieve(
+            (existingInstructor as any).stripeAccountId,
+          );
+
+          this.logger.log(
+            `Instructor already has Stripe account: ${existingAccount.id}`,
+          );
+
+          // Account exists in Stripe, create a new onboarding link
+          const frontendUrl =
+            this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+          const baseUrl = frontendUrl.startsWith('http')
+            ? frontendUrl
+            : `http://${frontendUrl}`;
+
+          const accountLink = await this.stripe.accountLinks.create({
+            account: existingAccount.id,
+            refresh_url: `${baseUrl}/instructor/connect/refresh`,
+            return_url: `${baseUrl}/instructor/connect/return`,
+            type: 'account_onboarding',
+          });
+
+          return {
+            success: true,
+            accountId: existingAccount.id,
+            accountLink: accountLink.url,
+            account: {
+              id: existingAccount.id,
+              object: existingAccount.object,
+              business_type: existingAccount.business_type,
+              country: existingAccount.country,
+              email: existingAccount.email,
+              requirements: existingAccount.requirements,
+              charges_enabled: existingAccount.charges_enabled,
+              payouts_enabled: existingAccount.payouts_enabled,
+              details_submitted: existingAccount.details_submitted,
+            },
+            message:
+              'Account already exists. New onboarding link created for completion.',
+          };
+        } catch (stripeError: any) {
+          // Log the specific error for debugging
+          this.logger.warn(
+            `Error retrieving Stripe account ${(existingInstructor as any).stripeAccountId}: ${stripeError.message}`,
+          );
+          this.logger.warn(`Stripe error code: ${stripeError.code}`);
+          this.logger.warn(`Stripe error type: ${stripeError.type}`);
+
+          // Handle different error scenarios
+          const shouldClearAccount =
+            stripeError.code === 'account_invalid' || // Account doesn't exist
+            stripeError.code === 'resource_missing' || // Account not found
+            stripeError.type === 'StripePermissionError' || // No access to account
+            stripeError.message?.includes('does not have access') || // API key mismatch
+            stripeError.message?.includes('does not exist'); // Account deleted
+
+          if (shouldClearAccount) {
+            this.logger.warn(
+              `Clearing invalid Stripe account ID ${(existingInstructor as any).stripeAccountId} from database. Reason: ${stripeError.message}`,
+            );
+
+            // Clear the invalid account ID from database
+            await this.prisma.user.update({
+              where: { id: instructorId },
+              data: { stripeAccountId: null },
+            });
+
+            this.logger.log(
+              'Invalid Stripe account ID cleared. Will create a new account.',
+            );
+            // Continue to create new account below
+          } else {
+            // For other errors, throw them up
+            throw stripeError;
+          }
+        }
       }
 
-      // Create Stripe Connect account
+      // Create new Stripe Connect account
+      this.logger.log(
+        `Creating new Stripe Connect account for instructor: ${instructorId}`,
+      );
+
       const account = await this.stripe.accounts.create({
         type: 'express',
         country: accountData.country,
@@ -1349,6 +1823,8 @@ export class PaymentService {
         // Remove tos_acceptance - it will be handled during onboarding
       });
 
+      this.logger.log(`Stripe account created: ${account.id}`);
+
       // Update instructor with Stripe account ID
       await this.prisma.user.update({
         where: { id: instructorId },
@@ -1356,6 +1832,8 @@ export class PaymentService {
           stripeAccountId: account.id,
         },
       });
+
+      this.logger.log(`Database updated with Stripe account ID: ${account.id}`);
 
       // Create account link for onboarding
       const frontendUrl =
@@ -1373,6 +1851,8 @@ export class PaymentService {
         type: 'account_onboarding',
       });
 
+      this.logger.log(`Account link created: ${accountLink.url}`);
+
       return {
         success: true,
         accountId: account.id,
@@ -1384,13 +1864,23 @@ export class PaymentService {
           country: account.country,
           email: account.email,
           requirements: account.requirements,
+          charges_enabled: account.charges_enabled,
+          payouts_enabled: account.payouts_enabled,
+          details_submitted: account.details_submitted,
         },
       };
     } catch (error) {
       this.logger.error('Error creating Stripe Connect account:', error);
+      this.logger.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+      });
       return {
         success: false,
         error: error.message,
+        errorCode: error.code,
+        errorType: error.type,
       };
     }
   }
@@ -1562,6 +2052,50 @@ export class PaymentService {
   private async handleAccountDeauthorized(account: any) {
     this.logger.log(`Stripe Connect account deauthorized: ${account.id}`);
     // You can add additional logic here to disable instructor payments
+  }
+
+  async resetStripeConnectAccount(instructorId: string) {
+    try {
+      const instructor = await this.prisma.user.findUnique({
+        where: { id: instructorId },
+      });
+
+      if (!instructor) {
+        throw new NotFoundException('Instructor not found');
+      }
+
+      const oldAccountId = (instructor as any).stripeAccountId;
+
+      if (!oldAccountId) {
+        return {
+          success: true,
+          message: 'No Stripe account to reset',
+        };
+      }
+
+      // Clear the Stripe account ID from database
+      await this.prisma.user.update({
+        where: { id: instructorId },
+        data: { stripeAccountId: null },
+      });
+
+      this.logger.log(
+        `Stripe account ID ${oldAccountId} cleared for instructor ${instructorId}`,
+      );
+
+      return {
+        success: true,
+        message:
+          'Stripe Connect account reset successfully. You can now create a new account.',
+        clearedAccountId: oldAccountId,
+      };
+    } catch (error) {
+      this.logger.error('Error resetting Stripe Connect account:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   // =============================================================================

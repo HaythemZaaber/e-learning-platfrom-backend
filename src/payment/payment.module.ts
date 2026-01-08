@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PaymentController } from './payment.controller';
 import { PaymentService } from './payment.service';
 import { PaymentResolver } from './payment.resolver';
+import { PayPalService } from './paypal.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 
@@ -13,7 +14,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [PaymentController],
-  providers: [PaymentService, PaymentResolver],
-  exports: [PaymentService],
+  providers: [PaymentService, PaymentResolver, PayPalService],
+  exports: [PaymentService, PayPalService],
 })
 export class PaymentModule {}

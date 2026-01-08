@@ -1,16 +1,33 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../../payment/payment.service';
-import { SessionStatus, PaymentStatus, ReservationStatus, ParticipantStatus, ParticipantRole, PayoutStatus, BookingMode, LiveSessionType, SessionFormat, SessionMode } from '@prisma/client';
-import { 
+import {
+  SessionStatus,
+  PaymentStatus,
+  ReservationStatus,
+  ParticipantStatus,
+  ParticipantRole,
+  PayoutStatus,
+  BookingMode,
+  LiveSessionType,
+  SessionFormat,
+  SessionMode,
+} from '@prisma/client';
+import {
   CreateSessionBookingDto,
   ConfirmSessionBookingDto,
   CompleteSessionDto,
   SessionBookingFilterDto,
   CancelSessionBookingDto,
   RescheduleSessionDto,
-  BookingStatus
+  BookingStatus,
 } from '../dto/session-booking.dto';
 
 @Injectable()
@@ -32,24 +49,24 @@ export class SessionBookingService {
         include: {
           availability: {
             include: {
-              instructor: true
-            }
+              instructor: true,
+            },
           },
           bookingRequests: {
             where: {
               status: {
-                in: ['PENDING', 'ACCEPTED']
-              }
-            }
+                in: ['PENDING', 'ACCEPTED'],
+              },
+            },
           },
           sessions: {
             where: {
               status: {
-                in: ['SCHEDULED', 'IN_PROGRESS']
-              }
-            }
-          }
-        }
+                in: ['SCHEDULED', 'IN_PROGRESS'],
+              },
+            },
+          },
+        },
       });
 
       if (!timeSlot) {
@@ -62,7 +79,8 @@ export class SessionBookingService {
       }
 
       // Check if slot is already fully booked (including pending bookings)
-      const totalBookings = timeSlot.currentBookings + timeSlot.bookingRequests.length;
+      const totalBookings =
+        timeSlot.currentBookings + timeSlot.bookingRequests.length;
       if (totalBookings >= timeSlot.maxBookings) {
         throw new BadRequestException('Time slot is already fully booked');
       }
@@ -76,8 +94,8 @@ export class SessionBookingService {
       const offering = await tx.sessionOffering.findUnique({
         where: { id: dto.offeringId },
         include: {
-          instructor: true
-        }
+          instructor: true,
+        },
       });
 
       if (!offering) {
@@ -90,7 +108,7 @@ export class SessionBookingService {
 
       // Validate student
       const student = await tx.user.findUnique({
-        where: { id: dto.studentId }
+        where: { id: dto.studentId },
       });
 
       if (!student) {
@@ -100,15 +118,15 @@ export class SessionBookingService {
       // Check instructor's auto-approval settings
       // Note: Availability-level autoAcceptBookings overrides instructor profile setting
       const instructorProfile = await tx.instructorProfile.findUnique({
-        where: { userId: offering.instructorId }
+        where: { userId: offering.instructorId },
       });
 
       const availability = await tx.instructorAvailability.findFirst({
-        where: { 
+        where: {
           instructorId: offering.instructorId,
           specificDate: timeSlot.date,
-          isActive: true
-        }
+          isActive: true,
+        },
       });
 
       // Enhanced auto-approval logic with availability-level priority
@@ -117,7 +135,7 @@ export class SessionBookingService {
         availability,
         timeSlot,
         offering,
-        totalBookings: totalBookings + 1 // Include this booking
+        totalBookings: totalBookings + 1, // Include this booking
       });
 
       // Create booking request
@@ -133,67 +151,78 @@ export class SessionBookingService {
           offeredPrice: dto.agreedPrice,
           finalPrice: dto.agreedPrice,
           currency: dto.currency,
-          status: shouldAutoApprove ? BookingStatus.ACCEPTED : BookingStatus.PENDING,
+          status: shouldAutoApprove
+            ? BookingStatus.ACCEPTED
+            : BookingStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
-          priority: 1
+          priority: 1,
         },
         include: {
           offering: {
             include: {
-              instructor: true
-            }
+              instructor: true,
+            },
           },
           student: true,
           timeSlot: {
             include: {
-              availability: true
-            }
-          }
-        }
+              availability: true,
+            },
+          },
+        },
       });
 
       // Only update time slot booking count if auto-approval is enabled
       // For manual approval, the count will be updated when the instructor approves
       if (shouldAutoApprove) {
-        this.logger.debug(`Auto-approval enabled: updating slot ${dto.timeSlotId}`, {
-          currentBookings: timeSlot.currentBookings,
-          maxBookings: timeSlot.maxBookings,
-          willBeBooked: totalBookings + 1 >= timeSlot.maxBookings
-        });
-        
+        this.logger.debug(
+          `Auto-approval enabled: updating slot ${dto.timeSlotId}`,
+          {
+            currentBookings: timeSlot.currentBookings,
+            maxBookings: timeSlot.maxBookings,
+            willBeBooked: totalBookings + 1 >= timeSlot.maxBookings,
+          },
+        );
+
         await tx.timeSlot.update({
           where: { id: dto.timeSlotId },
           data: {
             currentBookings: {
-              increment: 1
+              increment: 1,
             },
-            isBooked: totalBookings + 1 >= timeSlot.maxBookings
-          }
+            isBooked: totalBookings + 1 >= timeSlot.maxBookings,
+          },
         });
       } else {
-        this.logger.debug(`Manual approval required: slot ${dto.timeSlotId} not updated yet`, {
-          currentBookings: timeSlot.currentBookings,
-          maxBookings: timeSlot.maxBookings,
-          autoApproval: shouldAutoApprove
-        });
+        this.logger.debug(
+          `Manual approval required: slot ${dto.timeSlotId} not updated yet`,
+          {
+            currentBookings: timeSlot.currentBookings,
+            maxBookings: timeSlot.maxBookings,
+            autoApproval: shouldAutoApprove,
+          },
+        );
       }
 
       // Create payment using the payment service
-      const paymentResult = await this.paymentService.createSessionBookingPayment(
-        bookingRequest.id,
-        dto.offeringId,
-        dto.studentId,
-        offering.instructorId,
-        dto.agreedPrice,
-        dto.currency,
-        dto.returnUrl,
-        dto.cancelUrl
-      );
+      const paymentResult =
+        await this.paymentService.createSessionBookingPayment(
+          bookingRequest.id,
+          dto.offeringId,
+          dto.studentId,
+          offering.instructorId,
+          dto.agreedPrice,
+          dto.currency,
+          dto.returnUrl,
+          dto.cancelUrl,
+        );
 
       if (!paymentResult.success) {
         // The transaction will automatically rollback if we throw an error
-        throw new BadRequestException(paymentResult.error || 'Failed to create payment');
+        throw new BadRequestException(
+          paymentResult.error || 'Failed to create payment',
+        );
       }
 
       // Update booking request with payment details
@@ -202,14 +231,17 @@ export class SessionBookingService {
         data: {
           paymentIntentId: null, // Will be updated when payment is completed
           stripeSessionId: paymentResult.checkoutSession!.id,
-          paymentStatus: PaymentStatus.PENDING
-        }
+          paymentStatus: PaymentStatus.PENDING,
+        },
       });
 
       // If auto-approval is enabled, create live session immediately
       let liveSession: any = null;
       if (shouldAutoApprove) {
-        liveSession = await this.createLiveSessionFromBookingInTransaction(bookingRequest, tx);
+        liveSession = await this.createLiveSessionFromBookingInTransaction(
+          bookingRequest,
+          tx,
+        );
       }
 
       return {
@@ -218,7 +250,7 @@ export class SessionBookingService {
         paymentIntent: paymentResult.paymentIntent,
         checkoutSession: paymentResult.checkoutSession,
         autoApproved: shouldAutoApprove,
-        liveSession: liveSession
+        liveSession: liveSession,
       };
     });
   }
@@ -234,7 +266,13 @@ export class SessionBookingService {
     offering: any;
     totalBookings: number;
   }): boolean {
-    const { instructorProfile, availability, timeSlot, offering, totalBookings } = params;
+    const {
+      instructorProfile,
+      availability,
+      timeSlot,
+      offering,
+      totalBookings,
+    } = params;
 
     // Debug logging
     this.logger.debug('Auto-accept logic inputs:', {
@@ -242,20 +280,24 @@ export class SessionBookingService {
       availabilityAutoAccept: availability?.autoAcceptBookings,
       availabilityId: availability?.id,
       timeSlotId: timeSlot?.id,
-      offeringAutoAccept: offering?.autoAcceptBookings
+      offeringAutoAccept: offering?.autoAcceptBookings,
     });
 
     // PRIORITY: Check availability autoAcceptBookings first (this overrides instructor profile)
     const slotAutoAccept = availability?.autoAcceptBookings;
-    
+
     // If slot has explicit autoAcceptBookings setting, use it (true/false)
     // If slot doesn't have this setting, fall back to instructor profile
-    const shouldAutoAccept = slotAutoAccept !== undefined ? slotAutoAccept : instructorProfile?.autoAcceptBookings === true;
+    const shouldAutoAccept =
+      slotAutoAccept !== undefined
+        ? slotAutoAccept
+        : instructorProfile?.autoAcceptBookings === true;
 
     this.logger.debug('Auto-accept decision:', {
       slotAutoAccept,
       shouldAutoAccept,
-      finalDecision: shouldAutoAccept === true ? 'AUTO_ACCEPT' : 'MANUAL_APPROVAL'
+      finalDecision:
+        shouldAutoAccept === true ? 'AUTO_ACCEPT' : 'MANUAL_APPROVAL',
     });
 
     // If auto-accept is disabled at slot level, don't proceed
@@ -276,21 +318,28 @@ export class SessionBookingService {
     // Check if time slot is within acceptable booking window
     const now = new Date();
     const slotDate = new Date(timeSlot.date);
-    const hoursUntilSlot = (slotDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
-    const minAdvanceHours = availability?.minAdvanceHours || instructorProfile?.minAdvanceBooking || 12;
+    const hoursUntilSlot =
+      (slotDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    const minAdvanceHours =
+      availability?.minAdvanceHours ||
+      instructorProfile?.minAdvanceBooking ||
+      12;
     const maxAdvanceHours = availability?.maxAdvanceHours || 720; // 30 days default
-    
-    const withinBookingWindow = hoursUntilSlot >= minAdvanceHours && hoursUntilSlot <= maxAdvanceHours;
+
+    const withinBookingWindow =
+      hoursUntilSlot >= minAdvanceHours && hoursUntilSlot <= maxAdvanceHours;
 
     // Check if slot has capacity
     const hasCapacity = totalBookings < timeSlot.maxBookings;
 
     // Check if instructor is accepting students
-    const instructorAcceptingStudents = instructorProfile?.isAcceptingStudents !== false;
+    const instructorAcceptingStudents =
+      instructorProfile?.isAcceptingStudents !== false;
 
     // Check if live sessions are enabled for instructor
-    const liveSessionsEnabled = instructorProfile?.liveSessionsEnabled !== false;
+    const liveSessionsEnabled =
+      instructorProfile?.liveSessionsEnabled !== false;
 
     // Auto-approve only if ALL conditions are met
     return (
@@ -306,7 +355,10 @@ export class SessionBookingService {
   /**
    * Create live session from booking within a transaction
    */
-  private async createLiveSessionFromBookingInTransaction(bookingRequest: any, tx: any) {
+  private async createLiveSessionFromBookingInTransaction(
+    bookingRequest: any,
+    tx: any,
+  ) {
     // Create live session
     const liveSession = await tx.liveSession.create({
       data: {
@@ -329,14 +381,14 @@ export class SessionBookingService {
         pricePerPerson: bookingRequest.finalPrice || 0,
         totalPrice: bookingRequest.finalPrice || 0,
         totalRevenue: bookingRequest.finalPrice || 0,
-        platformFee: (bookingRequest.finalPrice || 0) * 0.20, // 20% platform fee
-        instructorPayout: (bookingRequest.finalPrice || 0) * 0.80, // 80% to instructor
+        platformFee: (bookingRequest.finalPrice || 0) * 0.2, // 20% platform fee
+        instructorPayout: (bookingRequest.finalPrice || 0) * 0.8, // 80% to instructor
         currency: bookingRequest.currency,
         status: SessionStatus.SCHEDULED,
         timeSlotId: bookingRequest.timeSlotId || undefined,
         materials: bookingRequest.offering.materials,
-        recordingEnabled: bookingRequest.offering.recordingEnabled
-      }
+        recordingEnabled: bookingRequest.offering.recordingEnabled,
+      },
     });
 
     // Create session participant
@@ -348,8 +400,8 @@ export class SessionBookingService {
         status: ParticipantStatus.ENROLLED,
         paidAmount: bookingRequest.finalPrice || 0,
         currency: bookingRequest.currency,
-        paymentDate: new Date()
-      }
+        paymentDate: new Date(),
+      },
     });
 
     // Create session reservation
@@ -361,25 +413,25 @@ export class SessionBookingService {
         paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
         agreedPrice: bookingRequest.finalPrice || 0,
         currency: bookingRequest.currency,
-        confirmedAt: new Date()
-      }
+        confirmedAt: new Date(),
+      },
     });
 
     // Generate meeting room ID (will be updated when Stream call is created)
     const meetingRoomId = this.generateMeetingId(liveSession.id);
-    
+
     const updatedLiveSession = await tx.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://getstream.io/call/${meetingRoomId}`
-      }
+        meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+      },
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://getstream.io/call/${meetingRoomId}`
+      meetingLink: `https://getstream.io/call/${meetingRoomId}`,
     };
   }
 
@@ -391,8 +443,8 @@ export class SessionBookingService {
         include: {
           offering: {
             include: {
-              instructor: true
-            }
+              instructor: true,
+            },
           },
           student: true,
           timeSlot: {
@@ -401,23 +453,23 @@ export class SessionBookingService {
               bookingRequests: {
                 where: {
                   status: {
-                    in: ['PENDING', 'ACCEPTED']
+                    in: ['PENDING', 'ACCEPTED'],
                   },
                   id: {
-                    not: dto.bookingId // Exclude this booking request
-                  }
-                }
+                    not: dto.bookingId, // Exclude this booking request
+                  },
+                },
               },
               sessions: {
                 where: {
                   status: {
-                    in: ['SCHEDULED', 'IN_PROGRESS']
-                  }
-                }
-              }
-            }
-          }
-        }
+                    in: ['SCHEDULED', 'IN_PROGRESS'],
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!bookingRequest) {
@@ -431,10 +483,10 @@ export class SessionBookingService {
       }
 
       if (!timeSlot.isAvailable || timeSlot.isBlocked) {
-        throw new BadRequestException('Time slot is no longer available for booking');
+        throw new BadRequestException(
+          'Time slot is no longer available for booking',
+        );
       }
-
-                             
 
       // Check if there are conflicting sessions
       if (timeSlot.sessions.length > 0) {
@@ -449,36 +501,40 @@ export class SessionBookingService {
       // Get PaymentIntent from checkout session if not already set
       let paymentIntentId = dto.paymentIntentId;
       if (!paymentIntentId && bookingRequest.stripeSessionId) {
-        const paymentIntentResult = await this.paymentService.getPaymentIntentFromCheckoutSession(
-          bookingRequest.stripeSessionId
-        );
-        
+        const paymentIntentResult =
+          await this.paymentService.getPaymentIntentFromCheckoutSession(
+            bookingRequest.stripeSessionId,
+          );
+
         if (paymentIntentResult.success) {
           paymentIntentId = paymentIntentResult.paymentIntent!.id;
-          
+
           // Update booking request with PaymentIntent ID
           await tx.bookingRequest.update({
             where: { id: dto.bookingId },
             data: {
-              paymentIntentId: paymentIntentId
-            }
+              paymentIntentId: paymentIntentId,
+            },
           });
         } else {
-          throw new BadRequestException('Failed to retrieve PaymentIntent from checkout session');
+          throw new BadRequestException(
+            'Failed to retrieve PaymentIntent from checkout session',
+          );
         }
       }
 
       // Verify payment intent status
       if (paymentIntentId) {
-        const paymentIntentResult = await this.paymentService.getPaymentIntentFromCheckoutSession(
-          bookingRequest.stripeSessionId!
-        );
-        
+        const paymentIntentResult =
+          await this.paymentService.getPaymentIntentFromCheckoutSession(
+            bookingRequest.stripeSessionId!,
+          );
+
         if (paymentIntentResult.success) {
           const status = paymentIntentResult.paymentIntent!.status;
           if (status !== 'requires_capture') {
             throw new BadRequestException(
-              `Payment is not ready for capture. Current status: ${status}. Expected: requires_capture`
+              `Payment is not ready for capture. Current status: ${status}. Expected: requires_capture`,
             );
           }
         }
@@ -486,7 +542,7 @@ export class SessionBookingService {
 
       // Check if live session already exists for this booking request
       let liveSession = await tx.liveSession.findUnique({
-        where: { bookingRequestId: bookingRequest.id }
+        where: { bookingRequestId: bookingRequest.id },
       });
 
       if (!liveSession) {
@@ -512,14 +568,14 @@ export class SessionBookingService {
             pricePerPerson: bookingRequest.finalPrice || 0,
             totalPrice: bookingRequest.finalPrice || 0,
             totalRevenue: bookingRequest.finalPrice || 0,
-            platformFee: (bookingRequest.finalPrice || 0) * 0.20, // 20% platform fee
-            instructorPayout: (bookingRequest.finalPrice || 0) * 0.80, // 80% to instructor
+            platformFee: (bookingRequest.finalPrice || 0) * 0.2, // 20% platform fee
+            instructorPayout: (bookingRequest.finalPrice || 0) * 0.8, // 80% to instructor
             currency: bookingRequest.currency,
             status: SessionStatus.SCHEDULED,
             timeSlotId: bookingRequest.timeSlotId || undefined,
             materials: bookingRequest.offering.materials,
-            recordingEnabled: bookingRequest.offering.recordingEnabled
-          }
+            recordingEnabled: bookingRequest.offering.recordingEnabled,
+          },
         });
       }
 
@@ -527,8 +583,8 @@ export class SessionBookingService {
       const existingParticipant = await tx.sessionParticipant.findFirst({
         where: {
           sessionId: liveSession.id,
-          userId: bookingRequest.studentId
-        }
+          userId: bookingRequest.studentId,
+        },
       });
 
       if (!existingParticipant) {
@@ -541,8 +597,8 @@ export class SessionBookingService {
             status: ParticipantStatus.ENROLLED,
             paidAmount: bookingRequest.finalPrice || 0,
             currency: bookingRequest.currency,
-            paymentDate: new Date()
-          }
+            paymentDate: new Date(),
+          },
         });
       }
 
@@ -550,8 +606,8 @@ export class SessionBookingService {
       const existingReservation = await tx.sessionReservation.findFirst({
         where: {
           sessionId: liveSession.id,
-          learnerId: bookingRequest.studentId
-        }
+          learnerId: bookingRequest.studentId,
+        },
       });
 
       if (!existingReservation) {
@@ -564,8 +620,8 @@ export class SessionBookingService {
             paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
             agreedPrice: bookingRequest.finalPrice || 0,
             currency: bookingRequest.currency,
-            confirmedAt: new Date()
-          }
+            confirmedAt: new Date(),
+          },
         });
       }
 
@@ -574,10 +630,10 @@ export class SessionBookingService {
         where: { id: bookingRequest.timeSlotId! },
         data: {
           currentBookings: {
-            increment: 1
+            increment: 1,
           },
-          isBooked: (timeSlot.currentBookings + 1) >= timeSlot.maxBookings
-        }
+          isBooked: timeSlot.currentBookings + 1 >= timeSlot.maxBookings,
+        },
       });
 
       // Update booking request status
@@ -588,20 +644,20 @@ export class SessionBookingService {
           paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
           acceptedAt: new Date(),
           liveSession: {
-            connect: { id: liveSession.id }
-          }
-        }
+            connect: { id: liveSession.id },
+          },
+        },
       });
 
       // Generate meeting room ID (will be updated when Stream call is created)
       const meetingRoomId = this.generateMeetingId(liveSession.id);
-      
+
       await tx.liveSession.update({
         where: { id: liveSession.id },
         data: {
           meetingRoomId,
-          meetingLink: `https://getstream.io/call/${meetingRoomId}`
-        }
+          meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+        },
       });
 
       return {
@@ -609,14 +665,14 @@ export class SessionBookingService {
         liveSession: {
           ...liveSession,
           meetingRoomId,
-          meetingLink: `https://meet.jit.si/${meetingRoomId}`
+          meetingLink: `https://meet.jit.si/${meetingRoomId}`,
         },
         paymentIntent: {
           id: dto.paymentIntentId,
           status: 'requires_capture',
           amount: bookingRequest.finalPrice || 0,
-          currency: bookingRequest.currency
-        }
+          currency: bookingRequest.currency,
+        },
       };
     });
   }
@@ -625,20 +681,31 @@ export class SessionBookingService {
     // Delegate to LiveSessionService for consistency
     // This method is kept for backward compatibility but now uses the unified logic
     const { LiveSessionService } = await import('./live-session.service');
-    const { StreamService } = await import('../../stream/services/stream.service.simple');
+    const { StreamService } = await import(
+      '../../stream/services/stream.service.simple'
+    );
     const streamService = new StreamService(this.configService, this.prisma);
-    const liveSessionService = new LiveSessionService(this.prisma, this.paymentService, streamService, this.configService);
-    
+    const liveSessionService = new LiveSessionService(
+      this.prisma,
+      this.paymentService,
+      streamService,
+      this.configService,
+    );
+
     return liveSessionService.endLiveSession(dto.sessionId, {
       notes: dto.summary,
       summary: dto.summary,
       instructorNotes: dto.instructorNotes,
       sessionArtifacts: dto.sessionArtifacts,
-      actualDuration: dto.actualDuration
+      actualDuration: dto.actualDuration,
     });
   }
 
-  async approveSessionBooking(bookingId: string, instructorId: string, instructorMessage?: string) {
+  async approveSessionBooking(
+    bookingId: string,
+    instructorId: string,
+    instructorMessage?: string,
+  ) {
     // Use a database transaction to ensure atomicity
     return await this.prisma.$transaction(async (tx) => {
       const bookingRequest = await tx.bookingRequest.findUnique({
@@ -646,8 +713,8 @@ export class SessionBookingService {
         include: {
           offering: {
             include: {
-              instructor: true
-            }
+              instructor: true,
+            },
           },
           student: true,
           timeSlot: {
@@ -656,23 +723,23 @@ export class SessionBookingService {
               bookingRequests: {
                 where: {
                   status: {
-                    in: ['PENDING', 'ACCEPTED']
+                    in: ['PENDING', 'ACCEPTED'],
                   },
                   id: {
-                    not: bookingId // Exclude this booking request
-                  }
-                }
+                    not: bookingId, // Exclude this booking request
+                  },
+                },
               },
               sessions: {
                 where: {
                   status: {
-                    in: ['SCHEDULED', 'IN_PROGRESS']
-                  }
-                }
-              }
-            }
-          }
-        }
+                    in: ['SCHEDULED', 'IN_PROGRESS'],
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!bookingRequest) {
@@ -696,20 +763,22 @@ export class SessionBookingService {
       }
 
       if (!timeSlot.isAvailable || timeSlot.isBlocked) {
-        throw new BadRequestException('Time slot is no longer available for booking');
+        throw new BadRequestException(
+          'Time slot is no longer available for booking',
+        );
       }
 
       // Check if slot has capacity (excluding this booking request)
       // The current booking request is already counted in currentBookings if it was auto-accepted
       const totalBookings = timeSlot.currentBookings;
-      
+
       this.logger.debug(`Slot capacity check for approval:`, {
         timeSlotId: timeSlot.id,
         currentBookings: timeSlot.currentBookings,
         maxBookings: timeSlot.maxBookings,
-        hasCapacity: totalBookings < timeSlot.maxBookings
+        hasCapacity: totalBookings < timeSlot.maxBookings,
       });
-      
+
       if (totalBookings >= timeSlot.maxBookings) {
         throw new BadRequestException('Time slot is already fully booked');
       }
@@ -730,8 +799,8 @@ export class SessionBookingService {
         data: {
           status: BookingStatus.ACCEPTED,
           instructorResponse: instructorMessage,
-          acceptedAt: new Date()
-        }
+          acceptedAt: new Date(),
+        },
       });
 
       // Update time slot booking count
@@ -739,14 +808,17 @@ export class SessionBookingService {
         where: { id: timeSlot.id },
         data: {
           currentBookings: {
-            increment: 1
+            increment: 1,
           },
-          isBooked: totalBookings + 1 >= timeSlot.maxBookings
-        }
+          isBooked: totalBookings + 1 >= timeSlot.maxBookings,
+        },
       });
 
       // Create live session
-      const liveSession = await this.createLiveSessionFromBookingInTransaction(bookingRequest, tx);
+      const liveSession = await this.createLiveSessionFromBookingInTransaction(
+        bookingRequest,
+        tx,
+      );
 
       return {
         success: true,
@@ -755,14 +827,18 @@ export class SessionBookingService {
           ...bookingRequest,
           status: BookingStatus.ACCEPTED,
           instructorResponse: instructorMessage,
-          acceptedAt: new Date()
+          acceptedAt: new Date(),
         },
-        liveSession
+        liveSession,
       };
     });
   }
 
-  async rejectSessionBooking(bookingId: string, instructorId: string, reason?: string) {
+  async rejectSessionBooking(
+    bookingId: string,
+    instructorId: string,
+    reason?: string,
+  ) {
     // Use a database transaction to ensure atomicity
     return await this.prisma.$transaction(async (tx) => {
       const bookingRequest = await tx.bookingRequest.findUnique({
@@ -770,13 +846,13 @@ export class SessionBookingService {
         include: {
           offering: {
             include: {
-              instructor: true
-            }
+              instructor: true,
+            },
           },
           student: true,
           timeSlot: true,
-          liveSession: true
-        }
+          liveSession: true,
+        },
       });
 
       if (!bookingRequest) {
@@ -795,15 +871,17 @@ export class SessionBookingService {
 
       // Handle payment processing based on payment status
       let paymentHandlingResult: any = null;
-      
+
       if (bookingRequest.paymentIntentId) {
         // Payment was made - process refund
         try {
-          this.logger.log(`Processing refund for rejected booking ${bookingId}, payment intent: ${bookingRequest.paymentIntentId}`);
-          
+          this.logger.log(
+            `Processing refund for rejected booking ${bookingId}, payment intent: ${bookingRequest.paymentIntentId}`,
+          );
+
           const refundResult = await this.paymentService.refundSessionPayment(
             bookingRequest.paymentIntentId,
-            'instructor_rejected'
+            'instructor_rejected',
           );
 
           if (refundResult.success) {
@@ -812,45 +890,58 @@ export class SessionBookingService {
               refundId: refundResult.refund?.id,
               amount: refundResult.refund?.amount,
               currency: refundResult.refund?.currency,
-              message: 'Refund processed successfully'
+              message: 'Refund processed successfully',
             };
-            
-            this.logger.log(`Refund processed successfully: ${refundResult.refund?.id}`);
+
+            this.logger.log(
+              `Refund processed successfully: ${refundResult.refund?.id}`,
+            );
           } else {
             paymentHandlingResult = {
               success: false,
               error: refundResult.error,
-              requiresManualIntervention: true
+              requiresManualIntervention: true,
             };
-            
-            this.logger.error(`Refund failed for booking ${bookingId}:`, refundResult.error);
+
+            this.logger.error(
+              `Refund failed for booking ${bookingId}:`,
+              refundResult.error,
+            );
           }
         } catch (error) {
-          this.logger.error(`Exception during refund processing for booking ${bookingId}:`, error);
+          this.logger.error(
+            `Exception during refund processing for booking ${bookingId}:`,
+            error,
+          );
           paymentHandlingResult = {
             success: false,
             error: error.message,
-            requiresManualIntervention: true
+            requiresManualIntervention: true,
           };
         }
       } else if (bookingRequest.stripeSessionId) {
         // Payment session exists but no payment intent yet - log for manual intervention
-        this.logger.log(`Stripe session exists for rejected booking ${bookingId}, session: ${bookingRequest.stripeSessionId}`);
-        
+        this.logger.log(
+          `Stripe session exists for rejected booking ${bookingId}, session: ${bookingRequest.stripeSessionId}`,
+        );
+
         paymentHandlingResult = {
           success: false,
-          error: 'Stripe session exists but no payment intent - requires manual intervention',
+          error:
+            'Stripe session exists but no payment intent - requires manual intervention',
           requiresManualIntervention: true,
-          message: 'Payment session requires manual cancellation'
+          message: 'Payment session requires manual cancellation',
         };
-        
-        this.logger.warn(`Stripe session ${bookingRequest.stripeSessionId} requires manual cancellation for rejected booking ${bookingId}`);
+
+        this.logger.warn(
+          `Stripe session ${bookingRequest.stripeSessionId} requires manual cancellation for rejected booking ${bookingId}`,
+        );
       } else {
         // No payment made yet
         paymentHandlingResult = {
           success: true,
           noPaymentToProcess: true,
-          message: 'No payment to process'
+          message: 'No payment to process',
         };
       }
 
@@ -860,10 +951,10 @@ export class SessionBookingService {
           where: { id: bookingRequest.timeSlot.id },
           data: {
             currentBookings: {
-              decrement: 1
+              decrement: 1,
             },
-            isBooked: false
-          }
+            isBooked: false,
+          },
         });
       }
 
@@ -872,8 +963,8 @@ export class SessionBookingService {
         await tx.liveSession.update({
           where: { id: bookingRequest.liveSession.id },
           data: {
-            status: SessionStatus.CANCELLED
-          }
+            status: SessionStatus.CANCELLED,
+          },
         });
       }
 
@@ -884,22 +975,27 @@ export class SessionBookingService {
           status: BookingStatus.REJECTED,
           instructorResponse: reason,
           rejectedAt: new Date(),
-          paymentStatus: paymentHandlingResult?.success && !paymentHandlingResult?.noPaymentToProcess 
-            ? PaymentStatus.REFUNDED 
-            : PaymentStatus.CANCELED
-        }
+          paymentStatus:
+            paymentHandlingResult?.success &&
+            !paymentHandlingResult?.noPaymentToProcess
+              ? PaymentStatus.REFUNDED
+              : PaymentStatus.CANCELED,
+        },
       });
 
       // Send notification to student about rejection
       // This would typically be handled by a notification service
-      this.logger.log(`Sending rejection notification to student ${bookingRequest.studentId} for booking ${bookingId}`);
+      this.logger.log(
+        `Sending rejection notification to student ${bookingRequest.studentId} for booking ${bookingId}`,
+      );
 
       return {
         success: true,
         message: 'Booking rejected successfully',
         bookingRequest: updatedBookingRequest,
         paymentHandling: paymentHandlingResult,
-        requiresManualIntervention: paymentHandlingResult?.requiresManualIntervention || false
+        requiresManualIntervention:
+          paymentHandlingResult?.requiresManualIntervention || false,
       };
     });
   }
@@ -911,8 +1007,8 @@ export class SessionBookingService {
         where: { id: dto.bookingId },
         include: {
           liveSession: true,
-          timeSlot: true
-        }
+          timeSlot: true,
+        },
       });
 
       if (!bookingRequest) {
@@ -921,14 +1017,16 @@ export class SessionBookingService {
 
       // Handle payment processing based on payment status
       let paymentHandlingResult: any = null;
-      
+
       if (dto.processRefund && bookingRequest.paymentIntentId) {
         try {
-          this.logger.log(`Processing refund for cancelled booking ${dto.bookingId}, payment intent: ${bookingRequest.paymentIntentId}`);
-          
+          this.logger.log(
+            `Processing refund for cancelled booking ${dto.bookingId}, payment intent: ${bookingRequest.paymentIntentId}`,
+          );
+
           const refundResult = await this.paymentService.refundSessionPayment(
             bookingRequest.paymentIntentId,
-            'requested_by_customer'
+            'requested_by_customer',
           );
 
           if (refundResult.success) {
@@ -937,42 +1035,58 @@ export class SessionBookingService {
               refundId: refundResult.refund?.id,
               amount: refundResult.refund?.amount,
               currency: refundResult.refund?.currency,
-              message: 'Refund processed successfully'
+              message: 'Refund processed successfully',
             };
-            
-            this.logger.log(`Refund processed successfully: ${refundResult.refund?.id}`);
+
+            this.logger.log(
+              `Refund processed successfully: ${refundResult.refund?.id}`,
+            );
           } else {
             paymentHandlingResult = {
               success: false,
               error: refundResult.error,
-              requiresManualIntervention: true
+              requiresManualIntervention: true,
             };
-            
-            this.logger.error(`Refund failed for booking ${dto.bookingId}:`, refundResult.error);
+
+            this.logger.error(
+              `Refund failed for booking ${dto.bookingId}:`,
+              refundResult.error,
+            );
             throw new BadRequestException('Failed to process refund');
           }
         } catch (error) {
-          this.logger.error(`Exception during refund processing for booking ${dto.bookingId}:`, error);
+          this.logger.error(
+            `Exception during refund processing for booking ${dto.bookingId}:`,
+            error,
+          );
           throw new BadRequestException('Failed to process refund');
         }
-      } else if (bookingRequest.stripeSessionId && !bookingRequest.paymentIntentId) {
+      } else if (
+        bookingRequest.stripeSessionId &&
+        !bookingRequest.paymentIntentId
+      ) {
         // Payment session exists but no payment intent yet - log for manual intervention
-        this.logger.log(`Stripe session exists for cancelled booking ${dto.bookingId}, session: ${bookingRequest.stripeSessionId}`);
-        
+        this.logger.log(
+          `Stripe session exists for cancelled booking ${dto.bookingId}, session: ${bookingRequest.stripeSessionId}`,
+        );
+
         paymentHandlingResult = {
           success: false,
-          error: 'Stripe session exists but no payment intent - requires manual intervention',
+          error:
+            'Stripe session exists but no payment intent - requires manual intervention',
           requiresManualIntervention: true,
-          message: 'Payment session requires manual cancellation'
+          message: 'Payment session requires manual cancellation',
         };
-        
-        this.logger.warn(`Stripe session ${bookingRequest.stripeSessionId} requires manual cancellation for cancelled booking ${dto.bookingId}`);
+
+        this.logger.warn(
+          `Stripe session ${bookingRequest.stripeSessionId} requires manual cancellation for cancelled booking ${dto.bookingId}`,
+        );
       } else {
         // No payment to process
         paymentHandlingResult = {
           success: true,
           noPaymentToProcess: true,
-          message: 'No payment to process'
+          message: 'No payment to process',
         };
       }
 
@@ -982,17 +1096,17 @@ export class SessionBookingService {
           where: { id: bookingRequest.timeSlotId! },
           data: {
             currentBookings: {
-              decrement: 1
+              decrement: 1,
             },
-            isBooked: false
-          }
+            isBooked: false,
+          },
         });
 
         await tx.liveSession.update({
           where: { id: bookingRequest.liveSession.id },
           data: {
-            status: SessionStatus.CANCELLED
-          }
+            status: SessionStatus.CANCELLED,
+          },
         });
       }
 
@@ -1002,10 +1116,12 @@ export class SessionBookingService {
         data: {
           status: BookingStatus.CANCELLED,
           cancelledAt: new Date(),
-          paymentStatus: paymentHandlingResult?.success && !paymentHandlingResult?.noPaymentToProcess 
-            ? PaymentStatus.REFUNDED 
-            : PaymentStatus.CANCELED
-        }
+          paymentStatus:
+            paymentHandlingResult?.success &&
+            !paymentHandlingResult?.noPaymentToProcess
+              ? PaymentStatus.REFUNDED
+              : PaymentStatus.CANCELED,
+        },
       });
 
       return {
@@ -1014,7 +1130,8 @@ export class SessionBookingService {
         bookingRequest: updatedBookingRequest,
         paymentHandling: paymentHandlingResult,
         refundProcessed: dto.processRefund,
-        requiresManualIntervention: paymentHandlingResult?.requiresManualIntervention || false
+        requiresManualIntervention:
+          paymentHandlingResult?.requiresManualIntervention || false,
       };
     });
   }
@@ -1024,8 +1141,8 @@ export class SessionBookingService {
       where: { id: dto.bookingId },
       include: {
         liveSession: true,
-        timeSlot: true
-      }
+        timeSlot: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -1034,7 +1151,7 @@ export class SessionBookingService {
 
     // Validate new time slot
     const newTimeSlot = await this.prisma.timeSlot.findUnique({
-      where: { id: dto.newTimeSlotId }
+      where: { id: dto.newTimeSlotId },
     });
 
     if (!newTimeSlot || !newTimeSlot.isAvailable || newTimeSlot.isBooked) {
@@ -1047,9 +1164,9 @@ export class SessionBookingService {
       data: {
         timeSlotId: dto.newTimeSlotId,
         rescheduleCount: {
-          increment: 1
-        }
-      }
+          increment: 1,
+        },
+      },
     });
 
     // Update live session if exists
@@ -1059,8 +1176,8 @@ export class SessionBookingService {
         data: {
           scheduledStart: newTimeSlot.startTime,
           scheduledEnd: newTimeSlot.endTime,
-          timeSlotId: dto.newTimeSlotId
-        }
+          timeSlotId: dto.newTimeSlotId,
+        },
       });
     }
 
@@ -1069,37 +1186,31 @@ export class SessionBookingService {
       where: { id: bookingRequest.timeSlotId! },
       data: {
         currentBookings: {
-          decrement: 1
+          decrement: 1,
         },
-        isBooked: false
-      }
+        isBooked: false,
+      },
     });
 
     await this.prisma.timeSlot.update({
       where: { id: dto.newTimeSlotId },
       data: {
         currentBookings: {
-          increment: 1
+          increment: 1,
         },
-        isBooked: true
-      }
+        isBooked: true,
+      },
     });
 
     return {
       success: true,
-      message: 'Session rescheduled successfully'
+      message: 'Session rescheduled successfully',
     };
   }
 
   async getSessionBookings(filter: SessionBookingFilterDto = {}) {
-    const {
-      instructorId,
-      studentId,
-      status,
-      offeringId,
-      startDate,
-      endDate
-    } = filter;
+    const { instructorId, studentId, status, offeringId, startDate, endDate } =
+      filter;
 
     const where: any = {};
 
@@ -1135,10 +1246,10 @@ export class SessionBookingService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -1146,13 +1257,13 @@ export class SessionBookingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
+            email: true,
+          },
         },
         timeSlot: {
           include: {
-            availability: true
-          }
+            availability: true,
+          },
         },
         liveSession: {
           select: {
@@ -1161,11 +1272,11 @@ export class SessionBookingService {
             status: true,
             scheduledStart: true,
             scheduledEnd: true,
-            meetingLink: true
-          }
-        }
+            meetingLink: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
     return bookings;
@@ -1183,10 +1294,10 @@ export class SessionBookingService {
                 firstName: true,
                 lastName: true,
                 profileImage: true,
-                email: true
-              }
-            }
-          }
+                email: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -1194,21 +1305,21 @@ export class SessionBookingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
+            email: true,
+          },
         },
         timeSlot: {
           include: {
-            availability: true
-          }
+            availability: true,
+          },
         },
         liveSession: {
           include: {
             participants: true,
-            reservations: true
-          }
-        }
-      }
+            reservations: true,
+          },
+        },
+      },
     });
 
     if (!booking) {
@@ -1252,14 +1363,14 @@ export class SessionBookingService {
         pricePerPerson: bookingRequest.finalPrice || 0,
         totalPrice: bookingRequest.finalPrice || 0,
         totalRevenue: bookingRequest.finalPrice || 0,
-        platformFee: (bookingRequest.finalPrice || 0) * 0.20, // 20% platform fee
-        instructorPayout: (bookingRequest.finalPrice || 0) * 0.80, // 80% to instructor
+        platformFee: (bookingRequest.finalPrice || 0) * 0.2, // 20% platform fee
+        instructorPayout: (bookingRequest.finalPrice || 0) * 0.8, // 80% to instructor
         currency: bookingRequest.currency,
         status: SessionStatus.SCHEDULED,
         timeSlotId: bookingRequest.timeSlotId || undefined,
         materials: bookingRequest.offering.materials,
-        recordingEnabled: bookingRequest.offering.recordingEnabled
-      }
+        recordingEnabled: bookingRequest.offering.recordingEnabled,
+      },
     });
 
     // Create session participant
@@ -1271,8 +1382,8 @@ export class SessionBookingService {
         status: ParticipantStatus.ENROLLED,
         paidAmount: bookingRequest.finalPrice || 0,
         currency: bookingRequest.currency,
-        paymentDate: new Date()
-      }
+        paymentDate: new Date(),
+      },
     });
 
     // Create session reservation
@@ -1284,8 +1395,8 @@ export class SessionBookingService {
         paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
         agreedPrice: bookingRequest.finalPrice || 0,
         currency: bookingRequest.currency,
-        confirmedAt: new Date()
-      }
+        confirmedAt: new Date(),
+      },
     });
 
     // Update time slot booking count
@@ -1293,27 +1404,27 @@ export class SessionBookingService {
       where: { id: bookingRequest.timeSlotId! },
       data: {
         currentBookings: {
-          increment: 1
+          increment: 1,
         },
-        isBooked: true
-      }
+        isBooked: true,
+      },
     });
 
     // Generate meeting room ID (will be updated when Stream call is created)
     const meetingRoomId = this.generateMeetingId(liveSession.id);
-    
+
     const updatedLiveSession = await this.prisma.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://getstream.io/call/${meetingRoomId}`
-      }
+        meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+      },
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://getstream.io/call/${meetingRoomId}`
+      meetingLink: `https://getstream.io/call/${meetingRoomId}`,
     };
   }
 }
