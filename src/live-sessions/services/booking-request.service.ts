@@ -1,12 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { 
-  CreateBookingRequestDto, 
+import {
+  CreateBookingRequestDto,
   UpdateBookingRequestDto,
   AcceptBookingRequestDto,
   RejectBookingRequestDto,
   CancelBookingRequestDto,
-  BookingRequestFilterDto
+  BookingRequestFilterDto,
 } from '../dto/booking-request.dto';
 
 @Injectable()
@@ -22,7 +27,7 @@ export class BookingRequestService {
       bookingMode,
       paymentStatus,
       startDate,
-      endDate
+      endDate,
     } = filter;
 
     const where: any = {};
@@ -67,10 +72,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -78,13 +83,13 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
+            email: true,
+          },
         },
         timeSlot: {
           include: {
-            availability: true
-          }
+            availability: true,
+          },
         },
         liveSession: {
           select: {
@@ -92,14 +97,11 @@ export class BookingRequestService {
             title: true,
             status: true,
             scheduledStart: true,
-            scheduledEnd: true
-          }
-        }
+            scheduledEnd: true,
+          },
+        },
       },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'desc' }
-      ]
+      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
 
     return bookingRequests;
@@ -117,18 +119,18 @@ export class BookingRequestService {
                 firstName: true,
                 lastName: true,
                 profileImage: true,
-                teachingRating: true
-              }
+                teachingRating: true,
+              },
             },
             topic: {
               select: {
                 id: true,
                 name: true,
                 difficulty: true,
-                category: true
-              }
-            }
-          }
+                category: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -137,18 +139,18 @@ export class BookingRequestService {
             lastName: true,
             profileImage: true,
             email: true,
-            timezone: true
-          }
+            timezone: true,
+          },
         },
         timeSlot: {
           include: {
             availability: {
               select: {
                 timezone: true,
-                instructorId: true
-              }
-            }
-          }
+                instructorId: true,
+              },
+            },
+          },
         },
         liveSession: {
           select: {
@@ -157,13 +159,13 @@ export class BookingRequestService {
             status: true,
             scheduledStart: true,
             scheduledEnd: true,
-            meetingLink: true
-          }
+            meetingLink: true,
+          },
         },
         notifications: {
-          orderBy: { createdAt: 'desc' }
-        }
-      }
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
 
     if (!bookingRequest) {
@@ -180,10 +182,10 @@ export class BookingRequestService {
       include: {
         instructor: {
           include: {
-            instructorProfile: true
-          }
-        }
-      }
+            instructorProfile: true,
+          },
+        },
+      },
     });
 
     if (!offering) {
@@ -191,25 +193,27 @@ export class BookingRequestService {
     }
 
     if (!offering.isActive || !offering.isPublic) {
-      throw new BadRequestException('Session offering is not available for booking');
+      throw new BadRequestException(
+        'Session offering is not available for booking',
+      );
     }
 
     // Validate student exists
     const student = await this.prisma.user.findUnique({
-      where: { id: createDto.studentId }
+      where: { id: createDto.studentId },
     });
 
     if (!student) {
       throw new NotFoundException('Student not found');
     }
 
-    // Validate time slot if provided
+    // Validate time slot if provided (for INDIVIDUAL offerings)
     if (createDto.timeSlotId) {
       const timeSlot = await this.prisma.timeSlot.findUnique({
         where: { id: createDto.timeSlotId },
         include: {
-          availability: true
-        }
+          availability: true,
+        },
       });
 
       if (!timeSlot) {
@@ -221,12 +225,89 @@ export class BookingRequestService {
       }
 
       if (timeSlot.availability.instructorId !== offering.instructorId) {
-        throw new BadRequestException('Time slot does not belong to this instructor');
+        throw new BadRequestException(
+          'Time slot does not belong to this instructor',
+        );
       }
 
       // Check if slot duration is sufficient
       if (timeSlot.slotDuration < offering.duration) {
-        throw new BadRequestException('Time slot duration is insufficient for this offering');
+        throw new BadRequestException(
+          'Time slot duration is insufficient for this offering',
+        );
+      }
+
+      // Validate minimum notice (24 hours default)
+      const minAdvanceHours = offering.minAdvanceHours || 24;
+      const minAdvanceTime = new Date();
+      minAdvanceTime.setHours(minAdvanceTime.getHours() + minAdvanceHours);
+
+      if (timeSlot.startTime < minAdvanceTime) {
+        throw new BadRequestException(
+          `Booking requires at least ${minAdvanceHours} hours advance notice. This slot is too soon.`,
+        );
+      }
+
+      // Validate buffer time conflicts
+      await this.validateBufferTime(
+        timeSlot.startTime,
+        new Date(timeSlot.startTime.getTime() + offering.duration * 60 * 1000),
+        offering.bufferMinutes || 15,
+        offering.instructorId,
+      );
+    }
+
+    // Validate group instance if provided (for GROUP offerings)
+    if (createDto.groupInstanceId) {
+      const instance = await this.prisma.groupOfferingInstance.findUnique({
+        where: { id: createDto.groupInstanceId },
+        include: {
+          offering: true,
+          bookings: {
+            where: {
+              status: { in: ['PENDING', 'ACCEPTED'] },
+            },
+          },
+        },
+      });
+
+      if (!instance) {
+        throw new NotFoundException('Group instance not found');
+      }
+
+      if (instance.offeringId !== offering.id) {
+        throw new BadRequestException(
+          'Group instance does not belong to this offering',
+        );
+      }
+
+      if (!instance.isBookable) {
+        throw new BadRequestException(
+          'This instance is not accepting new bookings',
+        );
+      }
+
+      if (instance.status === 'CANCELLED') {
+        throw new BadRequestException('This instance has been cancelled');
+      }
+
+      if (instance.currentEnrollments >= instance.maxEnrollments) {
+        throw new BadRequestException('This instance is full');
+      }
+
+      // Check if student already booked this instance
+      const existingBooking = await this.prisma.bookingRequest.findFirst({
+        where: {
+          groupInstanceId: createDto.groupInstanceId,
+          studentId: createDto.studentId,
+          status: { in: ['PENDING', 'ACCEPTED'] },
+        },
+      });
+
+      if (existingBooking) {
+        throw new BadRequestException(
+          'You already have a booking for this instance',
+        );
       }
     }
 
@@ -235,12 +316,14 @@ export class BookingRequestService {
       where: {
         offeringId: createDto.offeringId,
         studentId: createDto.studentId,
-        status: { in: ['PENDING', 'ACCEPTED'] }
-      }
+        status: { in: ['PENDING', 'ACCEPTED'] },
+      },
     });
 
     if (existingRequest) {
-      throw new BadRequestException('You already have a pending or accepted booking for this offering');
+      throw new BadRequestException(
+        'You already have a pending or accepted booking for this offering',
+      );
     }
 
     // Validate pricing
@@ -249,7 +332,8 @@ export class BookingRequestService {
     }
 
     // Calculate expiration time (default 24 hours)
-    const expiresAt = createDto.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiresAt =
+      createDto.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const bookingRequest = await this.prisma.bookingRequest.create({
       data: {
@@ -260,18 +344,23 @@ export class BookingRequestService {
         preferredTime: createDto.preferredTime,
         alternativeDates: createDto.alternativeDates || [],
         timeSlotId: createDto.timeSlotId,
+        groupInstanceId: createDto.groupInstanceId,
         customTopic: createDto.customTopic,
         topicDescription: createDto.topicDescription,
         customRequirements: createDto.customRequirements,
         studentMessage: createDto.studentMessage,
-        status: offering.instructor.instructorProfile?.autoAcceptBookings ? 'ACCEPTED' : 'PENDING',
+        status: offering.instructor.instructorProfile?.autoAcceptBookings
+          ? 'ACCEPTED'
+          : 'PENDING',
         priority: createDto.priority || 1,
         rescheduleCount: 0,
         offeredPrice: createDto.offeredPrice,
-        finalPrice: offering.instructor.instructorProfile?.autoAcceptBookings ? createDto.offeredPrice : undefined,
+        finalPrice: offering.instructor.instructorProfile?.autoAcceptBookings
+          ? createDto.offeredPrice
+          : undefined,
         currency: createDto.currency,
         paymentStatus: 'PENDING',
-        expiresAt
+        expiresAt,
       },
       include: {
         offering: {
@@ -281,10 +370,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -292,10 +381,10 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     });
 
     // If auto-accepted, create the live session immediately
@@ -309,7 +398,7 @@ export class BookingRequestService {
       type: 'BOOKING_RECEIVED',
       title: 'New Booking Request',
       message: `${student.firstName} ${student.lastName} has requested to book "${offering.title}"`,
-      bookingRequestId: bookingRequest.id
+      bookingRequestId: bookingRequest.id,
     });
 
     return bookingRequest;
@@ -320,8 +409,8 @@ export class BookingRequestService {
       where: { id },
       include: {
         offering: true,
-        student: true
-      }
+        student: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -329,8 +418,13 @@ export class BookingRequestService {
     }
 
     // Validate status transitions
-    if (updateDto.status && !this.isValidStatusTransition(bookingRequest.status, updateDto.status)) {
-      throw new BadRequestException(`Cannot change status from ${bookingRequest.status} to ${updateDto.status}`);
+    if (
+      updateDto.status &&
+      !this.isValidStatusTransition(bookingRequest.status, updateDto.status)
+    ) {
+      throw new BadRequestException(
+        `Cannot change status from ${bookingRequest.status} to ${updateDto.status}`,
+      );
     }
 
     // Validate time slot if being updated
@@ -338,16 +432,21 @@ export class BookingRequestService {
       const timeSlot = await this.prisma.timeSlot.findUnique({
         where: { id: updateDto.timeSlotId },
         include: {
-          availability: true
-        }
+          availability: true,
+        },
       });
 
       if (!timeSlot || !timeSlot.isAvailable || timeSlot.isBooked) {
         throw new BadRequestException('Time slot is not available');
       }
 
-      if (timeSlot.availability.instructorId !== bookingRequest.offering.instructorId) {
-        throw new BadRequestException('Time slot does not belong to this instructor');
+      if (
+        timeSlot.availability.instructorId !==
+        bookingRequest.offering.instructorId
+      ) {
+        throw new BadRequestException(
+          'Time slot does not belong to this instructor',
+        );
       }
     }
 
@@ -355,9 +454,15 @@ export class BookingRequestService {
       where: { id },
       data: {
         ...updateDto,
-        alternativeDates: updateDto.alternativeDates !== undefined ? updateDto.alternativeDates : undefined,
-        respondedAt: updateDto.status && ['ACCEPTED', 'REJECTED'].includes(updateDto.status) 
-          ? new Date() : undefined,
+        alternativeDates:
+          updateDto.alternativeDates !== undefined
+            ? updateDto.alternativeDates
+            : undefined,
+        respondedAt:
+          updateDto.status &&
+          ['ACCEPTED', 'REJECTED'].includes(updateDto.status)
+            ? new Date()
+            : undefined,
         acceptedAt: updateDto.status === 'ACCEPTED' ? new Date() : undefined,
         rejectedAt: updateDto.status === 'REJECTED' ? new Date() : undefined,
         cancelledAt: updateDto.status === 'CANCELLED' ? new Date() : undefined,
@@ -370,10 +475,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -381,26 +486,29 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     });
 
     return updatedBookingRequest;
   }
 
-  async acceptBookingRequest(id: string, acceptDto: AcceptBookingRequestDto = {}) {
+  async acceptBookingRequest(
+    id: string,
+    acceptDto: AcceptBookingRequestDto = {},
+  ) {
     const bookingRequest = await this.prisma.bookingRequest.findUnique({
       where: { id },
       include: {
         offering: {
           include: {
-            instructor: true
-          }
+            instructor: true,
+          },
         },
-        student: true
-      }
+        student: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -408,11 +516,48 @@ export class BookingRequestService {
     }
 
     if (bookingRequest.status !== 'PENDING') {
-      throw new BadRequestException('Only pending booking requests can be accepted');
+      throw new BadRequestException(
+        'Only pending booking requests can be accepted',
+      );
     }
 
     if (new Date() > bookingRequest.expiresAt) {
       throw new BadRequestException('Booking request has expired');
+    }
+
+    // If time slot is provided, mark it as booked to hide from other offerings
+    if (bookingRequest.timeSlotId || acceptDto.timeSlotId) {
+      const timeSlotId = acceptDto.timeSlotId || bookingRequest.timeSlotId;
+      if (timeSlotId) {
+        await this.prisma.timeSlot.update({
+          where: { id: timeSlotId },
+          data: {
+            isBooked: true,
+            isAvailable: false,
+            currentBookings: { increment: 1 },
+          },
+        });
+      }
+    }
+
+    // If group instance, update enrollment count
+    if (bookingRequest.groupInstanceId) {
+      const instance = await this.prisma.groupOfferingInstance.findUnique({
+        where: { id: bookingRequest.groupInstanceId },
+      });
+
+      if (instance) {
+        await this.prisma.groupOfferingInstance.update({
+          where: { id: bookingRequest.groupInstanceId },
+          data: {
+            currentEnrollments: { increment: 1 },
+            status:
+              instance.currentEnrollments + 1 >= instance.minEnrollments
+                ? 'CONFIRMED'
+                : 'SCHEDULED',
+          },
+        });
+      }
     }
 
     // Update booking request
@@ -424,7 +569,7 @@ export class BookingRequestService {
         finalPrice: acceptDto.finalPrice || bookingRequest.offeredPrice,
         timeSlotId: acceptDto.timeSlotId || bookingRequest.timeSlotId,
         respondedAt: new Date(),
-        acceptedAt: new Date()
+        acceptedAt: new Date(),
       },
       include: {
         offering: {
@@ -434,10 +579,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -445,14 +590,18 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     });
 
     // Create live session
-    await this.createLiveSessionFromBooking(id, acceptDto.scheduledStart, acceptDto.scheduledEnd);
+    await this.createLiveSessionFromBooking(
+      id,
+      acceptDto.scheduledStart,
+      acceptDto.scheduledEnd,
+    );
 
     // Send notification to student
     await this.createNotification({
@@ -460,19 +609,22 @@ export class BookingRequestService {
       type: 'BOOKING_ACCEPTED',
       title: 'Booking Request Accepted',
       message: `Your booking request for "${bookingRequest.offering.title}" has been accepted`,
-      bookingRequestId: id
+      bookingRequestId: id,
     });
 
     return updatedBookingRequest;
   }
 
-  async rejectBookingRequest(id: string, rejectDto: RejectBookingRequestDto = {}) {
+  async rejectBookingRequest(
+    id: string,
+    rejectDto: RejectBookingRequestDto = {},
+  ) {
     const bookingRequest = await this.prisma.bookingRequest.findUnique({
       where: { id },
       include: {
         offering: true,
-        student: true
-      }
+        student: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -480,7 +632,9 @@ export class BookingRequestService {
     }
 
     if (bookingRequest.status !== 'PENDING') {
-      throw new BadRequestException('Only pending booking requests can be rejected');
+      throw new BadRequestException(
+        'Only pending booking requests can be rejected',
+      );
     }
 
     const updatedBookingRequest = await this.prisma.bookingRequest.update({
@@ -489,7 +643,7 @@ export class BookingRequestService {
         status: 'REJECTED',
         instructorResponse: rejectDto.response || rejectDto.reason,
         respondedAt: new Date(),
-        rejectedAt: new Date()
+        rejectedAt: new Date(),
       },
       include: {
         offering: {
@@ -499,10 +653,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -510,10 +664,10 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     });
 
     // Send notification to student
@@ -522,20 +676,23 @@ export class BookingRequestService {
       type: 'BOOKING_REJECTED',
       title: 'Booking Request Rejected',
       message: `Your booking request for "${bookingRequest.offering.title}" has been rejected`,
-      bookingRequestId: id
+      bookingRequestId: id,
     });
 
     return updatedBookingRequest;
   }
 
-  async cancelBookingRequest(id: string, cancelDto: CancelBookingRequestDto = {}) {
+  async cancelBookingRequest(
+    id: string,
+    cancelDto: CancelBookingRequestDto = {},
+  ) {
     const bookingRequest = await this.prisma.bookingRequest.findUnique({
       where: { id },
       include: {
         offering: true,
         student: true,
-        liveSession: true
-      }
+        liveSession: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -543,27 +700,31 @@ export class BookingRequestService {
     }
 
     if (!['PENDING', 'ACCEPTED'].includes(bookingRequest.status)) {
-      throw new BadRequestException('Only pending or accepted booking requests can be cancelled');
+      throw new BadRequestException(
+        'Only pending or accepted booking requests can be cancelled',
+      );
     }
 
     // If there's an associated live session, handle cancellation
     if (bookingRequest.liveSession) {
       const session = bookingRequest.liveSession;
       if (['IN_PROGRESS', 'COMPLETED'].includes(session.status)) {
-        throw new BadRequestException('Cannot cancel booking for session that is in progress or completed');
+        throw new BadRequestException(
+          'Cannot cancel booking for session that is in progress or completed',
+        );
       }
 
       // Cancel the live session
       await this.prisma.liveSession.update({
         where: { id: session.id },
-        data: { status: 'CANCELLED' }
+        data: { status: 'CANCELLED' },
       });
     }
 
     const updatedBookingRequest = await this.prisma.bookingRequest.update({
       where: { id },
       data: {
-        status: 'CANCELLED'
+        status: 'CANCELLED',
       },
       include: {
         offering: {
@@ -573,10 +734,10 @@ export class BookingRequestService {
                 id: true,
                 firstName: true,
                 lastName: true,
-                profileImage: true
-              }
-            }
-          }
+                profileImage: true,
+              },
+            },
+          },
         },
         student: {
           select: {
@@ -584,46 +745,120 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
-        }
-      }
+            email: true,
+          },
+        },
+      },
     });
 
     return updatedBookingRequest;
   }
 
   private async createLiveSessionFromBooking(
-    bookingRequestId: string, 
-    scheduledStart?: Date, 
-    scheduledEnd?: Date
+    bookingRequestId: string,
+    scheduledStart?: Date,
+    scheduledEnd?: Date,
   ) {
     const bookingRequest = await this.prisma.bookingRequest.findUnique({
       where: { id: bookingRequestId },
       include: {
         offering: true,
-        timeSlot: true
-      }
+        timeSlot: true,
+        groupInstance: true,
+      },
     });
 
     if (!bookingRequest) {
       throw new NotFoundException('Booking request not found');
     }
 
+    if (bookingRequest.status !== 'ACCEPTED') {
+      throw new BadRequestException(
+        'Booking request must be accepted before creating live session',
+      );
+    }
+
     let sessionStart: Date;
     let sessionEnd: Date;
+    let groupInstanceId: string | null = null;
 
-    if (scheduledStart && scheduledEnd) {
+    // Handle group instance bookings
+    if (bookingRequest.groupInstanceId) {
+      const groupInstance = bookingRequest.groupInstance;
+      if (!groupInstance) {
+        throw new NotFoundException('Group instance not found');
+      }
+
+      if (groupInstance.status === 'CANCELLED') {
+        throw new BadRequestException(
+          'Cannot create session for cancelled group instance',
+        );
+      }
+
+      sessionStart = groupInstance.scheduledStart;
+      sessionEnd = groupInstance.scheduledEnd;
+      groupInstanceId = groupInstance.id;
+
+      // Check if a live session already exists for this group instance
+      const existingSession = await this.prisma.liveSession.findUnique({
+        where: { groupInstanceId: groupInstance.id },
+      });
+
+      if (existingSession) {
+        // Session already exists, just return it
+        return existingSession;
+      }
+    } else if (scheduledStart && scheduledEnd) {
+      // Individual booking with explicit times
       sessionStart = scheduledStart;
       sessionEnd = scheduledEnd;
     } else if (bookingRequest.timeSlot) {
+      // Individual booking with time slot
       sessionStart = bookingRequest.timeSlot.startTime;
       sessionEnd = bookingRequest.timeSlot.endTime;
     } else if (bookingRequest.preferredDate && bookingRequest.preferredTime) {
-      sessionStart = new Date(`${bookingRequest.preferredDate.toISOString().split('T')[0]}T${bookingRequest.preferredTime}:00.000Z`);
-      sessionEnd = new Date(sessionStart.getTime() + bookingRequest.offering.duration * 60000);
+      // Individual booking with preferred time
+      sessionStart = new Date(
+        `${bookingRequest.preferredDate.toISOString().split('T')[0]}T${bookingRequest.preferredTime}:00.000Z`,
+      );
+      sessionEnd = new Date(
+        sessionStart.getTime() + bookingRequest.offering.duration * 60000,
+      );
     } else {
-      throw new BadRequestException('No valid schedule found for creating live session');
+      throw new BadRequestException(
+        'No valid schedule found for creating live session',
+      );
+    }
+
+    // Validate session times
+    if (sessionStart >= sessionEnd) {
+      throw new BadRequestException(
+        'Session start time must be before end time',
+      );
+    }
+
+    if (sessionStart < new Date()) {
+      throw new BadRequestException('Session start time must be in the future');
+    }
+
+    // Check for conflicts (only for individual sessions)
+    if (!groupInstanceId) {
+      const conflictingSessions = await this.prisma.liveSession.findFirst({
+        where: {
+          instructorId: bookingRequest.offering.instructorId,
+          status: { in: ['SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] },
+          AND: [
+            { scheduledStart: { lt: sessionEnd } },
+            { scheduledEnd: { gt: sessionStart } },
+          ],
+        },
+      });
+
+      if (conflictingSessions) {
+        throw new BadRequestException(
+          'Session conflicts with existing scheduled session',
+        );
+      }
     }
 
     const liveSession = await this.prisma.liveSession.create({
@@ -631,17 +866,20 @@ export class BookingRequestService {
         bookingRequestId,
         offeringId: bookingRequest.offeringId,
         instructorId: bookingRequest.offering.instructorId,
-        sessionType: 'CUSTOM',
+        groupInstanceId: groupInstanceId,
+        sessionType: 'CUSTOM', // LiveSessionType: CUSTOM for both individual and group
         topicId: bookingRequest.offering.topicId,
-        customTopic: bookingRequest.customTopic || bookingRequest.offering.fixedTopic,
+        customTopic:
+          bookingRequest.customTopic || bookingRequest.offering.fixedTopic,
         title: bookingRequest.offering.title,
         description: bookingRequest.offering.description,
-        finalTopic: bookingRequest.customTopic || bookingRequest.offering.fixedTopic,
+        finalTopic:
+          bookingRequest.customTopic || bookingRequest.offering.fixedTopic,
         sessionFormat: bookingRequest.offering.sessionFormat,
         sessionMode: 'LIVE',
         maxParticipants: bookingRequest.offering.capacity,
         minParticipants: bookingRequest.offering.minParticipants || 1,
-        currentParticipants: 0,
+        currentParticipants: groupInstanceId ? 1 : 0, // For groups, start with 1 (this booking)
         scheduledStart: sessionStart,
         scheduledEnd: sessionEnd,
         duration: bookingRequest.offering.duration,
@@ -649,35 +887,72 @@ export class BookingRequestService {
         timeSlotId: bookingRequest.timeSlotId,
         recordingEnabled: bookingRequest.offering.recordingEnabled,
         materials: bookingRequest.offering.materials,
-        pricePerPerson: bookingRequest.finalPrice || bookingRequest.offeredPrice,
+        pricePerPerson:
+          bookingRequest.finalPrice || bookingRequest.offeredPrice,
         totalPrice: bookingRequest.finalPrice || bookingRequest.offeredPrice,
         currency: bookingRequest.currency,
-        payoutStatus: 'PENDING'
-      }
+        payoutStatus: 'PENDING',
+      },
+      include: {
+        offering: {
+          select: {
+            id: true,
+            title: true,
+            sessionType: true,
+          },
+        },
+        groupInstance: {
+          select: {
+            id: true,
+            scheduledStart: true,
+            scheduledEnd: true,
+            currentEnrollments: true,
+          },
+        },
+      },
     });
 
-    // Mark time slot as booked if applicable
-    if (bookingRequest.timeSlotId) {
+    // Mark time slot as booked if applicable (individual sessions only)
+    if (bookingRequest.timeSlotId && !groupInstanceId) {
       await this.prisma.timeSlot.update({
         where: { id: bookingRequest.timeSlotId },
         data: {
           isBooked: true,
-          currentBookings: { increment: 1 }
-        }
+          currentBookings: { increment: 1 },
+        },
       });
+    }
+
+    // Update group instance status if minimum participants met
+    if (groupInstanceId && bookingRequest.groupInstance) {
+      const instance = bookingRequest.groupInstance;
+      if (instance.currentEnrollments >= instance.minEnrollments) {
+        await this.prisma.groupOfferingInstance.update({
+          where: { id: groupInstanceId },
+          data: {
+            status: 'CONFIRMED',
+            liveSession: {
+              connect: { id: liveSession.id },
+            },
+          },
+        });
+      }
     }
 
     return liveSession;
   }
 
-  private isValidStatusTransition(currentStatus: string, newStatus: string): boolean {
+  private isValidStatusTransition(
+    currentStatus: string,
+    newStatus: string,
+  ): boolean {
     const validTransitions: Record<string, string[]> = {
-      'PENDING': ['ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
-      'ACCEPTED': ['CANCELLED', 'COMPLETED'],
-      'REJECTED': [],
-      'CANCELLED': [],
-      'EXPIRED': [],
-      'COMPLETED': []
+      PENDING: ['ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+      ACCEPTED: ['CANCELLED', 'COMPLETED'],
+      REJECTED: [],
+      CANCELLED: [],
+      EXPIRED: [],
+      COMPLETED: [],
     };
 
     return validTransitions[currentStatus]?.includes(newStatus) || false;
@@ -703,8 +978,8 @@ export class BookingRequestService {
         isSMS: false,
         deliveryStatus: 'QUEUED',
         bookingRequestId: data.bookingRequestId,
-        scheduledFor: new Date()
-      }
+        scheduledFor: new Date(),
+      },
     });
   }
 
@@ -723,10 +998,10 @@ export class BookingRequestService {
                 firstName: true,
                 lastName: true,
                 profileImage: true,
-                teachingRating: true
-              }
-            }
-          }
+                teachingRating: true,
+              },
+            },
+          },
         },
         liveSession: {
           select: {
@@ -735,17 +1010,17 @@ export class BookingRequestService {
             status: true,
             scheduledStart: true,
             scheduledEnd: true,
-            meetingLink: true
-          }
-        }
+            meetingLink: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async getBookingRequestsByInstructor(instructorId: string, status?: string) {
     const where: any = {
-      offering: { instructorId }
+      offering: { instructorId },
     };
     if (status) where.status = status;
 
@@ -758,8 +1033,8 @@ export class BookingRequestService {
             title: true,
             sessionType: true,
             duration: true,
-            basePrice: true
-          }
+            basePrice: true,
+          },
         },
         student: {
           select: {
@@ -767,22 +1042,19 @@ export class BookingRequestService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            email: true
-          }
+            email: true,
+          },
         },
         liveSession: {
           select: {
             id: true,
             status: true,
             scheduledStart: true,
-            scheduledEnd: true
-          }
-        }
+            scheduledEnd: true,
+          },
+        },
       },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'desc' }
-      ]
+      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -790,18 +1062,18 @@ export class BookingRequestService {
     const expiredRequests = await this.prisma.bookingRequest.findMany({
       where: {
         status: 'PENDING',
-        expiresAt: { lt: new Date() }
-      }
+        expiresAt: { lt: new Date() },
+      },
     });
 
     if (expiredRequests.length > 0) {
       await this.prisma.bookingRequest.updateMany({
         where: {
-          id: { in: expiredRequests.map(r => r.id) }
+          id: { in: expiredRequests.map((r) => r.id) },
         },
         data: {
-          status: 'EXPIRED'
-        }
+          status: 'EXPIRED',
+        },
       });
 
       // Send notifications to students about expired requests
@@ -810,8 +1082,9 @@ export class BookingRequestService {
           userId: request.studentId,
           type: 'BOOKING_EXPIRED',
           title: 'Booking Request Expired',
-          message: 'Your booking request has expired due to no response from the instructor',
-          bookingRequestId: request.id
+          message:
+            'Your booking request has expired due to no response from the instructor',
+          bookingRequestId: request.id,
         });
       }
     }
@@ -837,19 +1110,33 @@ export class BookingRequestService {
       rejectedRequests,
       cancelledRequests,
       expiredRequests,
-      completedRequests
+      completedRequests,
     ] = await Promise.all([
       this.prisma.bookingRequest.count({ where }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'PENDING' } }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'ACCEPTED' } }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'REJECTED' } }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'CANCELLED' } }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'EXPIRED' } }),
-      this.prisma.bookingRequest.count({ where: { ...where, status: 'COMPLETED' } })
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'PENDING' },
+      }),
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'ACCEPTED' },
+      }),
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'REJECTED' },
+      }),
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'CANCELLED' },
+      }),
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'EXPIRED' },
+      }),
+      this.prisma.bookingRequest.count({
+        where: { ...where, status: 'COMPLETED' },
+      }),
     ]);
 
-    const acceptanceRate = totalRequests > 0 ? (acceptedRequests / totalRequests) * 100 : 0;
-    const completionRate = acceptedRequests > 0 ? (completedRequests / acceptedRequests) * 100 : 0;
+    const acceptanceRate =
+      totalRequests > 0 ? (acceptedRequests / totalRequests) * 100 : 0;
+    const completionRate =
+      acceptedRequests > 0 ? (completedRequests / acceptedRequests) * 100 : 0;
 
     return {
       totalRequests,
@@ -860,17 +1147,22 @@ export class BookingRequestService {
       expiredRequests,
       completedRequests,
       acceptanceRate: Math.round(acceptanceRate * 100) / 100,
-      completionRate: Math.round(completionRate * 100) / 100
+      completionRate: Math.round(completionRate * 100) / 100,
     };
   }
 
-  async rescheduleBookingRequest(id: string, newDate: Date, newTime: string, reason?: string) {
+  async rescheduleBookingRequest(
+    id: string,
+    newDate: Date,
+    newTime: string,
+    reason?: string,
+  ) {
     const bookingRequest = await this.prisma.bookingRequest.findUnique({
       where: { id },
       include: {
         liveSession: true,
-        offering: true
-      }
+        offering: true,
+      },
     });
 
     if (!bookingRequest) {
@@ -878,7 +1170,9 @@ export class BookingRequestService {
     }
 
     if (bookingRequest.status !== 'ACCEPTED') {
-      throw new BadRequestException('Only accepted booking requests can be rescheduled');
+      throw new BadRequestException(
+        'Only accepted booking requests can be rescheduled',
+      );
     }
 
     if (bookingRequest.rescheduleCount >= 3) {
@@ -892,25 +1186,116 @@ export class BookingRequestService {
         preferredDate: newDate,
         preferredTime: newTime,
         rescheduleCount: { increment: 1 },
-        instructorResponse: reason
-      }
+        instructorResponse: reason,
+      },
     });
 
     // Update associated live session if it exists
     if (bookingRequest.liveSession) {
-      const newStartTime = new Date(`${newDate.toISOString().split('T')[0]}T${newTime}:00.000Z`);
-      const newEndTime = new Date(newStartTime.getTime() + bookingRequest.offering.duration * 60000);
+      const newStartTime = new Date(
+        `${newDate.toISOString().split('T')[0]}T${newTime}:00.000Z`,
+      );
+      const newEndTime = new Date(
+        newStartTime.getTime() + bookingRequest.offering.duration * 60000,
+      );
 
       await this.prisma.liveSession.update({
         where: { id: bookingRequest.liveSession.id },
         data: {
           scheduledStart: newStartTime,
           scheduledEnd: newEndTime,
-          status: 'RESCHEDULED'
-        }
+          status: 'RESCHEDULED',
+        },
       });
     }
 
     return updatedBookingRequest;
+  }
+
+  // =============================================================================
+  // VALIDATION HELPERS
+  // =============================================================================
+
+  private async validateBufferTime(
+    scheduledStart: Date,
+    scheduledEnd: Date,
+    bufferMinutes: number,
+    instructorId: string,
+  ): Promise<void> {
+    if (!bufferMinutes || bufferMinutes <= 0) {
+      return; // No buffer time required
+    }
+
+    const bufferMs = bufferMinutes * 60 * 1000;
+    const bufferStart = new Date(scheduledStart.getTime() - bufferMs);
+    const bufferEnd = new Date(scheduledEnd.getTime() + bufferMs);
+
+    // Check for conflicting sessions
+    const conflictingSessions = await this.prisma.liveSession.findFirst({
+      where: {
+        instructorId,
+        status: { in: ['SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] },
+        OR: [
+          {
+            AND: [
+              { scheduledStart: { lte: bufferStart } },
+              { scheduledEnd: { gt: bufferStart } },
+            ],
+          },
+          {
+            AND: [
+              { scheduledStart: { lt: bufferEnd } },
+              { scheduledEnd: { gte: bufferEnd } },
+            ],
+          },
+          {
+            AND: [
+              { scheduledStart: { gte: bufferStart } },
+              { scheduledEnd: { lte: bufferEnd } },
+            ],
+          },
+        ],
+      },
+    });
+
+    if (conflictingSessions) {
+      throw new BadRequestException(
+        `This time slot conflicts with buffer time requirement (${bufferMinutes} minutes). Please choose a different time.`,
+      );
+    }
+
+    // Check for conflicting time slots
+    const conflictingSlots = await this.prisma.timeSlot.findFirst({
+      where: {
+        availability: { instructorId },
+        isBooked: true,
+        OR: [
+          {
+            AND: [
+              { startTime: { lte: bufferStart } },
+              { endTime: { gt: bufferStart } },
+            ],
+          },
+          {
+            AND: [
+              { startTime: { lt: bufferEnd } },
+              { endTime: { gte: bufferEnd } },
+            ],
+          },
+          {
+            AND: [
+              { startTime: { gte: bufferStart } },
+              { endTime: { lte: bufferEnd } },
+            ],
+          },
+        ],
+      },
+    });
+
+    if (conflictingSlots) {
+      throw new BadRequestException(
+        `This time slot conflicts with buffer time requirement (${bufferMinutes} minutes). Please choose a different time.`,
+      );
+    }
   }
 }

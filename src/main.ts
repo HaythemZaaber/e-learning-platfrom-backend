@@ -23,6 +23,8 @@ async function bootstrap() {
       },
     }),
   );
+  // IMPORTANT: Ensure body parsing is enabled
+  app.use(require('express').json({ limit: '10mb' }));
   app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
 
   // Enable CORS
@@ -35,6 +37,18 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
+
+  // Enable validation with transformation
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
 
   // Global validation pipe (GraphQL-aware)
   app.useGlobalPipes(new GraphQLAwareValidationPipe());

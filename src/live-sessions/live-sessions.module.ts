@@ -14,6 +14,8 @@ import { NotificationController } from './controllers/notification.controller';
 import { AnalyticsController } from './controllers/analytics.controller';
 import { SessionBookingController } from './controllers/session-booking.controller';
 import { PayoutController } from './controllers/payout.controller';
+import { GroupInstanceController } from './controllers/group-instance.controller';
+import { RecurringAvailabilityController } from './controllers/recurring-availability.controller';
 
 // Services
 import { AvailabilityService } from './services/availability.service';
@@ -27,6 +29,7 @@ import { AnalyticsService } from './services/analytics.service';
 import { TimeSlotService } from './services/time-slot.service';
 import { SessionBookingService } from './services/session-booking.service';
 import { PayoutService } from './services/payout.service';
+import { GroupAutoCancelService } from './services/group-auto-cancel.service';
 import { AuthModule } from 'src/auth/auth.module';
 
 @Module({
@@ -47,6 +50,8 @@ import { AuthModule } from 'src/auth/auth.module';
     AnalyticsController,
     SessionBookingController,
     PayoutController,
+    GroupInstanceController,
+    RecurringAvailabilityController,
   ],
   providers: [
     AvailabilityService,
@@ -60,6 +65,7 @@ import { AuthModule } from 'src/auth/auth.module';
     TimeSlotService,
     SessionBookingService,
     PayoutService,
+    GroupAutoCancelService,
   ],
   exports: [
     AvailabilityService,
@@ -73,6 +79,7 @@ import { AuthModule } from 'src/auth/auth.module';
     TimeSlotService,
     SessionBookingService,
     PayoutService,
+    GroupAutoCancelService,
   ],
 })
 export class LiveSessionsModule {}

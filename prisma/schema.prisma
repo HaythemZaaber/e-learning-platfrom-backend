@@ -110,17 +110,21 @@ model User {
   // =============================================================================
   // LIVE SESSIONS RELATIONS
   // =============================================================================
-  availabilities       InstructorAvailability[]
-  sessionOfferings     SessionOffering[]
-  instructedSessions   LiveSession[]            @relation("InstructorSessions")
-  sessionTopics        SessionTopic[]
-  sessionReservations  SessionReservation[]
-  sessionParticipants  SessionParticipant[]
-  attendanceRecords    AttendanceRecord[]
-  sessionReviews       SessionReview[]
-  instructorPayouts    InstructorPayout[]
-  sessionNotifications SessionNotification[]
-  bookingRequests      BookingRequest[]
+  availabilities              InstructorAvailability[]      @relation("InstructorAvailabilities")
+  recurringAvailabilityRules RecurringAvailabilityRule[]   @relation("InstructorRecurringRules")
+  availabilityDateOverrides   AvailabilityDateOverride[]    @relation("InstructorDateOverrides")
+  calendarSyncs               CalendarSync[]               @relation("InstructorCalendarSyncs")
+  sessionOfferings            SessionOffering[]
+  groupOfferingInstances      GroupOfferingInstance[]      @relation("InstructorGroupInstances")
+  instructedSessions          LiveSession[]                @relation("InstructorSessions")
+  sessionTopics               SessionTopic[]
+  sessionReservations         SessionReservation[]
+  sessionParticipants         SessionParticipant[]
+  attendanceRecords           AttendanceRecord[]
+  sessionReviews              SessionReview[]
+  instructorPayouts           InstructorPayout[]
+  sessionNotifications        SessionNotification[]
+  bookingRequests             BookingRequest[]
 
   // =============================================================================
   // PAYMENT RELATIONS
@@ -178,10 +182,152 @@ model User {
 // AVAILABILITY MANAGEMENT - DAY BY DAY APPROACH
 // =============================================================================
 
+// =============================================================================
+// RECURRING AVAILABILITY RULES
+// =============================================================================
+
+model RecurringAvailabilityRule {
+  id           String @id @default(cuid())
+  instructorId String
+  instructor   User   @relation("InstructorRecurringRules", fields: [instructorId], references: [id], onDelete: Cascade)
+
+  // Recurring pattern
+  dayOfWeek    Int     // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime    String  // HH:MM format
+  endTime      String  // HH:MM format
+  
+  // Date range
+  startDate    DateTime // When this rule starts applying
+  endDate      DateTime? // When this rule stops applying (null = indefinite)
+  
+  // Settings
+  isActive            Boolean @default(true)
+  maxSessionsInSlot   Int     @default(1)
+  defaultSlotDuration Int     @default(60)
+  minAdvanceHours     Int     @default(24) // Minimum notice (24 hours default)
+  maxAdvanceHours     Int?    @default(720) // 30 days default
+  bufferMinutes       Int     @default(15)
+  autoAcceptBookings  Boolean @default(false)
+
+  // Pricing overrides
+  priceOverride Float?
+  currency      String? @default("USD")
+
+  // Metadata
+  timezone String  @default("UTC")
+  notes    String?
+  title    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  dateOverrides AvailabilityDateOverride[]
+
+  @@map("recurring_availability_rules")
+}
+
+// =============================================================================
+// DATE OVERRIDES (Block specific dates or modify specific dates)
+// =============================================================================
+
+model AvailabilityDateOverride {
+  id                      String                   @id @default(cuid())
+  instructorId            String
+  instructor              User                      @relation("InstructorDateOverrides", fields: [instructorId], references: [id], onDelete: Cascade)
+  recurringRuleId         String?
+  recurringRule           RecurringAvailabilityRule? @relation(fields: [recurringRuleId], references: [id], onDelete: Cascade)
+
+  // Override details
+  specificDate            DateTime // The date being overridden
+  overrideType            AvailabilityOverrideType // BLOCK or MODIFY
+  
+  // If MODIFY, these fields apply
+  startTime               String? // HH:MM format
+  endTime                 String? // HH:MM format
+  isActive                Boolean? // Override active status
+  maxSessionsInSlot       Int?
+  bufferMinutes           Int?
+  
+  // Reason for override
+  reason                  String? // e.g., "Vacation", "Holiday", "Special event"
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([instructorId, specificDate])
+  @@map("availability_date_overrides")
+}
+
+enum AvailabilityOverrideType {
+  BLOCK   // Completely block this date
+  MODIFY  // Modify the availability for this date
+}
+
+// =============================================================================
+// CALENDAR SYNC INTEGRATION
+// =============================================================================
+
+model CalendarSync {
+  id           String @id @default(cuid())
+  instructorId String
+  instructor   User   @relation("InstructorCalendarSyncs", fields: [instructorId], references: [id], onDelete: Cascade)
+
+  // Provider info
+  provider     CalendarProvider // GOOGLE, OUTLOOK, APPLE, etc.
+  providerId   String // External calendar ID
+  calendarId   String // Specific calendar within provider
+  
+  // Sync settings
+  isActive     Boolean @default(true)
+  syncDirection SyncDirection @default(BIDIRECTIONAL)
+  autoBlockBusy Boolean @default(true) // Automatically block times marked as "busy"
+  
+  // OAuth tokens (encrypted in production)
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  
+  // Last sync info
+  lastSyncAt   DateTime?
+  syncStatus   SyncStatus @default(PENDING)
+  syncError    String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([instructorId, provider, calendarId])
+  @@map("calendar_syncs")
+}
+
+enum CalendarProvider {
+  GOOGLE
+  OUTLOOK
+  APPLE
+  ICAL
+}
+
+enum SyncDirection {
+  IMPORT_ONLY    // Only import from external calendar
+  EXPORT_ONLY    // Only export to external calendar
+  BIDIRECTIONAL // Sync both ways
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  SUCCESS
+  ERROR
+}
+
+// =============================================================================
+// INSTRUCTOR AVAILABILITY (Specific dates)
+// =============================================================================
+
 model InstructorAvailability {
   id           String @id @default(cuid())
   instructorId String
-  instructor   User   @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  instructor   User   @relation("InstructorAvailabilities", fields: [instructorId], references: [id], onDelete: Cascade)
 
   // DAILY AVAILABILITY (Day-by-day control as requested)
   specificDate DateTime // Each availability is for a specific date
@@ -192,7 +338,7 @@ model InstructorAvailability {
   isActive            Boolean @default(true)
   maxSessionsInSlot   Int     @default(1)
   defaultSlotDuration Int     @default(60) // Default, offerings can override
-  minAdvanceHours     Int     @default(12)
+  minAdvanceHours     Int     @default(24) // Updated default to 24 hours
   maxAdvanceHours     Int?    @default(720) // 30 days default
   bufferMinutes       Int     @default(15)
   autoAcceptBookings  Boolean @default(false)
@@ -330,6 +476,15 @@ model SessionOffering {
   isPublic         Boolean @default(true)
   requiresApproval Boolean @default(false)
 
+  // NEW: Buffer time and minimum notice (for Individual offerings)
+  bufferMinutes    Int? @default(15) // Minutes between sessions
+  minAdvanceHours  Int? @default(24) // Minimum hours notice required for booking
+
+  // NEW: Auto-cancel settings (for Group offerings)
+  autoCancelEnabled    Boolean @default(false) // Enable auto-cancel if minimum not met
+  autoCancelHoursBefore Int? @default(2) // Hours before session to check and cancel
+  autoCancelRefund     Boolean @default(true) // Whether to refund on auto-cancel
+
   // Content
   materials     String[] @default([])
   prerequisites String[] @default([])
@@ -350,15 +505,70 @@ model SessionOffering {
   updatedAt DateTime @updatedAt
 
   // Relations
-  bookingRequests BookingRequest[]
-  liveSessions    LiveSession[]
+  bookingRequests      BookingRequest[]
+  liveSessions         LiveSession[]
+  groupInstances       GroupOfferingInstance[] // For GROUP/WORKSHOP offerings
 
   @@map("session_offerings")
 }
 
 // =============================================================================
-// BOOKING SYSTEM WITH DUAL MODES
+// GROUP OFFERING INSTANCES (Scheduled instances of Group Offerings)
 // =============================================================================
+
+model GroupOfferingInstance {
+  id          String          @id @default(cuid())
+  offeringId  String
+  offering    SessionOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  instructorId String
+  instructor  User            @relation("InstructorGroupInstances", fields: [instructorId], references: [id], onDelete: Cascade)
+
+  // Scheduled date/time (fixed for group sessions)
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  
+  // Enrollment status
+  currentEnrollments Int @default(0)
+  maxEnrollments     Int // Copied from offering.capacity
+  minEnrollments     Int // Copied from offering.minParticipants
+  
+  // Status
+  status      InstanceStatus @default(SCHEDULED)
+  isPublic    Boolean @default(true) // Whether visible to students
+  isBookable  Boolean @default(true) // Whether accepting new enrollments
+  
+  // Auto-cancel tracking
+  autoCancelChecked Boolean @default(false) // Whether we've checked for auto-cancel
+  autoCancelAt      DateTime? // When to check for auto-cancel
+  
+  // Meeting details (generated when first booking is made)
+  meetingRoomId String?
+  meetingLink   String?
+  
+  // Cancellation info
+  cancelledAt   DateTime?
+  cancelReason  String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings      BookingRequest[] // Bookings for this specific instance
+  liveSession   LiveSession? // The actual session when it starts
+
+  @@unique([offeringId, scheduledStart])
+  @@index([scheduledStart, status, isBookable])
+  @@index([instructorId, scheduledStart])
+  @@map("group_offering_instances")
+}
+
+enum InstanceStatus {
+  SCHEDULED    // Instance is scheduled and accepting enrollments
+  CONFIRMED    // Minimum participants met, confirmed to run
+  CANCELLED    // Cancelled (auto or manual)
+  IN_PROGRESS  // Session is currently running
+  COMPLETED    // Session completed
+}
 
 model BookingRequest {
   id         String          @id @default(cuid())
@@ -367,15 +577,19 @@ model BookingRequest {
   studentId  String
   student    User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  // NEW: For GROUP offerings, link to specific instance
+  groupInstanceId String?
+  groupInstance   GroupOfferingInstance? @relation(fields: [groupInstanceId], references: [id], onDelete: Cascade)
+
   // Booking approach
   bookingMode BookingMode @default(REQUEST)
 
-  // Request-based booking
+  // Request-based booking (for INDIVIDUAL offerings)
   preferredDate    DateTime?
   preferredTime    String?
   alternativeDates DateTime[] @default([])
 
-  // Direct slot booking
+  // Direct slot booking (for INDIVIDUAL offerings)
   timeSlotId String?
   timeSlot   TimeSlot? @relation(fields: [timeSlotId], references: [id], onDelete: SetNull)
 
@@ -503,6 +717,8 @@ model LiveSession {
   // Relations
   timeSlot       TimeSlot?             @relation(fields: [timeSlotId], references: [id])
   timeSlotId     String?
+  groupInstanceId String?              @unique
+  groupInstance  GroupOfferingInstance? @relation(fields: [groupInstanceId], references: [id], onDelete: SetNull)
   reservations   SessionReservation[]
   participants   SessionParticipant[]
   attendance     AttendanceRecord[]

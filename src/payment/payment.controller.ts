@@ -13,6 +13,8 @@ import {
   NotFoundException,
   RawBodyRequest,
   Headers,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -177,7 +179,9 @@ export class PaymentController {
   @Post('sessions/stripe/:stripeSessionId/verify')
   @UseGuards(RestAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Verify and update payment session status from Stripe' })
+  @ApiOperation({
+    summary: 'Verify and update payment session status from Stripe',
+  })
   @ApiResponse({
     status: 200,
     description: 'Payment session verified and updated successfully',
@@ -456,6 +460,15 @@ export class PaymentController {
 
   @Post('connect/accounts')
   @UseGuards(RestAuthGuard)
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  )
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create Stripe Connect account for instructor' })
   @ApiResponse({
@@ -475,7 +488,16 @@ export class PaymentController {
     @Body() accountData: CreateStripeConnectAccountDto,
     @Req() req: AuthenticatedRequest,
   ) {
+    // DEBUG: Log the raw request body BEFORE validation
+    console.log('=== RAW REQUEST DEBUG ===');
+    console.log('Raw body:', req.body);
+    console.log('accountData after validation:', accountData);
+    console.log('accountData type:', typeof accountData);
+    console.log('accountData constructor:', accountData?.constructor?.name);
+    console.log('========================');
+
     // Only instructors can create Connect accounts
+    console.log('req.user.role', req.user.role);
     if (req.user.role !== 'INSTRUCTOR') {
       throw new BadRequestException(
         'Only instructors can create Stripe Connect accounts',

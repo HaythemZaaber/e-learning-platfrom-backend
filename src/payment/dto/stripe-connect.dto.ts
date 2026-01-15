@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsEnum, ValidateNested, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum, ValidateNested, IsEmail, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -10,22 +10,27 @@ export enum BusinessType {
 export class AddressDto {
   @ApiProperty({ description: 'Address line 1' })
   @IsString()
+  @IsNotEmpty()
   line1: string;
 
   @ApiProperty({ description: 'City' })
   @IsString()
+  @IsNotEmpty()
   city: string;
 
   @ApiProperty({ description: 'State/Province' })
   @IsString()
+  @IsNotEmpty()
   state: string;
 
   @ApiProperty({ description: 'Postal code' })
   @IsString()
-  postal_code: string;
+  @IsNotEmpty()
+  postalCode: string;  // Changed from postal_code
 
   @ApiProperty({ description: 'Country code (e.g., US, CA)' })
   @IsString()
+  @IsNotEmpty()
   country: string;
 }
 
@@ -46,14 +51,17 @@ export class DateOfBirthDto {
 export class IndividualDto {
   @ApiProperty({ description: 'First name' })
   @IsString()
-  first_name: string;
+  @IsNotEmpty()
+  firstName: string;  // Changed from first_name
 
   @ApiProperty({ description: 'Last name' })
   @IsString()
-  last_name: string;
+  @IsNotEmpty()
+  lastName: string;  // Changed from last_name
 
   @ApiProperty({ description: 'Email address' })
   @IsEmail()
+  @IsNotEmpty()
   email: string;
 
   @ApiProperty({ description: 'Phone number', required: false })
@@ -77,6 +85,7 @@ export class IndividualDto {
 export class CompanyDto {
   @ApiProperty({ description: 'Company name' })
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty({ description: 'Phone number', required: false })
@@ -92,25 +101,41 @@ export class CompanyDto {
 }
 
 export class CreateStripeConnectAccountDto {
-  @ApiProperty({ description: 'Country code (e.g., US, CA)' })
+  @ApiProperty({ description: 'Country code (e.g., US, CA)', example: 'US' })
   @IsString()
+  @IsNotEmpty()
   country: string;
 
-  @ApiProperty({ description: 'Email address for the Stripe account' })
+  @ApiProperty({ description: 'Email address for the Stripe account', example: 'instructor@example.com' })
   @IsEmail()
+  @IsNotEmpty()
   email: string;
 
-  @ApiProperty({ description: 'Business type', enum: BusinessType })
-  @IsEnum(BusinessType)
-  business_type: BusinessType;
+  @ApiProperty({ 
+    description: 'Business type', 
+    enum: BusinessType,
+    example: BusinessType.INDIVIDUAL 
+  })
+  @IsEnum(BusinessType, {
+    message: 'businessType must be one of the following values: individual, company'
+  })
+  businessType: BusinessType;  // Changed from business_type
 
-  @ApiProperty({ description: 'Individual information (required for individual accounts)', required: false })
+  @ApiProperty({ 
+    description: 'Individual information (required for individual accounts)', 
+    required: false,
+    type: () => IndividualDto
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => IndividualDto)
   individual?: IndividualDto;
 
-  @ApiProperty({ description: 'Company information (required for company accounts)', required: false })
+  @ApiProperty({ 
+    description: 'Company information (required for company accounts)', 
+    required: false,
+    type: () => CompanyDto
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => CompanyDto)

@@ -8,11 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-    AuthModule,
-  ],
+  imports: [ConfigModule, PrismaModule, AuthModule],
   controllers: [PaymentController],
   providers: [PaymentService, PaymentResolver, PayPalService],
   exports: [PaymentService, PayPalService],

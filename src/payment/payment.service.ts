@@ -20,6 +20,7 @@ import {
   EnrollmentResponse,
 } from './interfaces/payment.interface';
 import { PayPalService } from './paypal.service';
+import { CreateStripeConnectAccountDto } from './dto/stripe-connect.dto';
 
 @Injectable()
 export class PaymentService {
@@ -1711,7 +1712,10 @@ export class PaymentService {
   // STRIPE CONNECT ACCOUNT MANAGEMENT
   // =============================================================================
 
-  async createStripeConnectAccount(instructorId: string, accountData: any) {
+  async createStripeConnectAccount(
+    instructorId: string,
+    accountData: CreateStripeConnectAccountDto, // Type it properly
+  ) {
     try {
       // Check if instructor already has a Stripe account
       const existingInstructor = await this.prisma.user.findUnique({
@@ -1808,20 +1812,83 @@ export class PaymentService {
       this.logger.log(
         `Creating new Stripe Connect account for instructor: ${instructorId}`,
       );
+      this.logger.log(
+        'Account data received:',
+        JSON.stringify(accountData, null, 2),
+      );
 
-      const account = await this.stripe.accounts.create({
+      // Convert DTO (camelCase) to Stripe format (snake_case)
+      const stripeAccountParams: any = {
         type: 'express',
         country: accountData.country,
         email: accountData.email,
-        business_type: accountData.businessType,
-        individual: accountData.individual,
-        company: accountData.company,
+        business_type: accountData.businessType, // CHANGED: Convert camelCase to snake_case
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true },
         },
-        // Remove tos_acceptance - it will be handled during onboarding
-      });
+      };
+
+      // Only include individual or company based on businessType
+      if (accountData.businessType === 'individual' && accountData.individual) {
+        stripeAccountParams.individual = {
+          first_name: accountData.individual.firstName, // CHANGED
+          last_name: accountData.individual.lastName, // CHANGED
+          email: accountData.individual.email,
+        };
+
+        // Add optional fields if present
+        if (accountData.individual.phone) {
+          stripeAccountParams.individual.phone = accountData.individual.phone;
+        }
+
+        if (accountData.individual.address) {
+          stripeAccountParams.individual.address = {
+            line1: accountData.individual.address.line1,
+            city: accountData.individual.address.city,
+            state: accountData.individual.address.state,
+            postal_code: accountData.individual.address.postalCode, // CHANGED
+            country: accountData.individual.address.country,
+          };
+        }
+
+        if (accountData.individual.dob) {
+          stripeAccountParams.individual.dob = {
+            day: accountData.individual.dob.day,
+            month: accountData.individual.dob.month,
+            year: accountData.individual.dob.year,
+          };
+        }
+      } else if (
+        accountData.businessType === 'company' &&
+        accountData.company
+      ) {
+        stripeAccountParams.company = {
+          name: accountData.company.name,
+        };
+
+        // Add optional fields if present
+        if (accountData.company.phone) {
+          stripeAccountParams.company.phone = accountData.company.phone;
+        }
+
+        if (accountData.company.address) {
+          stripeAccountParams.company.address = {
+            line1: accountData.company.address.line1,
+            city: accountData.company.address.city,
+            state: accountData.company.address.state,
+            postal_code: accountData.company.address.postalCode, // CHANGED
+            country: accountData.company.address.country,
+          };
+        }
+      }
+
+      this.logger.log(
+        'Stripe account params:',
+        JSON.stringify(stripeAccountParams, null, 2),
+      );
+
+      const account = await this.stripe.accounts.create(stripeAccountParams);
 
       this.logger.log(`Stripe account created: ${account.id}`);
 

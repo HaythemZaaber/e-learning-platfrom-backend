@@ -34,10 +34,15 @@ export class CreateBookingRequestDto {
   @IsDate({ each: true })
   alternativeDates?: Date[];
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, description: 'For INDIVIDUAL offerings: time slot ID' })
   @IsOptional()
   @IsString()
   timeSlotId?: string;
+
+  @ApiProperty({ required: false, description: 'For GROUP offerings: group instance ID' })
+  @IsOptional()
+  @IsString()
+  groupInstanceId?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -109,10 +114,15 @@ export class UpdateBookingRequestDto {
   @IsDate({ each: true })
   alternativeDates?: Date[];
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, description: 'For INDIVIDUAL offerings: time slot ID' })
   @IsOptional()
   @IsString()
   timeSlotId?: string;
+
+  @ApiProperty({ required: false, description: 'For GROUP offerings: group instance ID' })
+  @IsOptional()
+  @IsString()
+  groupInstanceId?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

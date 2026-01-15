@@ -95,6 +95,34 @@ export class CreateSessionOfferingDto {
   @IsBoolean()
   requiresApproval: boolean;
 
+  @ApiProperty({ required: false, default: 15, description: 'Buffer time in minutes between sessions' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  bufferMinutes?: number;
+
+  @ApiProperty({ required: false, default: 24, description: 'Minimum hours notice required for booking' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minAdvanceHours?: number;
+
+  @ApiProperty({ required: false, default: false, description: 'Enable auto-cancel if minimum participants not met (for groups)' })
+  @IsOptional()
+  @IsBoolean()
+  autoCancelEnabled?: boolean;
+
+  @ApiProperty({ required: false, default: 2, description: 'Hours before session to check and auto-cancel (for groups)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  autoCancelHoursBefore?: number;
+
+  @ApiProperty({ required: false, default: true, description: 'Whether to refund on auto-cancel (for groups)' })
+  @IsOptional()
+  @IsBoolean()
+  autoCancelRefund?: boolean;
+
   @ApiProperty({ required: false, type: [String] })
   @IsOptional()
   @IsArray()
@@ -230,6 +258,34 @@ export class UpdateSessionOfferingDto {
   @IsOptional()
   @IsBoolean()
   requiresApproval?: boolean;
+
+  @ApiProperty({ required: false, description: 'Buffer time in minutes between sessions' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  bufferMinutes?: number;
+
+  @ApiProperty({ required: false, description: 'Minimum hours notice required for booking' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minAdvanceHours?: number;
+
+  @ApiProperty({ required: false, description: 'Enable auto-cancel if minimum participants not met (for groups)' })
+  @IsOptional()
+  @IsBoolean()
+  autoCancelEnabled?: boolean;
+
+  @ApiProperty({ required: false, description: 'Hours before session to check and auto-cancel (for groups)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  autoCancelHoursBefore?: number;
+
+  @ApiProperty({ required: false, description: 'Whether to refund on auto-cancel (for groups)' })
+  @IsOptional()
+  @IsBoolean()
+  autoCancelRefund?: boolean;
 
   @ApiProperty({ required: false, type: [String] })
   @IsOptional()

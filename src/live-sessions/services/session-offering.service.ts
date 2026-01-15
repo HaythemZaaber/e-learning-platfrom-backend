@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { 
-  CreateSessionOfferingDto, 
+import {
+  CreateSessionOfferingDto,
   UpdateSessionOfferingDto,
-  SessionOfferingFilterDto
+  SessionOfferingFilterDto,
 } from '../dto/session-offering.dto';
+import {
+  CreateGroupOfferingInstanceDto,
+  UpdateGroupOfferingInstanceDto,
+  GroupInstanceFilterDto,
+} from '../dto/group-instance.dto';
 import { SessionType } from '../dto/common.dto';
 
 @Injectable()
@@ -22,7 +31,7 @@ export class SessionOfferingService {
       domain,
       isPublic,
       minPrice,
-      maxPrice
+      maxPrice,
     } = filter;
 
     const where: any = {};
@@ -56,7 +65,7 @@ export class SessionOfferingService {
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
         { fixedTopic: { contains: search, mode: 'insensitive' } },
-        { tags: { hasSome: [search] } }
+        { tags: { hasSome: [search] } },
       ];
     }
 
@@ -75,16 +84,16 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
+            category: true,
+          },
         },
         liveSessions: {
           where: { status: 'COMPLETED' },
@@ -92,18 +101,18 @@ export class SessionOfferingService {
             id: true,
             reviews: {
               select: {
-                overallRating: true
-              }
-            }
-          }
-        }
+                overallRating: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [
         { isActive: 'desc' },
         { averageRating: 'desc' },
         { totalBookings: 'desc' },
-        { createdAt: 'desc' }
-      ]
+        { createdAt: 'desc' },
+      ],
     });
 
     return offerings;
@@ -122,8 +131,8 @@ export class SessionOfferingService {
             teachingRating: true,
             totalStudents: true,
             experience: true,
-            expertise: true
-          }
+            expertise: true,
+          },
         },
         topic: {
           select: {
@@ -133,19 +142,19 @@ export class SessionOfferingService {
             difficulty: true,
             category: true,
             prerequisites: true,
-            materials: true
-          }
+            materials: true,
+          },
         },
         bookingRequests: {
           where: {
-            status: { in: ['PENDING', 'ACCEPTED'] }
+            status: { in: ['PENDING', 'ACCEPTED'] },
           },
           select: {
             id: true,
             status: true,
             studentId: true,
-            preferredDate: true
-          }
+            preferredDate: true,
+          },
         },
         liveSessions: {
           select: {
@@ -164,15 +173,15 @@ export class SessionOfferingService {
                   select: {
                     firstName: true,
                     lastName: true,
-                    profileImage: true
-                  }
-                }
-              }
-            }
+                    profileImage: true,
+                  },
+                },
+              },
+            },
           },
-          orderBy: { scheduledStart: 'desc' }
-        }
-      }
+          orderBy: { scheduledStart: 'desc' },
+        },
+      },
     });
 
     if (!offering) {
@@ -187,8 +196,8 @@ export class SessionOfferingService {
     const instructor = await this.prisma.user.findUnique({
       where: { id: createDto.instructorId },
       include: {
-        instructorProfile: true
-      }
+        instructorProfile: true,
+      },
     });
 
     if (!instructor) {
@@ -196,13 +205,15 @@ export class SessionOfferingService {
     }
 
     if (!instructor.instructorProfile?.liveSessionsEnabled) {
-      throw new BadRequestException('Instructor does not have live sessions enabled');
+      throw new BadRequestException(
+        'Instructor does not have live sessions enabled',
+      );
     }
 
     // Validate topic exists if topicId is provided
     if (createDto.topicId) {
       const topic = await this.prisma.sessionTopic.findUnique({
-        where: { id: createDto.topicId }
+        where: { id: createDto.topicId },
       });
 
       if (!topic) {
@@ -210,17 +221,27 @@ export class SessionOfferingService {
       }
 
       if (topic.instructorId !== createDto.instructorId) {
-        throw new BadRequestException('Topic does not belong to this instructor');
+        throw new BadRequestException(
+          'Topic does not belong to this instructor',
+        );
       }
     }
 
     // Validate required fields based on topic type
-    if (createDto.topicType === 'FIXED' && !createDto.fixedTopic && !createDto.topicId) {
-      throw new BadRequestException('Fixed topic or topic ID is required for FIXED topic type');
+    if (
+      createDto.topicType === 'FIXED' &&
+      !createDto.fixedTopic &&
+      !createDto.topicId
+    ) {
+      throw new BadRequestException(
+        'Fixed topic or topic ID is required for FIXED topic type',
+      );
     }
 
     if (createDto.topicType === 'FLEXIBLE' && !createDto.domain) {
-      throw new BadRequestException('Domain is required for FLEXIBLE topic type');
+      throw new BadRequestException(
+        'Domain is required for FLEXIBLE topic type',
+      );
     }
 
     const offering = await this.prisma.sessionOffering.create({
@@ -252,9 +273,14 @@ export class SessionOfferingService {
         whiteboardEnabled: createDto.whiteboardEnabled,
         screenShareEnabled: createDto.screenShareEnabled,
         chatEnabled: createDto.chatEnabled,
+        bufferMinutes: createDto.bufferMinutes || 15,
+        minAdvanceHours: createDto.minAdvanceHours || 24,
+        autoCancelEnabled: createDto.autoCancelEnabled || false,
+        autoCancelHoursBefore: createDto.autoCancelHoursBefore || 2,
+        autoCancelRefund: createDto.autoCancelRefund !== false,
         totalBookings: 0,
         totalRevenue: 0,
-        averageRating: 0
+        averageRating: 0,
       },
       include: {
         instructor: {
@@ -263,18 +289,18 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
-        }
-      }
+            category: true,
+          },
+        },
+      },
     });
 
     return offering;
@@ -282,7 +308,7 @@ export class SessionOfferingService {
 
   async updateSessionOffering(id: string, updateDto: UpdateSessionOfferingDto) {
     const offering = await this.prisma.sessionOffering.findUnique({
-      where: { id }
+      where: { id },
     });
 
     if (!offering) {
@@ -292,7 +318,7 @@ export class SessionOfferingService {
     // Validate topic exists if topicId is being updated
     if (updateDto.topicId) {
       const topic = await this.prisma.sessionTopic.findUnique({
-        where: { id: updateDto.topicId }
+        where: { id: updateDto.topicId },
       });
 
       if (!topic) {
@@ -300,7 +326,9 @@ export class SessionOfferingService {
       }
 
       if (topic.instructorId !== offering.instructorId) {
-        throw new BadRequestException('Topic does not belong to this instructor');
+        throw new BadRequestException(
+          'Topic does not belong to this instructor',
+        );
       }
     }
 
@@ -310,14 +338,18 @@ export class SessionOfferingService {
       const newFixedTopic = updateDto.fixedTopic || offering.fixedTopic;
       const newTopicId = updateDto.topicId || offering.topicId;
       if (!newFixedTopic && !newTopicId) {
-        throw new BadRequestException('Fixed topic or topic ID is required for FIXED topic type');
+        throw new BadRequestException(
+          'Fixed topic or topic ID is required for FIXED topic type',
+        );
       }
     }
 
     if (newTopicType === 'FLEXIBLE') {
       const newDomain = updateDto.domain || offering.domain;
       if (!newDomain) {
-        throw new BadRequestException('Domain is required for FLEXIBLE topic type');
+        throw new BadRequestException(
+          'Domain is required for FLEXIBLE topic type',
+        );
       }
     }
 
@@ -326,9 +358,14 @@ export class SessionOfferingService {
       data: {
         ...updateDto,
         tags: updateDto.tags !== undefined ? updateDto.tags : undefined,
-        materials: updateDto.materials !== undefined ? updateDto.materials : undefined,
-        prerequisites: updateDto.prerequisites !== undefined ? updateDto.prerequisites : undefined,
-        equipment: updateDto.equipment !== undefined ? updateDto.equipment : undefined,
+        materials:
+          updateDto.materials !== undefined ? updateDto.materials : undefined,
+        prerequisites:
+          updateDto.prerequisites !== undefined
+            ? updateDto.prerequisites
+            : undefined,
+        equipment:
+          updateDto.equipment !== undefined ? updateDto.equipment : undefined,
       },
       include: {
         instructor: {
@@ -337,18 +374,18 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
-        }
-      }
+            category: true,
+          },
+        },
+      },
     });
 
     return updatedOffering;
@@ -360,15 +397,15 @@ export class SessionOfferingService {
       include: {
         bookingRequests: {
           where: {
-            status: { in: ['PENDING', 'ACCEPTED'] }
-          }
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
         },
         liveSessions: {
           where: {
-            status: { in: ['SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] }
-          }
-        }
-      }
+            status: { in: ['SCHEDULED', 'CONFIRMED', 'IN_PROGRESS'] },
+          },
+        },
+      },
     });
 
     if (!offering) {
@@ -377,15 +414,19 @@ export class SessionOfferingService {
 
     // Check if there are active bookings or sessions
     if (offering.bookingRequests.length > 0) {
-      throw new BadRequestException('Cannot delete offering with active booking requests');
+      throw new BadRequestException(
+        'Cannot delete offering with active booking requests',
+      );
     }
 
     if (offering.liveSessions.length > 0) {
-      throw new BadRequestException('Cannot delete offering with active sessions');
+      throw new BadRequestException(
+        'Cannot delete offering with active sessions',
+      );
     }
 
     await this.prisma.sessionOffering.delete({
-      where: { id }
+      where: { id },
     });
 
     return { success: true };
@@ -393,7 +434,7 @@ export class SessionOfferingService {
 
   async toggleOfferingActive(id: string) {
     const offering = await this.prisma.sessionOffering.findUnique({
-      where: { id }
+      where: { id },
     });
 
     if (!offering) {
@@ -410,18 +451,18 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
-        }
-      }
+            category: true,
+          },
+        },
+      },
     });
 
     return updatedOffering;
@@ -435,26 +476,34 @@ export class SessionOfferingService {
         liveSessions: {
           include: {
             reviews: true,
-            participants: true
-          }
-        }
-      }
+            participants: true,
+          },
+        },
+      },
     });
 
     if (!offering) {
       throw new NotFoundException('Session offering not found');
     }
 
-    const completedSessions = offering.liveSessions.filter(s => s.status === 'COMPLETED');
-    const totalRevenue = completedSessions.reduce((sum, session) => sum + session.instructorPayout, 0);
-    
-    const allReviews = offering.liveSessions.flatMap(s => s.reviews);
-    const averageRating = allReviews.length > 0 
-      ? allReviews.reduce((sum, review) => sum + review.overallRating, 0) / allReviews.length 
-      : 0;
+    const completedSessions = offering.liveSessions.filter(
+      (s) => s.status === 'COMPLETED',
+    );
+    const totalRevenue = completedSessions.reduce(
+      (sum, session) => sum + session.instructorPayout,
+      0,
+    );
 
-    const totalParticipants = offering.liveSessions.reduce((sum, session) => 
-      sum + session.participants.length, 0
+    const allReviews = offering.liveSessions.flatMap((s) => s.reviews);
+    const averageRating =
+      allReviews.length > 0
+        ? allReviews.reduce((sum, review) => sum + review.overallRating, 0) /
+          allReviews.length
+        : 0;
+
+    const totalParticipants = offering.liveSessions.reduce(
+      (sum, session) => sum + session.participants.length,
+      0,
     );
 
     const stats = {
@@ -465,12 +514,14 @@ export class SessionOfferingService {
       averageRating: Math.round(averageRating * 100) / 100,
       totalReviews: allReviews.length,
       totalParticipants,
-      conversionRate: offering.bookingRequests.length > 0 
-        ? (completedSessions.length / offering.bookingRequests.length) * 100 
-        : 0,
-      upcomingSessions: offering.liveSessions.filter(s => 
-        s.status === 'SCHEDULED' && new Date(s.scheduledStart) > new Date()
-      ).length
+      conversionRate:
+        offering.bookingRequests.length > 0
+          ? (completedSessions.length / offering.bookingRequests.length) * 100
+          : 0,
+      upcomingSessions: offering.liveSessions.filter(
+        (s) =>
+          s.status === 'SCHEDULED' && new Date(s.scheduledStart) > new Date(),
+      ).length,
     };
 
     // Update the offering with calculated stats
@@ -479,8 +530,8 @@ export class SessionOfferingService {
       data: {
         totalBookings: stats.totalBookings,
         totalRevenue: stats.totalRevenue,
-        averageRating: stats.averageRating
-      }
+        averageRating: stats.averageRating,
+      },
     });
 
     return { ...offering, stats };
@@ -512,7 +563,7 @@ export class SessionOfferingService {
       isPublic,
       minRating,
       page = 1,
-      limit = 10
+      limit = 10,
     } = query;
 
     const skip = (page - 1) * limit;
@@ -525,7 +576,7 @@ export class SessionOfferingService {
         { description: { contains: search, mode: 'insensitive' } },
         { fixedTopic: { contains: search, mode: 'insensitive' } },
         { domain: { contains: search, mode: 'insensitive' } },
-        { tags: { hasSome: [search] } }
+        { tags: { hasSome: [search] } },
       ];
     }
 
@@ -575,25 +626,25 @@ export class SessionOfferingService {
               firstName: true,
               lastName: true,
               profileImage: true,
-              teachingRating: true
-            }
+              teachingRating: true,
+            },
           },
           topic: {
             select: {
               id: true,
               name: true,
               difficulty: true,
-              category: true
-            }
-          }
+              category: true,
+            },
+          },
         },
         orderBy: [
           { isActive: 'desc' },
           { averageRating: 'desc' },
-          { totalBookings: 'desc' }
-        ]
+          { totalBookings: 'desc' },
+        ],
       }),
-      this.prisma.sessionOffering.count({ where })
+      this.prisma.sessionOffering.count({ where }),
     ]);
 
     return {
@@ -601,7 +652,7 @@ export class SessionOfferingService {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
@@ -609,7 +660,7 @@ export class SessionOfferingService {
     return this.prisma.sessionOffering.findMany({
       where: {
         isActive: true,
-        isPublic: true
+        isPublic: true,
       },
       take: limit,
       include: {
@@ -619,26 +670,26 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
-        }
+            category: true,
+          },
+        },
       },
-      orderBy: [
-        { totalBookings: 'desc' },
-        { averageRating: 'desc' }
-      ]
+      orderBy: [{ totalBookings: 'desc' }, { averageRating: 'desc' }],
     });
   }
 
-  async getOfferingsByInstructor(instructorId: string, includeInactive: boolean = false) {
+  async getOfferingsByInstructor(
+    instructorId: string,
+    includeInactive: boolean = false,
+  ) {
     const where: any = { instructorId };
 
     if (!includeInactive) {
@@ -653,25 +704,25 @@ export class SessionOfferingService {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
+            category: true,
+          },
         },
         liveSessions: {
           where: { status: 'COMPLETED' },
-          select: { id: true }
-        }
+          select: { id: true },
+        },
       },
       orderBy: [
         { isActive: 'desc' },
         { totalBookings: 'desc' },
-        { createdAt: 'desc' }
-      ]
+        { createdAt: 'desc' },
+      ],
     });
   }
 
   async duplicateOffering(id: string, title?: string) {
     const originalOffering = await this.prisma.sessionOffering.findUnique({
-      where: { id }
+      where: { id },
     });
 
     if (!originalOffering) {
@@ -687,7 +738,7 @@ export class SessionOfferingService {
       averageRating: 0,
       createdAt: undefined,
       updatedAt: undefined,
-      isActive: false // Start as inactive for review
+      isActive: false, // Start as inactive for review
     };
 
     const duplicatedOffering = await this.prisma.sessionOffering.create({
@@ -699,18 +750,18 @@ export class SessionOfferingService {
             firstName: true,
             lastName: true,
             profileImage: true,
-            teachingRating: true
-          }
+            teachingRating: true,
+          },
         },
         topic: {
           select: {
             id: true,
             name: true,
             difficulty: true,
-            category: true
-          }
-        }
-      }
+            category: true,
+          },
+        },
+      },
     });
 
     return duplicatedOffering;
@@ -719,7 +770,7 @@ export class SessionOfferingService {
   async getOfferingAvailability(id: string, days: number = 30) {
     const offering = await this.prisma.sessionOffering.findUnique({
       where: { id },
-      select: { duration: true }
+      select: { duration: true },
     });
 
     if (!offering) {
@@ -736,8 +787,8 @@ export class SessionOfferingService {
                 isActive: true,
                 specificDate: {
                   gte: new Date(),
-                  lte: new Date(Date.now() + days * 24 * 60 * 60 * 1000)
-                }
+                  lte: new Date(Date.now() + days * 24 * 60 * 60 * 1000),
+                },
               },
               include: {
                 generatedSlots: {
@@ -745,14 +796,14 @@ export class SessionOfferingService {
                     isAvailable: true,
                     isBooked: false,
                     isBlocked: false,
-                    slotDuration: { gte: offering.duration || 60 }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+                    slotDuration: { gte: offering.duration || 60 },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!fullOffering) {
@@ -760,19 +811,399 @@ export class SessionOfferingService {
     }
 
     const availableSlots = fullOffering.instructor.availabilities
-      .flatMap(availability => availability.generatedSlots)
-      .filter(slot => new Date(slot.startTime) > new Date());
+      .flatMap((availability) => availability.generatedSlots)
+      .filter((slot) => new Date(slot.startTime) > new Date());
 
     return {
       offering: fullOffering,
       availableSlots: availableSlots.length,
       nextAvailableSlot: availableSlots[0] || null,
-      availabilityByDate: availableSlots.reduce((acc, slot) => {
-        const date = slot.date.toISOString().split('T')[0];
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(slot);
-        return acc;
-      }, {} as Record<string, any[]>)
+      availabilityByDate: availableSlots.reduce(
+        (acc, slot) => {
+          const date = slot.date.toISOString().split('T')[0];
+          if (!acc[date]) acc[date] = [];
+          acc[date].push(slot);
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      ),
     };
+  }
+
+  // =============================================================================
+  // GROUP OFFERING INSTANCES
+  // =============================================================================
+
+  async createGroupInstance(dto: CreateGroupOfferingInstanceDto) {
+    // Validate offering exists and is a group type
+    const offering = await this.prisma.sessionOffering.findUnique({
+      where: { id: dto.offeringId },
+      include: {
+        instructor: true,
+      },
+    });
+
+    if (!offering) {
+      throw new NotFoundException('Session offering not found');
+    }
+
+    if (offering.instructorId !== dto.instructorId) {
+      throw new BadRequestException(
+        'Offering does not belong to this instructor',
+      );
+    }
+
+    // Only GROUP, WORKSHOP, MASTERCLASS can have instances
+    const groupTypes = [
+      'SMALL_GROUP',
+      'LARGE_GROUP',
+      'WORKSHOP',
+      'MASTERCLASS',
+    ];
+    if (!groupTypes.includes(offering.sessionType)) {
+      throw new BadRequestException('Only group offerings can have instances');
+    }
+
+    // Validate dates
+    if (dto.scheduledStart >= dto.scheduledEnd) {
+      throw new BadRequestException('Start time must be before end time');
+    }
+
+    if (dto.scheduledStart < new Date()) {
+      throw new BadRequestException('Scheduled start must be in the future');
+    }
+
+    // Check for conflicts with existing instances
+    const conflictingInstance =
+      await this.prisma.groupOfferingInstance.findFirst({
+        where: {
+          offeringId: dto.offeringId,
+          OR: [
+            {
+              AND: [
+                { scheduledStart: { lte: dto.scheduledStart } },
+                { scheduledEnd: { gt: dto.scheduledStart } },
+              ],
+            },
+            {
+              AND: [
+                { scheduledStart: { lt: dto.scheduledEnd } },
+                { scheduledEnd: { gte: dto.scheduledEnd } },
+              ],
+            },
+            {
+              AND: [
+                { scheduledStart: { gte: dto.scheduledStart } },
+                { scheduledEnd: { lte: dto.scheduledEnd } },
+              ],
+            },
+          ],
+          status: { not: 'CANCELLED' },
+        },
+      });
+
+    if (conflictingInstance) {
+      throw new BadRequestException(
+        'Instance conflicts with existing scheduled instance',
+      );
+    }
+
+    // Calculate auto-cancel check time
+    const autoCancelAt =
+      offering.autoCancelEnabled && offering.autoCancelHoursBefore
+        ? new Date(
+            dto.scheduledStart.getTime() -
+              offering.autoCancelHoursBefore * 60 * 60 * 1000,
+          )
+        : null;
+
+    const instance = await this.prisma.groupOfferingInstance.create({
+      data: {
+        offeringId: dto.offeringId,
+        instructorId: dto.instructorId,
+        scheduledStart: dto.scheduledStart,
+        scheduledEnd: dto.scheduledEnd,
+        maxEnrollments: offering.capacity,
+        minEnrollments: offering.minParticipants || 1,
+        currentEnrollments: 0,
+        status: 'SCHEDULED',
+        isPublic: dto.isPublic !== false,
+        isBookable: dto.isBookable !== false,
+        autoCancelChecked: false,
+        autoCancelAt,
+      },
+      include: {
+        offering: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            basePrice: true,
+            currency: true,
+            duration: true,
+          },
+        },
+        bookings: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+        },
+      },
+    });
+
+    return instance;
+  }
+
+  async getGroupInstances(filter: GroupInstanceFilterDto = {}) {
+    const { offeringId, instructorId, startDate, endDate, status, isBookable } =
+      filter;
+
+    const where: any = {};
+
+    if (offeringId) {
+      where.offeringId = offeringId;
+    }
+
+    if (instructorId) {
+      where.instructorId = instructorId;
+    }
+
+    if (startDate || endDate) {
+      where.scheduledStart = {};
+      if (startDate) where.scheduledStart.gte = startDate;
+      if (endDate) where.scheduledStart.lte = endDate;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (isBookable !== undefined) {
+      where.isBookable = isBookable;
+    }
+
+    const instances = await this.prisma.groupOfferingInstance.findMany({
+      where,
+      include: {
+        offering: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            basePrice: true,
+            currency: true,
+            duration: true,
+            sessionType: true,
+          },
+        },
+        bookings: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profileImage: true,
+              },
+            },
+          },
+        },
+        liveSession: {
+          select: {
+            id: true,
+            status: true,
+            meetingLink: true,
+          },
+        },
+      },
+      orderBy: { scheduledStart: 'asc' },
+    });
+
+    return instances;
+  }
+
+  async getGroupInstance(id: string) {
+    const instance = await this.prisma.groupOfferingInstance.findUnique({
+      where: { id },
+      include: {
+        offering: true,
+        bookings: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profileImage: true,
+                email: true,
+              },
+            },
+          },
+        },
+        liveSession: true,
+      },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('Group instance not found');
+    }
+
+    return instance;
+  }
+
+  async updateGroupInstance(id: string, dto: UpdateGroupOfferingInstanceDto) {
+    const instance = await this.prisma.groupOfferingInstance.findUnique({
+      where: { id },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('Group instance not found');
+    }
+
+    // Validate dates if being updated
+    if (dto.scheduledStart || dto.scheduledEnd) {
+      const newStart = dto.scheduledStart || instance.scheduledStart;
+      const newEnd = dto.scheduledEnd || instance.scheduledEnd;
+
+      if (newStart >= newEnd) {
+        throw new BadRequestException('Start time must be before end time');
+      }
+
+      if (newStart < new Date()) {
+        throw new BadRequestException('Scheduled start must be in the future');
+      }
+    }
+
+    // Prepare update data
+    const updateData: any = { ...dto };
+
+    // If cancelling, set cancelledAt
+    if (dto.status === 'CANCELLED' && instance.status !== 'CANCELLED') {
+      updateData.cancelledAt = new Date();
+    }
+
+    const updatedInstance = await this.prisma.groupOfferingInstance.update({
+      where: { id },
+      data: updateData,
+      include: {
+        offering: true,
+        bookings: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+        },
+      },
+    });
+
+    return updatedInstance;
+  }
+
+  async deleteGroupInstance(id: string) {
+    const instance = await this.prisma.groupOfferingInstance.findUnique({
+      where: { id },
+      include: {
+        bookings: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+        },
+      },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('Group instance not found');
+    }
+
+    if (instance.bookings.length > 0) {
+      throw new BadRequestException(
+        'Cannot delete instance with active bookings',
+      );
+    }
+
+    await this.prisma.groupOfferingInstance.delete({
+      where: { id },
+    });
+
+    return { success: true };
+  }
+
+  async cancelGroupInstance(id: string, reason?: string) {
+    const instance = await this.prisma.groupOfferingInstance.findUnique({
+      where: { id },
+      include: {
+        bookings: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+          },
+        },
+      },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('Group instance not found');
+    }
+
+    if (instance.status === 'CANCELLED') {
+      throw new BadRequestException('Instance is already cancelled');
+    }
+
+    if (instance.status === 'COMPLETED') {
+      throw new BadRequestException('Cannot cancel a completed instance');
+    }
+
+    const cancelledInstance = await this.prisma.groupOfferingInstance.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        isBookable: false,
+        cancelledAt: new Date(),
+        cancelReason: reason,
+      },
+      include: {
+        offering: true,
+        bookings: true,
+      },
+    });
+
+    return cancelledInstance;
+  }
+
+  async updateInstanceEnrollment(instanceId: string, increment: number) {
+    const instance = await this.prisma.groupOfferingInstance.findUnique({
+      where: { id: instanceId },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('Group instance not found');
+    }
+
+    const newEnrollments = instance.currentEnrollments + increment;
+
+    if (newEnrollments < 0) {
+      throw new BadRequestException('Enrollment count cannot be negative');
+    }
+
+    if (newEnrollments > instance.maxEnrollments) {
+      throw new BadRequestException('Cannot exceed maximum enrollments');
+    }
+
+    // Update status based on enrollment
+    let status = instance.status;
+    if (newEnrollments >= instance.minEnrollments && status === 'SCHEDULED') {
+      status = 'CONFIRMED';
+    }
+
+    const updatedInstance = await this.prisma.groupOfferingInstance.update({
+      where: { id: instanceId },
+      data: {
+        currentEnrollments: newEnrollments,
+        status,
+      },
+    });
+
+    return updatedInstance;
   }
 }
