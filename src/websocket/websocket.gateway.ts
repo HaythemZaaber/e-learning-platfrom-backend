@@ -161,36 +161,21 @@ export class WebSocketGatewayService
     client.emit('left_room', { room });
   }
 
-  // Method to send notification to specific user
+  // Method to send notification to specific user (via user room only to avoid duplicates)
   async sendNotificationToUser(userId: string, notification: any) {
-    const socketId = this.connectedUsers.get(userId);
     const userRoom = `user:${userId}`;
+    const isConnected = this.connectedUsers.has(userId);
 
-    let sentCount = 0;
-
-    // Method 1: Send to specific socket (most reliable if user has one connection)
-    if (socketId) {
-      this.server.to(socketId).emit('notification', notification);
-      sentCount++;
-      this.logger.log(`   ✅ Sent to socket ${socketId}`);
+    if (isConnected) {
+      this.server.to(userRoom).emit('notification', notification);
+      this.logger.log(`   ✅ Notification sent to user ${userId} via room ${userRoom}`);
     } else {
-      this.logger.warn(`   ⚠️  No socket ID found for user ${userId}`);
+      // Still emit to the room in case of stale map entries
+      this.server.to(userRoom).emit('notification', notification);
+      this.logger.warn(`   ⚠️  User ${userId} not in connected map, sent to room anyway`);
     }
 
-    // Method 2: Send to user room (works even if socketId is outdated)
-    this.server.to(userRoom).emit('notification', notification);
-    sentCount++;
-    this.logger.log(`   ✅ Sent to room ${userRoom}`);
-
-    if (sentCount === 0) {
-      this.logger.error(
-        `   ❌ Failed to send notification - user not connected`,
-      );
-    } else {
-      this.logger.log(`   📨 Notification sent via ${sentCount} method(s)`);
-    }
-
-    return sentCount > 0;
+    return isConnected;
   }
 
   // Enhanced method to send notification to multiple users

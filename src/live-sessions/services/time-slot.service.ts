@@ -349,7 +349,20 @@ export class TimeSlotService {
               }
             }
           }
-        }
+        },
+        bookingRequests: {
+          where: {
+            status: { in: ['PENDING', 'ACCEPTED'] },
+            paymentStatus: { notIn: ['EXPIRED', 'FAILED', 'CANCELED'] },
+          },
+          select: {
+            id: true,
+            studentId: true,
+            status: true,
+            paymentStatus: true,
+            offeringId: true,
+          },
+        },
       },
       orderBy: { startTime: 'asc' }
     });

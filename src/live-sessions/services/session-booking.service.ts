@@ -4,10 +4,14 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  OnModuleDestroy,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../../payment/payment.service';
+import { LiveSessionService } from './live-session.service';
 import {
   SessionStatus,
   PaymentStatus,
@@ -31,18 +35,179 @@ import {
 } from '../dto/session-booking.dto';
 
 @Injectable()
-export class SessionBookingService {
+export class SessionBookingService implements OnModuleDestroy {
   private readonly logger = new Logger(SessionBookingService.name);
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentService: PaymentService,
     private readonly configService: ConfigService,
-  ) {}
+    @Inject(forwardRef(() => LiveSessionService))
+    private readonly liveSessionService: LiveSessionService,
+  ) {
+    // Run expired-booking cleanup every 5 minutes
+    this.cleanupInterval = setInterval(
+      () => this.cleanupAllExpiredBookings(),
+      5 * 60 * 1000,
+    );
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+  }
+
+  /**
+   * Global cleanup: expire all abandoned bookings across all time slots.
+   * Runs every 5 minutes via interval and can also be called manually.
+   */
+  async cleanupAllExpiredBookings(): Promise<number> {
+    const now = new Date();
+    const result = await this.prisma.bookingRequest.updateMany({
+      where: {
+        paymentStatus: PaymentStatus.PENDING,
+        expiresAt: { lt: now },
+        status: { in: ['PENDING', 'ACCEPTED'] },
+      },
+      data: {
+        status: BookingStatus.EXPIRED,
+        paymentStatus: PaymentStatus.EXPIRED,
+      },
+    });
+    if (result.count > 0) {
+      this.logger.log(`[Cleanup] Expired ${result.count} abandoned booking(s)`);
+
+      // Recalculate isBooked for affected time slots
+      const expiredBookings = await this.prisma.bookingRequest.findMany({
+        where: { paymentStatus: PaymentStatus.EXPIRED },
+        select: { timeSlotId: true },
+        distinct: ['timeSlotId'],
+      });
+
+      for (const { timeSlotId } of expiredBookings) {
+        if (!timeSlotId) continue;
+        const activeCount = await this.prisma.bookingRequest.count({
+          where: {
+            timeSlotId,
+            status: { in: ['PENDING', 'ACCEPTED'] },
+            paymentStatus: { notIn: ['EXPIRED', 'FAILED', 'CANCELED'] },
+          },
+        });
+        const slot = await this.prisma.timeSlot.findUnique({
+          where: { id: timeSlotId },
+          select: { maxBookings: true, currentBookings: true },
+        });
+        if (slot) {
+          const totalActive = slot.currentBookings + activeCount;
+          await this.prisma.timeSlot.update({
+            where: { id: timeSlotId },
+            data: { isBooked: totalActive >= slot.maxBookings },
+          });
+        }
+      }
+    }
+    return result.count;
+  }
+
+  /**
+   * Expire abandoned bookings for a specific time slot within a transaction.
+   */
+  private async expireAbandonedBookings(tx: any, timeSlotId: string) {
+    const now = new Date();
+    const expired = await tx.bookingRequest.updateMany({
+      where: {
+        timeSlotId,
+        paymentStatus: PaymentStatus.PENDING,
+        expiresAt: { lt: now },
+        status: { in: [BookingStatus.PENDING, BookingStatus.ACCEPTED] },
+      },
+      data: {
+        status: BookingStatus.EXPIRED,
+        paymentStatus: PaymentStatus.EXPIRED,
+      },
+    });
+    if (expired.count > 0) {
+      this.logger.log(
+        `Expired ${expired.count} abandoned booking(s) for time slot ${timeSlotId}`,
+      );
+    }
+    return expired.count;
+  }
 
   async createSessionBooking(dto: CreateSessionBookingDto) {
     // Use a database transaction to ensure atomicity and prevent race conditions
     return await this.prisma.$transaction(async (tx) => {
+      // Clean up any expired unpaid bookings for this slot first
+      await this.expireAbandonedBookings(tx, dto.timeSlotId);
+
+      // ── Check if this student already has an active booking for this slot ──
+      const existingBooking = await tx.bookingRequest.findFirst({
+        where: {
+          studentId: dto.studentId,
+          timeSlotId: dto.timeSlotId,
+          status: { in: ['PENDING', 'ACCEPTED'] },
+          paymentStatus: { notIn: ['EXPIRED', 'FAILED', 'CANCELED'] },
+        },
+        include: {
+          offering: { include: { instructor: true } },
+          student: true,
+          timeSlot: { include: { availability: true } },
+        },
+      });
+
+      if (existingBooking) {
+        // Student already has an unpaid booking for this slot — give them
+        // the existing booking info so the frontend can redirect to payment.
+        if (existingBooking.paymentStatus === PaymentStatus.PENDING) {
+          this.logger.log(
+            `Student ${dto.studentId} already has unpaid booking ${existingBooking.id} for slot ${dto.timeSlotId}`,
+          );
+
+          // Create a fresh Stripe checkout session for the existing booking
+          const paymentResult =
+            await this.paymentService.createSessionBookingPayment(
+              existingBooking.id,
+              existingBooking.offeringId,
+              dto.studentId,
+              existingBooking.offering.instructorId,
+              existingBooking.finalPrice || existingBooking.offeredPrice,
+              existingBooking.currency,
+              dto.returnUrl,
+              dto.cancelUrl,
+            );
+
+          if (paymentResult.success) {
+            await tx.bookingRequest.update({
+              where: { id: existingBooking.id },
+              data: {
+                stripeSessionId: paymentResult.checkoutSession!.id,
+                expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+              },
+            });
+          }
+
+          return {
+            success: true,
+            existingBooking: true,
+            bookingRequest: existingBooking,
+            paymentIntent: paymentResult.success ? paymentResult.paymentIntent : null,
+            checkoutSession: paymentResult.success ? paymentResult.checkoutSession : null,
+            autoApproved: existingBooking.status === BookingStatus.ACCEPTED,
+            liveSession: null,
+            message: 'You already have a booking for this time slot. Please complete your payment.',
+          };
+        }
+
+        // Student already has a PAID booking
+        if (existingBooking.paymentStatus === PaymentStatus.PAID) {
+          throw new BadRequestException(
+            'You already have a confirmed booking for this time slot.',
+          );
+        }
+      }
+
       // Validate time slot availability with proper locking
       const timeSlot = await tx.timeSlot.findUnique({
         where: { id: dto.timeSlotId },
@@ -56,6 +221,9 @@ export class SessionBookingService {
             where: {
               status: {
                 in: ['PENDING', 'ACCEPTED'],
+              },
+              paymentStatus: {
+                notIn: ['EXPIRED', 'FAILED', 'CANCELED'],
               },
             },
           },
@@ -73,19 +241,19 @@ export class SessionBookingService {
         throw new NotFoundException('Time slot not found');
       }
 
-      // Enhanced slot availability validation
       if (!timeSlot.isAvailable || timeSlot.isBlocked) {
         throw new BadRequestException('Time slot is not available for booking');
       }
 
-      // Check if slot is already fully booked (including pending bookings)
-      const totalBookings =
-        timeSlot.currentBookings + timeSlot.bookingRequests.length;
+      // Count only active (non-expired, non-failed) bookings from OTHER students
+      const activeBookingCount = timeSlot.bookingRequests.length;
+      const totalBookings = timeSlot.currentBookings + activeBookingCount;
       if (totalBookings >= timeSlot.maxBookings) {
-        throw new BadRequestException('Time slot is already fully booked');
+        throw new BadRequestException(
+          'This time slot is fully booked. Please choose a different time.',
+        );
       }
 
-      // Check if there are conflicting sessions
       if (timeSlot.sessions.length > 0) {
         throw new BadRequestException('Time slot has conflicting sessions');
       }
@@ -115,30 +283,26 @@ export class SessionBookingService {
         throw new NotFoundException('Student not found');
       }
 
-      // Check instructor's auto-approval settings
-      // Note: Availability-level autoAcceptBookings overrides instructor profile setting
+      // ── Auto-approval logic ──
+      // Use the availability from the timeSlot relation (already loaded above)
+      // instead of a separate query by specificDate that may miss due to
+      // DateTime precision differences.
       const instructorProfile = await tx.instructorProfile.findUnique({
         where: { userId: offering.instructorId },
       });
 
-      const availability = await tx.instructorAvailability.findFirst({
-        where: {
-          instructorId: offering.instructorId,
-          specificDate: timeSlot.date,
-          isActive: true,
-        },
-      });
+      const availability = timeSlot.availability;
 
-      // Enhanced auto-approval logic with availability-level priority
       const shouldAutoApprove = this.shouldAutoApproveBooking({
         instructorProfile,
         availability,
         timeSlot,
         offering,
-        totalBookings: totalBookings + 1, // Include this booking
+        totalBookings,
       });
 
-      // Create booking request
+      // Create booking request — NO time slot update and NO live session
+      // until payment is confirmed.
       const bookingRequest = await tx.bookingRequest.create({
         data: {
           offeringId: dto.offeringId,
@@ -155,7 +319,7 @@ export class SessionBookingService {
             ? BookingStatus.ACCEPTED
             : BookingStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           priority: 1,
         },
         include: {
@@ -173,39 +337,12 @@ export class SessionBookingService {
         },
       });
 
-      // Only update time slot booking count if auto-approval is enabled
-      // For manual approval, the count will be updated when the instructor approves
-      if (shouldAutoApprove) {
-        this.logger.debug(
-          `Auto-approval enabled: updating slot ${dto.timeSlotId}`,
-          {
-            currentBookings: timeSlot.currentBookings,
-            maxBookings: timeSlot.maxBookings,
-            willBeBooked: totalBookings + 1 >= timeSlot.maxBookings,
-          },
-        );
+      this.logger.debug(
+        `Booking created: ${bookingRequest.id}, autoApprove=${shouldAutoApprove}, ` +
+        `status=${bookingRequest.status}, payment=PENDING — awaiting payment before any slot/session changes`,
+      );
 
-        await tx.timeSlot.update({
-          where: { id: dto.timeSlotId },
-          data: {
-            currentBookings: {
-              increment: 1,
-            },
-            isBooked: totalBookings + 1 >= timeSlot.maxBookings,
-          },
-        });
-      } else {
-        this.logger.debug(
-          `Manual approval required: slot ${dto.timeSlotId} not updated yet`,
-          {
-            currentBookings: timeSlot.currentBookings,
-            maxBookings: timeSlot.maxBookings,
-            autoApproval: shouldAutoApprove,
-          },
-        );
-      }
-
-      // Create payment using the payment service
+      // Create Stripe checkout session
       const paymentResult =
         await this.paymentService.createSessionBookingPayment(
           bookingRequest.id,
@@ -219,45 +356,38 @@ export class SessionBookingService {
         );
 
       if (!paymentResult.success) {
-        // The transaction will automatically rollback if we throw an error
         throw new BadRequestException(
           paymentResult.error || 'Failed to create payment',
         );
       }
 
-      // Update booking request with payment details
+      // Store the Stripe checkout session ID on the booking
       await tx.bookingRequest.update({
         where: { id: bookingRequest.id },
         data: {
-          paymentIntentId: null, // Will be updated when payment is completed
           stripeSessionId: paymentResult.checkoutSession!.id,
           paymentStatus: PaymentStatus.PENDING,
         },
       });
 
-      // If auto-approval is enabled, create live session immediately
-      let liveSession: any = null;
-      if (shouldAutoApprove) {
-        liveSession = await this.createLiveSessionFromBookingInTransaction(
-          bookingRequest,
-          tx,
-        );
-      }
-
       return {
         success: true,
+        existingBooking: false,
         bookingRequest,
         paymentIntent: paymentResult.paymentIntent,
         checkoutSession: paymentResult.checkoutSession,
         autoApproved: shouldAutoApprove,
-        liveSession: liveSession,
+        liveSession: null,
       };
     });
   }
 
   /**
-   * Enhanced auto-approval logic with comprehensive checks
-   * Priority: Availability autoAcceptBookings overrides instructor profile setting
+   * Auto-approval logic.
+   * Priority: Availability-level autoAcceptBookings overrides instructor profile.
+   * The booking-window (min/max advance hours) is NOT checked here — it is
+   * already enforced when generating/displaying available time slots. If a slot
+   * is visible and bookable, the advance-hours constraint is satisfied.
    */
   private shouldAutoApproveBooking(params: {
     instructorProfile: any;
@@ -274,82 +404,47 @@ export class SessionBookingService {
       totalBookings,
     } = params;
 
-    // Debug logging
-    this.logger.debug('Auto-accept logic inputs:', {
-      instructorProfileAutoAccept: instructorProfile?.autoAcceptBookings,
-      availabilityAutoAccept: availability?.autoAcceptBookings,
-      availabilityId: availability?.id,
-      timeSlotId: timeSlot?.id,
-      offeringAutoAccept: offering?.autoAcceptBookings,
-    });
-
-    // PRIORITY: Check availability autoAcceptBookings first (this overrides instructor profile)
+    // 1) Determine auto-accept setting (availability overrides profile)
     const slotAutoAccept = availability?.autoAcceptBookings;
-
-    // If slot has explicit autoAcceptBookings setting, use it (true/false)
-    // If slot doesn't have this setting, fall back to instructor profile
     const shouldAutoAccept =
       slotAutoAccept !== undefined
         ? slotAutoAccept
         : instructorProfile?.autoAcceptBookings === true;
 
-    this.logger.debug('Auto-accept decision:', {
-      slotAutoAccept,
-      shouldAutoAccept,
-      finalDecision:
-        shouldAutoAccept === true ? 'AUTO_ACCEPT' : 'MANUAL_APPROVAL',
-    });
-
-    // If auto-accept is disabled at slot level, don't proceed
-    if (shouldAutoAccept === false) {
-      this.logger.debug('Auto-accept disabled at availability level');
+    if (!shouldAutoAccept) {
+      this.logger.debug('Auto-accept: disabled (availability or profile)');
       return false;
     }
 
-    // If auto-accept is not enabled (either slot or profile), don't proceed
-    if (shouldAutoAccept !== true) {
-      this.logger.debug('Auto-accept not enabled');
-      return false;
-    }
+    // 2) Check if offering explicitly disables auto-accept
+    const offeringAllowsAutoAccept = offering?.autoAcceptBookings !== false;
 
-    // Check if offering allows auto-approval
-    const offeringAllowsAutoAccept = offering.autoAcceptBookings !== false;
-
-    // Check if time slot is within acceptable booking window
-    const now = new Date();
-    const slotDate = new Date(timeSlot.date);
-    const hoursUntilSlot =
-      (slotDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-    const minAdvanceHours =
-      availability?.minAdvanceHours ||
-      instructorProfile?.minAdvanceBooking ||
-      12;
-    const maxAdvanceHours = availability?.maxAdvanceHours || 720; // 30 days default
-
-    const withinBookingWindow =
-      hoursUntilSlot >= minAdvanceHours && hoursUntilSlot <= maxAdvanceHours;
-
-    // Check if slot has capacity
+    // 3) Check capacity
     const hasCapacity = totalBookings < timeSlot.maxBookings;
 
-    // Check if instructor is accepting students
+    // 4) Instructor-level gates
     const instructorAcceptingStudents =
       instructorProfile?.isAcceptingStudents !== false;
-
-    // Check if live sessions are enabled for instructor
     const liveSessionsEnabled =
       instructorProfile?.liveSessionsEnabled !== false;
 
-    // Auto-approve only if ALL conditions are met
-    return (
-      shouldAutoAccept &&
+    const result =
       offeringAllowsAutoAccept &&
-      withinBookingWindow &&
       hasCapacity &&
       instructorAcceptingStudents &&
-      liveSessionsEnabled
-    );
+      liveSessionsEnabled;
+
+    this.logger.debug('Auto-accept evaluation:', {
+      slotAutoAccept,
+      shouldAutoAccept,
+      offeringAllowsAutoAccept,
+      hasCapacity,
+      instructorAcceptingStudents,
+      liveSessionsEnabled,
+      finalResult: result,
+    });
+
+    return result;
   }
 
   /**
@@ -417,27 +512,59 @@ export class SessionBookingService {
       },
     });
 
-    // Generate meeting room ID (will be updated when Stream call is created)
+    // Generate meeting room ID (will be updated when Stream call is created on session start)
     const meetingRoomId = this.generateMeetingId(liveSession.id);
+    const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+    const inAppPath = `${frontendUrl}/sessions/${liveSession.id}/video-call`;
 
     const updatedLiveSession = await tx.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+        meetingLink: inAppPath,
       },
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+      meetingLink: inAppPath,
     };
   }
 
   async confirmSessionBooking(dto: ConfirmSessionBookingDto) {
     // Use a database transaction to ensure atomicity
     return await this.prisma.$transaction(async (tx) => {
+      // Check if this booking was already expired
+      const preCheck = await tx.bookingRequest.findUnique({
+        where: { id: dto.bookingId },
+        select: { status: true, paymentStatus: true, expiresAt: true, timeSlotId: true },
+      });
+
+      if (!preCheck) {
+        throw new NotFoundException('Booking request not found');
+      }
+
+      // If the webhook already marked payment as PAID, treat this as idempotent success
+      if (preCheck.paymentStatus === PaymentStatus.PAID) {
+        this.logger.log(
+          `Booking ${dto.bookingId} already has paymentStatus=PAID (likely via webhook). Proceeding to finalize.`,
+        );
+      } else {
+        // Only enforce expiry checks when payment is still pending
+        if (preCheck.status === BookingStatus.EXPIRED || preCheck.paymentStatus === PaymentStatus.EXPIRED) {
+          throw new BadRequestException('This booking has expired. Please create a new booking.');
+        }
+
+        if (preCheck.expiresAt && new Date() > preCheck.expiresAt && preCheck.paymentStatus === PaymentStatus.PENDING) {
+          await tx.bookingRequest.update({
+            where: { id: dto.bookingId },
+            data: { status: BookingStatus.EXPIRED, paymentStatus: PaymentStatus.EXPIRED },
+          });
+          throw new BadRequestException('This booking has expired. Please create a new booking.');
+        }
+      }
+
       const bookingRequest = await tx.bookingRequest.findUnique({
         where: { id: dto.bookingId },
         include: {
@@ -456,7 +583,7 @@ export class SessionBookingService {
                     in: ['PENDING', 'ACCEPTED'],
                   },
                   id: {
-                    not: dto.bookingId, // Exclude this booking request
+                    not: dto.bookingId,
                   },
                 },
               },
@@ -476,7 +603,6 @@ export class SessionBookingService {
         throw new NotFoundException('Booking request not found');
       }
 
-      // Enhanced slot availability validation
       const timeSlot = bookingRequest.timeSlot;
       if (!timeSlot) {
         throw new BadRequestException('Time slot not found for this booking');
@@ -488,187 +614,206 @@ export class SessionBookingService {
         );
       }
 
-      // Check if there are conflicting sessions
       if (timeSlot.sessions.length > 0) {
         throw new BadRequestException('Time slot has conflicting sessions');
       }
 
-      // Check if the booking hasn't expired
-      if (bookingRequest.expiresAt && new Date() > bookingRequest.expiresAt) {
+      // Skip expiry check when already PAID (webhook beat us)
+      if (
+        bookingRequest.paymentStatus !== PaymentStatus.PAID &&
+        bookingRequest.expiresAt &&
+        new Date() > bookingRequest.expiresAt
+      ) {
         throw new BadRequestException('Booking request has expired');
       }
 
-      // Get PaymentIntent from checkout session if not already set
-      let paymentIntentId = dto.paymentIntentId;
+      // Get PaymentIntent from checkout session if not already stored
+      let paymentIntentId = dto.paymentIntentId || bookingRequest.paymentIntentId;
       if (!paymentIntentId && bookingRequest.stripeSessionId) {
-        const paymentIntentResult =
-          await this.paymentService.getPaymentIntentFromCheckoutSession(
-            bookingRequest.stripeSessionId,
+        try {
+          const paymentIntentResult =
+            await this.paymentService.getPaymentIntentFromCheckoutSession(
+              bookingRequest.stripeSessionId,
+            );
+
+          if (paymentIntentResult.success) {
+            paymentIntentId = paymentIntentResult.paymentIntent!.id;
+
+            await tx.bookingRequest.update({
+              where: { id: dto.bookingId },
+              data: { paymentIntentId },
+            });
+          }
+        } catch (err) {
+          this.logger.warn(
+            `Could not retrieve PaymentIntent for booking ${dto.bookingId}: ${err.message}`,
           );
+        }
+      }
 
-        if (paymentIntentResult.success) {
-          paymentIntentId = paymentIntentResult.paymentIntent!.id;
+      // Verify payment intent status — accept requires_capture OR succeeded
+      if (paymentIntentId && bookingRequest.paymentStatus !== PaymentStatus.PAID) {
+        try {
+          const paymentIntentResult =
+            await this.paymentService.getPaymentIntentFromCheckoutSession(
+              bookingRequest.stripeSessionId!,
+            );
 
-          // Update booking request with PaymentIntent ID
-          await tx.bookingRequest.update({
-            where: { id: dto.bookingId },
+          if (paymentIntentResult.success) {
+            const status = paymentIntentResult.paymentIntent!.status;
+            const validStatuses = ['requires_capture', 'succeeded', 'processing'];
+            if (!validStatuses.includes(status)) {
+              throw new BadRequestException(
+                `Payment is not ready. Current status: ${status}. Expected one of: ${validStatuses.join(', ')}`,
+              );
+            }
+          }
+        } catch (err) {
+          if (err instanceof BadRequestException) throw err;
+          this.logger.warn(
+            `PaymentIntent verification failed for booking ${dto.bookingId}: ${err.message}`,
+          );
+        }
+      }
+
+      const wasAutoApproved = bookingRequest.status === BookingStatus.ACCEPTED;
+      let liveSession: any = null;
+
+      if (wasAutoApproved) {
+        liveSession = await tx.liveSession.findUnique({
+          where: { bookingRequestId: bookingRequest.id },
+        });
+
+        if (!liveSession) {
+          liveSession = await tx.liveSession.create({
             data: {
-              paymentIntentId: paymentIntentId,
+              bookingRequestId: bookingRequest.id,
+              offeringId: bookingRequest.offeringId,
+              instructorId: bookingRequest.offering.instructorId,
+              sessionType: LiveSessionType.CUSTOM,
+              title: bookingRequest.customTopic || bookingRequest.offering.title,
+              description: bookingRequest.offering.description,
+              finalTopic: bookingRequest.customTopic,
+              format: bookingRequest.offering.sessionType,
+              sessionFormat: bookingRequest.offering.sessionFormat,
+              sessionMode: SessionMode.LIVE,
+              maxParticipants: bookingRequest.offering.capacity,
+              minParticipants: bookingRequest.offering.minParticipants || 1,
+              currentParticipants: 1,
+              scheduledStart: bookingRequest.timeSlot!.startTime,
+              scheduledEnd: bookingRequest.timeSlot!.endTime,
+              duration: bookingRequest.offering.duration,
+              pricePerPerson: bookingRequest.finalPrice || 0,
+              totalPrice: bookingRequest.finalPrice || 0,
+              totalRevenue: bookingRequest.finalPrice || 0,
+              platformFee: (bookingRequest.finalPrice || 0) * 0.2,
+              instructorPayout: (bookingRequest.finalPrice || 0) * 0.8,
+              currency: bookingRequest.currency,
+              status: SessionStatus.SCHEDULED,
+              timeSlotId: bookingRequest.timeSlotId || undefined,
+              materials: bookingRequest.offering.materials,
+              recordingEnabled: bookingRequest.offering.recordingEnabled,
             },
           });
-        } else {
-          throw new BadRequestException(
-            'Failed to retrieve PaymentIntent from checkout session',
-          );
+
+          // Only increment time slot count when we actually create the live session
+          await tx.timeSlot.update({
+            where: { id: bookingRequest.timeSlotId! },
+            data: {
+              currentBookings: { increment: 1 },
+              isBooked: timeSlot.currentBookings + 1 >= timeSlot.maxBookings,
+            },
+          });
         }
-      }
 
-      // Verify payment intent status
-      if (paymentIntentId) {
-        const paymentIntentResult =
-          await this.paymentService.getPaymentIntentFromCheckoutSession(
-            bookingRequest.stripeSessionId!,
-          );
-
-        if (paymentIntentResult.success) {
-          const status = paymentIntentResult.paymentIntent!.status;
-          if (status !== 'requires_capture') {
-            throw new BadRequestException(
-              `Payment is not ready for capture. Current status: ${status}. Expected: requires_capture`,
-            );
-          }
-        }
-      }
-
-      // Check if live session already exists for this booking request
-      let liveSession = await tx.liveSession.findUnique({
-        where: { bookingRequestId: bookingRequest.id },
-      });
-
-      if (!liveSession) {
-        // Create live session only if it doesn't exist
-        liveSession = await tx.liveSession.create({
-          data: {
-            bookingRequestId: bookingRequest.id,
-            offeringId: bookingRequest.offeringId,
-            instructorId: bookingRequest.offering.instructorId,
-            sessionType: LiveSessionType.CUSTOM,
-            title: bookingRequest.customTopic || bookingRequest.offering.title,
-            description: bookingRequest.offering.description,
-            finalTopic: bookingRequest.customTopic,
-            format: bookingRequest.offering.sessionType,
-            sessionFormat: bookingRequest.offering.sessionFormat,
-            sessionMode: SessionMode.LIVE,
-            maxParticipants: bookingRequest.offering.capacity,
-            minParticipants: bookingRequest.offering.minParticipants || 1,
-            currentParticipants: 1,
-            scheduledStart: bookingRequest.timeSlot!.startTime,
-            scheduledEnd: bookingRequest.timeSlot!.endTime,
-            duration: bookingRequest.offering.duration,
-            pricePerPerson: bookingRequest.finalPrice || 0,
-            totalPrice: bookingRequest.finalPrice || 0,
-            totalRevenue: bookingRequest.finalPrice || 0,
-            platformFee: (bookingRequest.finalPrice || 0) * 0.2, // 20% platform fee
-            instructorPayout: (bookingRequest.finalPrice || 0) * 0.8, // 80% to instructor
-            currency: bookingRequest.currency,
-            status: SessionStatus.SCHEDULED,
-            timeSlotId: bookingRequest.timeSlotId || undefined,
-            materials: bookingRequest.offering.materials,
-            recordingEnabled: bookingRequest.offering.recordingEnabled,
-          },
-        });
-      }
-
-      // Check if session participant already exists
-      const existingParticipant = await tx.sessionParticipant.findFirst({
-        where: {
-          sessionId: liveSession.id,
-          userId: bookingRequest.studentId,
-        },
-      });
-
-      if (!existingParticipant) {
-        // Create session participant only if it doesn't exist
-        await tx.sessionParticipant.create({
-          data: {
+        const existingParticipant = await tx.sessionParticipant.findFirst({
+          where: {
             sessionId: liveSession.id,
             userId: bookingRequest.studentId,
-            role: ParticipantRole.STUDENT,
-            status: ParticipantStatus.ENROLLED,
-            paidAmount: bookingRequest.finalPrice || 0,
-            currency: bookingRequest.currency,
-            paymentDate: new Date(),
           },
         });
-      }
 
-      // Check if session reservation already exists
-      const existingReservation = await tx.sessionReservation.findFirst({
-        where: {
-          sessionId: liveSession.id,
-          learnerId: bookingRequest.studentId,
-        },
-      });
+        if (!existingParticipant) {
+          await tx.sessionParticipant.create({
+            data: {
+              sessionId: liveSession.id,
+              userId: bookingRequest.studentId,
+              role: ParticipantRole.STUDENT,
+              status: ParticipantStatus.ENROLLED,
+              paidAmount: bookingRequest.finalPrice || 0,
+              currency: bookingRequest.currency,
+              paymentDate: new Date(),
+            },
+          });
+        }
 
-      if (!existingReservation) {
-        // Create session reservation only if it doesn't exist
-        await tx.sessionReservation.create({
-          data: {
+        const existingReservation = await tx.sessionReservation.findFirst({
+          where: {
             sessionId: liveSession.id,
             learnerId: bookingRequest.studentId,
-            status: ReservationStatus.CONFIRMED,
-            paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
-            agreedPrice: bookingRequest.finalPrice || 0,
-            currency: bookingRequest.currency,
-            confirmedAt: new Date(),
+          },
+        });
+
+        if (!existingReservation) {
+          await tx.sessionReservation.create({
+            data: {
+              sessionId: liveSession.id,
+              learnerId: bookingRequest.studentId,
+              status: ReservationStatus.CONFIRMED,
+              paymentStatus: PaymentStatus.PENDING,
+              agreedPrice: bookingRequest.finalPrice || 0,
+              currency: bookingRequest.currency,
+              confirmedAt: new Date(),
+            },
+          });
+        }
+
+        await tx.bookingRequest.update({
+          where: { id: dto.bookingId },
+          data: {
+            paymentStatus: PaymentStatus.PAID,
+            acceptedAt: bookingRequest.acceptedAt || new Date(),
+            liveSession: {
+              connect: { id: liveSession.id },
+            },
+          },
+        });
+
+        const meetingRoomId = this.generateMeetingId(liveSession.id);
+        const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+        const inAppPath = `${frontendUrl}/sessions/${liveSession.id}/video-call`;
+
+        await tx.liveSession.update({
+          where: { id: liveSession.id },
+          data: {
+            meetingRoomId,
+            meetingLink: inAppPath,
+          },
+        });
+      } else {
+        this.logger.log(
+          `Booking ${dto.bookingId} requires instructor approval — payment marked PAID, booking status stays PENDING`,
+        );
+
+        await tx.bookingRequest.update({
+          where: { id: dto.bookingId },
+          data: {
+            paymentStatus: PaymentStatus.PAID,
           },
         });
       }
-
-      // Update time slot booking count
-      await tx.timeSlot.update({
-        where: { id: bookingRequest.timeSlotId! },
-        data: {
-          currentBookings: {
-            increment: 1,
-          },
-          isBooked: timeSlot.currentBookings + 1 >= timeSlot.maxBookings,
-        },
-      });
-
-      // Update booking request status
-      await tx.bookingRequest.update({
-        where: { id: dto.bookingId },
-        data: {
-          status: BookingStatus.ACCEPTED,
-          paymentStatus: PaymentStatus.PENDING, // Keep as PENDING until session completion
-          acceptedAt: new Date(),
-          liveSession: {
-            connect: { id: liveSession.id },
-          },
-        },
-      });
-
-      // Generate meeting room ID (will be updated when Stream call is created)
-      const meetingRoomId = this.generateMeetingId(liveSession.id);
-
-      await tx.liveSession.update({
-        where: { id: liveSession.id },
-        data: {
-          meetingRoomId,
-          meetingLink: `https://getstream.io/call/${meetingRoomId}`,
-        },
-      });
 
       return {
         success: true,
-        liveSession: {
-          ...liveSession,
-          meetingRoomId,
-          meetingLink: `https://meet.jit.si/${meetingRoomId}`,
+        autoApproved: wasAutoApproved,
+        liveSession: liveSession || null,
+        bookingRequest: {
+          ...bookingRequest,
+          paymentStatus: PaymentStatus.PAID,
+          status: wasAutoApproved ? BookingStatus.ACCEPTED : bookingRequest.status,
         },
         paymentIntent: {
-          id: dto.paymentIntentId,
+          id: paymentIntentId || dto.paymentIntentId,
           status: 'requires_capture',
           amount: bookingRequest.finalPrice || 0,
           currency: bookingRequest.currency,
@@ -677,22 +822,98 @@ export class SessionBookingService {
     });
   }
 
-  async completeSession(dto: CompleteSessionDto) {
-    // Delegate to LiveSessionService for consistency
-    // This method is kept for backward compatibility but now uses the unified logic
-    const { LiveSessionService } = await import('./live-session.service');
-    const { StreamService } = await import(
-      '../../stream/services/stream.service.simple'
-    );
-    const streamService = new StreamService(this.configService, this.prisma);
-    const liveSessionService = new LiveSessionService(
-      this.prisma,
-      this.paymentService,
-      streamService,
-      this.configService,
-    );
+  /**
+   * Allow a student to retry / resume payment for an unpaid booking.
+   * Creates a fresh Stripe checkout session and extends the expiry window.
+   */
+  async retryBookingPayment(
+    bookingId: string,
+    studentId: string,
+    returnUrl: string,
+    cancelUrl: string,
+  ) {
+    const booking = await this.prisma.bookingRequest.findUnique({
+      where: { id: bookingId },
+      include: {
+        offering: { include: { instructor: true } },
+        student: true,
+      },
+    });
 
-    return liveSessionService.endLiveSession(dto.sessionId, {
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.studentId !== studentId) {
+      throw new ForbiddenException('You can only retry payment for your own bookings');
+    }
+
+    // Only allow retry if payment is still PENDING or EXPIRED (but booking not rejected/cancelled)
+    if (
+      booking.paymentStatus !== PaymentStatus.PENDING &&
+      booking.paymentStatus !== PaymentStatus.EXPIRED
+    ) {
+      throw new BadRequestException(
+        `Payment cannot be retried. Current payment status: ${booking.paymentStatus}`,
+      );
+    }
+
+    if (
+      booking.status === BookingStatus.REJECTED ||
+      booking.status === BookingStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        'This booking has been rejected or cancelled and cannot be retried.',
+      );
+    }
+
+    // Create a new Stripe checkout session
+    const paymentResult =
+      await this.paymentService.createSessionBookingPayment(
+        booking.id,
+        booking.offeringId,
+        booking.studentId,
+        booking.offering.instructorId,
+        booking.finalPrice || booking.offeredPrice,
+        booking.currency,
+        returnUrl,
+        cancelUrl,
+      );
+
+    if (!paymentResult.success) {
+      throw new BadRequestException(
+        paymentResult.error || 'Failed to create payment session',
+      );
+    }
+
+    // Reset the booking: if it was EXPIRED reset to PENDING, otherwise keep current status
+    const resetStatus =
+      (booking.status as string) === 'EXPIRED'
+        ? BookingStatus.PENDING
+        : booking.status;
+
+    await this.prisma.bookingRequest.update({
+      where: { id: bookingId },
+      data: {
+        stripeSessionId: paymentResult.checkoutSession!.id,
+        paymentStatus: PaymentStatus.PENDING,
+        status: resetStatus,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      },
+    });
+
+    this.logger.log(`Payment retry initiated for booking ${bookingId}`);
+
+    return {
+      success: true,
+      checkoutSession: paymentResult.checkoutSession,
+      paymentIntent: paymentResult.paymentIntent,
+      bookingId,
+    };
+  }
+
+  async completeSession(dto: CompleteSessionDto) {
+    return this.liveSessionService.endLiveSession(dto.sessionId, {
       notes: dto.summary,
       summary: dto.summary,
       instructorNotes: dto.instructorNotes,
@@ -751,9 +972,30 @@ export class SessionBookingService {
         throw new ForbiddenException('You can only approve your own bookings');
       }
 
+      // Check if booking has expired
+      if (
+        bookingRequest.status === BookingStatus.EXPIRED ||
+        (bookingRequest.paymentStatus as string) === 'EXPIRED'
+      ) {
+        throw new BadRequestException(
+          'This booking has expired and can no longer be approved.',
+        );
+      }
+
       // Check if booking is in pending status
       if (bookingRequest.status !== BookingStatus.PENDING) {
         throw new BadRequestException('Only pending bookings can be approved');
+      }
+
+      // Only allow approval if the student has completed payment
+      if (
+        bookingRequest.paymentStatus !== PaymentStatus.PAID &&
+        bookingRequest.paymentStatus !== PaymentStatus.FREE
+      ) {
+        throw new BadRequestException(
+          'Cannot approve booking — the student has not completed payment yet. ' +
+          `Current payment status: ${bookingRequest.paymentStatus}`,
+        );
       }
 
       // Enhanced slot availability validation
@@ -768,8 +1010,7 @@ export class SessionBookingService {
         );
       }
 
-      // Check if slot has capacity (excluding this booking request)
-      // The current booking request is already counted in currentBookings if it was auto-accepted
+      // Check if slot has capacity
       const totalBookings = timeSlot.currentBookings;
 
       this.logger.debug(`Slot capacity check for approval:`, {
@@ -786,11 +1027,6 @@ export class SessionBookingService {
       // Check if there are conflicting sessions
       if (timeSlot.sessions.length > 0) {
         throw new BadRequestException('Time slot has conflicting sessions');
-      }
-
-      // Check if the booking hasn't expired
-      if (bookingRequest.expiresAt && new Date() > bookingRequest.expiresAt) {
-        throw new BadRequestException('Booking request has expired');
       }
 
       // Update booking request status
@@ -1410,21 +1646,22 @@ export class SessionBookingService {
       },
     });
 
-    // Generate meeting room ID (will be updated when Stream call is created)
     const meetingRoomId = this.generateMeetingId(liveSession.id);
+    const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+    const inAppPath = `${frontendUrl}/sessions/${liveSession.id}/video-call`;
 
     const updatedLiveSession = await this.prisma.liveSession.update({
       where: { id: liveSession.id },
       data: {
         meetingRoomId,
-        meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+        meetingLink: inAppPath,
       },
     });
 
     return {
       ...updatedLiveSession,
       meetingRoomId,
-      meetingLink: `https://getstream.io/call/${meetingRoomId}`,
+      meetingLink: inAppPath,
     };
   }
 }

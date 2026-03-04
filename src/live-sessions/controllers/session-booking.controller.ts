@@ -379,5 +379,30 @@ export class SessionBookingController {
       leftAt: new Date()
     };
   }
-}
 
+  @Post(':id/retry-payment')
+  @ApiOperation({ summary: 'Retry / resume payment for an unpaid booking' })
+  @ApiResponse({ status: 200, description: 'New payment session created' })
+  @ApiResponse({ status: 400, description: 'Payment cannot be retried' })
+  @ApiResponse({ status: 404, description: 'Booking not found' })
+  async retryPayment(
+    @Param('id') bookingId: string,
+    @Body() body: { returnUrl: string; cancelUrl: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.sessionBookingService.retryBookingPayment(
+      bookingId,
+      req.user.id,
+      body.returnUrl,
+      body.cancelUrl,
+    );
+  }
+
+  @Post('cleanup-expired')
+  @ApiOperation({ summary: 'Clean up expired unpaid bookings' })
+  @ApiResponse({ status: 200, description: 'Expired bookings cleaned up' })
+  async cleanupExpired() {
+    const count = await this.sessionBookingService.cleanupAllExpiredBookings();
+    return { success: true, expiredCount: count };
+  }
+}

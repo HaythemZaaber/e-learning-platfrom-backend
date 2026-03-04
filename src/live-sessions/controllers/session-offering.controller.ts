@@ -26,14 +26,12 @@ import {
 
   
   @ApiTags('Session Offerings')
-  @ApiBearerAuth()
-  @UseGuards(RestAuthGuard)
   @Controller('session-offerings')
   export class SessionOfferingController {
     constructor(private readonly sessionOfferingService: SessionOfferingService) {}
   
     @Get()
-    @ApiOperation({ summary: 'Get session offerings with filters' })
+    @ApiOperation({ summary: 'Get session offerings with filters (public)' })
     @ApiResponse({ 
       status: 200, 
       description: 'Session offerings retrieved successfully' 
@@ -91,6 +89,8 @@ import {
     }
   
     @Post()
+    @UseGuards(RestAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Create session offering' })
     @ApiResponse({ 
       status: 201, 
@@ -109,6 +109,8 @@ import {
     }
   
     @Patch(':id')
+    @UseGuards(RestAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Update session offering' })
     @ApiResponse({ 
       status: 200, 
@@ -130,6 +132,8 @@ import {
     }
   
     @Delete(':id')
+    @UseGuards(RestAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Delete session offering' })
     @ApiResponse({ 
       status: 200, 
@@ -149,6 +153,8 @@ import {
     }
   
     @Patch(':id/toggle-active')
+    @UseGuards(RestAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Toggle offering active status' })
     @ApiResponse({ 
       status: 200, 

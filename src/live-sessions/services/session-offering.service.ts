@@ -975,7 +975,8 @@ export class SessionOfferingService {
     }
 
     if (status) {
-      where.status = status;
+      const statuses = String(status).split(',').map((s) => s.trim()).filter(Boolean);
+      where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
     }
 
     if (isBookable !== undefined) {

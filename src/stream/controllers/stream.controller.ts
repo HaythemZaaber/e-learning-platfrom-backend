@@ -346,6 +346,11 @@ export class StreamController {
     const userId = req.user.id;
     const role = joinCallDto.role || CallRole.STUDENT;
 
+    // Verify the user has a paid booking for this session (skip for instructors)
+    if (role === CallRole.STUDENT) {
+      await this.streamService.verifySessionPayment(sessionId, userId);
+    }
+
     // Get or create call for the session
     const callData = await this.streamService.createCall(sessionId, userId);
     

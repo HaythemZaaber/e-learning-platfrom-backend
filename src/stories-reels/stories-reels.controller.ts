@@ -30,7 +30,6 @@ import {
 import { RestAuthGuard } from '../auth/rest-auth.guard';
 
 @Controller('stories-reels')
-@UseGuards(RestAuthGuard, RolesGuard)
 export class StoriesReelsController {
   constructor(private readonly storiesReelsService: StoriesReelsService) {}
 
@@ -39,6 +38,7 @@ export class StoriesReelsController {
   // ============================================
 
   @Post('story')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
   async createStory(
@@ -87,7 +87,6 @@ export class StoriesReelsController {
   }
 
   @Get('stories')
-  @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getStories(
     @Query('instructorId') instructorId?: string,
   ): Promise<StoryReelResponseDto[]> {
@@ -115,6 +114,7 @@ export class StoriesReelsController {
   }
 
   @Post('story/:storyId/like')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async likeStory(
@@ -125,6 +125,7 @@ export class StoriesReelsController {
   }
 
   @Post('story/:storyId/view')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async viewStory(
@@ -135,6 +136,7 @@ export class StoriesReelsController {
   }
 
   @Delete('story/:storyId')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteStory(
@@ -149,6 +151,7 @@ export class StoriesReelsController {
   // ============================================
 
   @Post('reel')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file'))
   async createReel(
@@ -196,7 +199,6 @@ export class StoriesReelsController {
   }
 
   @Get('reels')
-  @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getReels(
     @Query() query: GetStoriesReelsDto,
   ): Promise<PaginatedResponseDto<StoryReelResponseDto>> {
@@ -232,7 +234,6 @@ export class StoriesReelsController {
   }
 
   @Get('instructor/:instructorId/reels')
-  @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getInstructorReels(
     @Param('instructorId') instructorId: string,
     @Query() query: GetStoriesReelsDto,
@@ -269,6 +270,7 @@ export class StoriesReelsController {
   }
 
   @Post('reel/:reelId/like')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async likeReel(
@@ -279,6 +281,7 @@ export class StoriesReelsController {
   }
 
   @Post('reel/:reelId/view')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async viewReel(
@@ -289,6 +292,7 @@ export class StoriesReelsController {
   }
 
   @Delete('reel/:reelId')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.INSTRUCTOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteReel(
@@ -303,7 +307,6 @@ export class StoriesReelsController {
   // ============================================
 
   @Get('instructor/:instructorId/feed')
-  @Roles(UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN)
   async getInstructorFeed(
     @Param('instructorId') instructorId: string,
   ): Promise<{
@@ -357,6 +360,7 @@ export class StoriesReelsController {
   // ============================================
 
   @Post('admin/cleanup-expired-stories')
+  @UseGuards(RestAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   async cleanupExpiredStories(): Promise<{ deletedCount: number }> {
     return this.storiesReelsService.cleanupExpiredStories();

@@ -113,13 +113,14 @@ export class StreamService {
         }
       });
 
-      // Update session with call information
+      // Update session with call info - use in-app path only (no external links)
+      const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+      const inAppPath = `${frontendUrl}/sessions/${sessionId}/video-call`;
       await this.prisma.liveSession.update({
         where: { id: sessionId },
         data: {
           meetingRoomId: response.call.id,
-          meetingLink: `https://getstream.io/video/demos/?call_id=${response.call.id}`,
-          status: SessionStatus.CONFIRMED
+          meetingLink: inAppPath,
         }
       });
 
@@ -172,15 +173,16 @@ export class StreamService {
     }
   }
 
-  async endCall(callId: string): Promise<void> {
+  async endCall(callId: string, callType?: 'default' | 'livestream' | 'audio_room'): Promise<void> {
+    const type = callType || 'default';
     try {
-      const call = this.streamClient.video.call('default', callId);
+      const call = this.streamClient.video.call(type, callId);
       await call.end();
-      
-      this.logger.log(`Call ${callId} ended successfully`);
+      this.logger.log(`Call ${callId} (${type}) ended successfully`);
     } catch (error) {
-      this.logger.error('Error ending Stream call:', error);
-      throw new BadRequestException('Failed to end video call');
+      this.logger.error(`Error ending Stream call ${callId}:`, error);
+      // Don't throw - allow session to complete even if Stream API fails
+      // (e.g. call already ended, network issue, etc.)
     }
   }
 
@@ -538,6 +540,61 @@ export class StreamService {
     // because they might rejoin the same session. The participant count should only be decremented
     // when the session is actually ended or when explicitly removing a participant.
     // This prevents issues with users who disconnect and reconnect during the same session.
+  }
+
+  /**
+   * Verify a student has a valid paid booking for this session before they can join.
+   */
+  async verifySessionPayment(sessionId: string, userId: string): Promise<void> {
+    const session = await this.prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        bookingRequest: {
+          select: { id: true, studentId: true, paymentStatus: true, status: true },
+        },
+        participants: {
+          where: { userId },
+          select: { id: true, role: true },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Live session not found');
+    }
+
+    // The instructor always has access
+    if (session.instructorId === userId) {
+      return;
+    }
+
+    // Check if user is already a confirmed participant
+    if (session.participants.length > 0) {
+      // Participant exists — also confirm payment is not still PENDING
+      const booking = session.bookingRequest;
+      if (booking && booking.paymentStatus === 'PENDING') {
+        throw new BadRequestException(
+          'Your payment has not been completed. Please complete the payment before joining the session.',
+        );
+      }
+      return;
+    }
+
+    // No participant record — check if there's a paid booking
+    const booking = await this.prisma.bookingRequest.findFirst({
+      where: {
+        studentId: userId,
+        liveSession: { id: sessionId },
+        paymentStatus: { in: ['PAID', 'FREE'] },
+        status: { in: ['ACCEPTED', 'COMPLETED'] },
+      },
+    });
+
+    if (!booking) {
+      throw new BadRequestException(
+        'You must complete payment before joining this session.',
+      );
+    }
   }
 
   async getSessionDetails(sessionId: string) {

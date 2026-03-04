@@ -1129,6 +1129,11 @@ export class PaymentService {
             event.data.object as Stripe.PaymentIntent,
           );
           break;
+        case 'checkout.session.expired':
+          await this.handleCheckoutSessionExpired(
+            event.data.object as Stripe.Checkout.Session,
+          );
+          break;
         default:
           this.logger.log(`Unhandled event type: ${event.type}`);
       }
@@ -1141,6 +1146,7 @@ export class PaymentService {
   private async handleCheckoutSessionCompleted(
     session: Stripe.Checkout.Session,
   ) {
+    // 1) Handle course enrollment payments (PaymentSession)
     const paymentSession = await this.prisma.paymentSession.findFirst({
       where: { stripeSessionId: session.id },
     });
@@ -1166,6 +1172,34 @@ export class PaymentService {
       );
 
       this.logger.log(`Payment completed for session: ${paymentSession.id}`);
+      return;
+    }
+
+    // 2) Handle live-session booking payments (BookingRequest)
+    const bookingRequest = await this.prisma.bookingRequest.findFirst({
+      where: { stripeSessionId: session.id },
+    });
+
+    if (bookingRequest) {
+      if (
+        bookingRequest.paymentStatus === 'PENDING' ||
+        bookingRequest.paymentStatus === 'EXPIRED'
+      ) {
+        await this.prisma.bookingRequest.update({
+          where: { id: bookingRequest.id },
+          data: {
+            paymentStatus: 'PAID',
+            paymentIntentId: (session.payment_intent as string) || undefined,
+          },
+        });
+        this.logger.log(
+          `Booking ${bookingRequest.id} payment marked PAID via checkout.session.completed webhook`,
+        );
+      } else {
+        this.logger.log(
+          `Booking ${bookingRequest.id} already has paymentStatus=${bookingRequest.paymentStatus}, skipping webhook update`,
+        );
+      }
     }
   }
 
@@ -1209,6 +1243,35 @@ export class PaymentService {
         where: { id: paymentSession.id },
         data: { status: 'CANCELED' },
       });
+    }
+  }
+
+  /**
+   * When a Stripe checkout session expires (customer abandoned the page),
+   * mark the corresponding booking request as EXPIRED so the time slot is freed.
+   */
+  private async handleCheckoutSessionExpired(
+    session: Stripe.Checkout.Session,
+  ) {
+    this.logger.log(
+      `Checkout session expired: ${session.id}`,
+    );
+
+    const booking = await this.prisma.bookingRequest.findFirst({
+      where: { stripeSessionId: session.id },
+    });
+
+    if (booking && booking.paymentStatus === 'PENDING') {
+      await this.prisma.bookingRequest.update({
+        where: { id: booking.id },
+        data: {
+          status: 'EXPIRED',
+          paymentStatus: 'EXPIRED',
+        },
+      });
+      this.logger.log(
+        `Booking ${booking.id} marked as EXPIRED after checkout abandonment`,
+      );
     }
   }
 

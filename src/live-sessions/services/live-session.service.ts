@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService as MainPaymentService } from '../../payment/payment.service';
 import { StreamService } from '../../stream/services/stream.service.simple';
@@ -21,7 +22,8 @@ export class LiveSessionService {
     private prisma: PrismaService,
     private paymentService: MainPaymentService,
     private streamService: StreamService,
-    private configService: ConfigService
+    private configService: ConfigService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async getLiveSessions(filter: LiveSessionFilterDto = {}) {
@@ -607,6 +609,12 @@ export class LiveSessionService {
             profileImage: true
           }
         },
+        bookingRequest: {
+          select: { studentId: true }
+        },
+        reservations: {
+          select: { learnerId: true }
+        },
         participants: {
           include: {
             user: {
@@ -672,14 +680,16 @@ export class LiveSessionService {
     throw new BadRequestException(`Failed to initialize video call: ${error.message}`);
   }
 
-  const currentTime = new Date();
+    const currentTime = new Date();
+  const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+  const inAppJoinPath = `${frontendUrl}/sessions/${id}/video-call`;
   const updatedSession = await this.prisma.liveSession.update({
     where: { id },
     data: {
       status: 'IN_PROGRESS',
       actualStart: currentTime,
       meetingRoomId: callData.callId,
-      meetingLink: `https://getstream.io/video/demos/?call_id=${callData.callId}`,
+      meetingLink: inAppJoinPath, // In-app path only - no external links
       meetingPassword: startDto.meetingPassword || session.meetingPassword,
       instructorNotes: startDto.instructorNotes || session.instructorNotes
     },
@@ -719,7 +729,7 @@ export class LiveSessionService {
     data: { status: 'COMPLETED' }
   });
 
-  // Send notifications to participants
+  // Send SessionNotification (DB) to participants
   for (const participant of updatedSession.participants) {
     await this.createNotification({
       userId: participant.userId,
@@ -730,6 +740,47 @@ export class LiveSessionService {
     });
   }
 
+  // Notify students: query ALL user IDs who should be notified (bulletproof)
+  const [participants, reservationLearners] = await Promise.all([
+    this.prisma.sessionParticipant.findMany({
+      where: { sessionId: id },
+      select: { userId: true },
+    }),
+    this.prisma.sessionReservation.findMany({
+      where: { sessionId: id },
+      select: { learnerId: true },
+    }),
+  ]);
+
+  const bookingStudentId = session.bookingRequestId
+    ? (await this.prisma.bookingRequest.findUnique({
+        where: { id: session.bookingRequestId },
+        select: { studentId: true },
+      }))?.studentId
+    : null;
+
+  const participantIds = [...new Set([
+    ...participants.map((p) => p.userId),
+    ...(bookingStudentId ? [bookingStudentId] : []),
+    ...reservationLearners.map((r) => r.learnerId),
+  ])].filter((uid) => uid && uid !== session.instructorId);
+
+  this.logger.log(`Notifying ${participantIds.length} students for session ${id}: ${participantIds.join(', ') || '(none)'}`);
+
+  const baseUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:3000';
+  const joinUrl = `${baseUrl}/sessions/${id}/video-call`;
+
+  // Emit session.live_started event — SessionNotificationListener will create
+  // DB notifications + the WebSocket gateway will push them in real-time.
+  this.eventEmitter.emit('session.live_started', {
+    sessionId: id,
+    sessionTitle: session.title,
+    participantIds,
+    actionUrl: joinUrl,
+  });
+
+  this.logger.log(`Emitted session.live_started for ${participantIds.length} students`);
+
   return {
     success: true,
     message: 'Session started successfully',
@@ -737,8 +788,8 @@ export class LiveSessionService {
     callData: {
       callId: callData.callId,
       callType: callData.callType,
-      meetingLink: updatedSession.meetingLink,
-      apiKey: this.configService.get('STREAM_API_KEY') // Client needs this
+      meetingLink: inAppJoinPath,
+      apiKey: this.configService.get('STREAM_API_KEY')
     }
   };
 }
@@ -831,19 +882,17 @@ export class LiveSessionService {
       }
     }
 
-    // End Stream call if it exists
+    // End Stream call if it exists (best-effort, don't block session completion)
     if (session.meetingRoomId) {
+      const callType = this.getStreamCallType(session.offering?.sessionFormat);
+      await this.streamService.endCall(session.meetingRoomId, callType);
       try {
-        await this.streamService.endCall(session.meetingRoomId);
-        
-        // Get recording URL if available
         const recordingUrl = await this.streamService.getRecording(session.meetingRoomId);
         if (recordingUrl) {
           endDto.recordingUrl = recordingUrl;
         }
-      } catch (error) {
-        console.error('Error ending Stream call:', error);
-        // Don't throw error, just log it
+      } catch (recErr) {
+        this.logger.warn('Could not fetch recording:', recErr);
       }
     }
 
@@ -908,18 +957,26 @@ export class LiveSessionService {
       }
     });
 
-    // Send completion notifications
-    for (const participant of updatedSession.participants) {
-      await this.createNotification({
-        userId: participant.userId,
-        type: 'SESSION_COMPLETED',
-        title: 'Session Completed',
-        message: `Your session "${session.title}" has been completed`,
-        sessionId: id
-      });
-    }
+  // Send completion notifications
+  for (const participant of updatedSession.participants) {
+    await this.createNotification({
+      userId: participant.userId,
+      type: 'SESSION_COMPLETED',
+      title: 'Session Completed',
+      message: `Your session "${session.title}" has been completed`,
+      sessionId: id
+    });
+  }
 
-    // Update offering statistics
+  // Emit for app-level + WebSocket
+  const participantIds = updatedSession.participants.map(p => p.userId);
+  this.eventEmitter.emit('session.ended', {
+    sessionId: id,
+    sessionTitle: session.title,
+    participantIds,
+  });
+
+  // Update offering statistics
     await this.updateOfferingStats(session.offeringId);
 
     return {
@@ -1017,6 +1074,13 @@ export class LiveSessionService {
       });
     }
 
+    this.eventEmitter.emit('session.cancelled', {
+      sessionId: id,
+      sessionTitle: session.title,
+      participantIds: updatedSession.participants.map(p => p.userId),
+      reason: cancelDto.reason,
+    });
+
     return updatedSession;
   }
 
@@ -1106,6 +1170,14 @@ export class LiveSessionService {
         sessionId: id
       });
     }
+
+    this.eventEmitter.emit('session.rescheduled', {
+      sessionId: id,
+      sessionTitle: session.title,
+      participantIds: updatedSession.participants.map(p => p.userId),
+      newStartTime: rescheduleDto.newStartTime?.toISOString?.() || String(rescheduleDto.newStartTime),
+      reason: rescheduleDto.reason,
+    });
 
     return updatedSession;
   }
@@ -1368,6 +1440,14 @@ export class LiveSessionService {
       },
       orderBy: { createdAt: 'asc' }
     });
+  }
+
+  private getStreamCallType(sessionFormat?: string): 'default' | 'livestream' | 'audio_room' {
+    switch (sessionFormat?.toLowerCase()) {
+      case 'livestream': return 'livestream';
+      case 'audio': return 'audio_room';
+      default: return 'default';
+    }
   }
 
   private isValidStatusTransition(currentStatus: string, newStatus: string): boolean {

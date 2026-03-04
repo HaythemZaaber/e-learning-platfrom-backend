@@ -1,16 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { config } from 'dotenv';
 import { GraphQLAwareValidationPipe } from './common/pipes/graphql-aware-validation.pipe';
+import { IoAdapter } from '@nestjs/platform-socket.io';
+
 config();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
+
+  // Use Socket.IO adapter (frontend uses socket.io-client - must match)
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Configure payload size limits
   // Exclude Stripe webhook routes from JSON parsing to preserve raw body
@@ -39,16 +43,16 @@ async function bootstrap() {
   });
 
   // Enable validation with transformation
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  // app.useGlobalPipes(
+  //   new ValidationPipe({
+  //     transform: true,
+  //     whitelist: true,
+  //     forbidNonWhitelisted: true,
+  //     transformOptions: {
+  //       enableImplicitConversion: true,
+  //     },
+  //   }),
+  // );
 
   // Global validation pipe (GraphQL-aware)
   app.useGlobalPipes(new GraphQLAwareValidationPipe());

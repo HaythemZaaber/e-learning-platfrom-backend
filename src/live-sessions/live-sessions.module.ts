@@ -37,7 +37,7 @@ import { AuthModule } from 'src/auth/auth.module';
     PrismaModule,
     PaymentModule,
     StreamModule,
-    AuthModule
+    AuthModule,
   ],
   controllers: [
     AvailabilityController,

@@ -28,8 +28,6 @@ import {
 import { RestAuthGuard } from '../../auth/rest-auth.guard';
 
 @ApiTags('Group Offering Instances')
-@ApiBearerAuth()
-@UseGuards(RestAuthGuard)
 @Controller('group-instances')
 export class GroupInstanceController {
   constructor(
@@ -38,6 +36,8 @@ export class GroupInstanceController {
   ) {}
 
   @Post()
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a group offering instance' })
   @ApiResponse({
     status: 201,
@@ -127,6 +127,8 @@ export class GroupInstanceController {
   }
 
   @Patch(':id')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update group instance' })
   @ApiResponse({
     status: 200,
@@ -148,6 +150,8 @@ export class GroupInstanceController {
   }
 
   @Delete(':id')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete group instance' })
   @ApiResponse({
     status: 200,
@@ -196,6 +200,8 @@ export class GroupInstanceController {
   }
 
   @Post(':id/check-auto-cancel')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Manually trigger auto-cancel check for an instance',
   })
@@ -212,6 +218,8 @@ export class GroupInstanceController {
   }
 
   @Post('auto-cancel/check-all')
+  @UseGuards(RestAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Check all instances for auto-cancel (cron job endpoint)',
   })

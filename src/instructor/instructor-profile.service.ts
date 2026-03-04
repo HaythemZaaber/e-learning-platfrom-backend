@@ -974,33 +974,47 @@ export class InstructorProfileService {
       include: {
         generatedSlots: {
           where: {
-            // Filter out past time slots
             OR: [
               {
                 date: {
-                  gt: new Date(), // Future dates
+                  gt: new Date(),
                 },
               },
               {
                 AND: [
                   {
                     date: {
-                      gte: new Date(new Date().setHours(0, 0, 0, 0)), // Start of today
+                      gte: new Date(new Date().setHours(0, 0, 0, 0)),
                     },
                   },
                   {
                     startTime: {
-                      gt: new Date(), // Current time
+                      gt: new Date(),
                     },
                   },
                 ],
               },
             ],
-            isAvailable: true, // Only available slots
-            isBooked: false, // Not booked
-            isBlocked: false, // Not blocked
+            isAvailable: true,
+            isBooked: false,
+            isBlocked: false,
           },
           orderBy: { startTime: 'asc' },
+          include: {
+            bookingRequests: {
+              where: {
+                status: { in: ['PENDING', 'ACCEPTED'] },
+                paymentStatus: { notIn: ['EXPIRED', 'FAILED', 'CANCELED'] },
+              },
+              select: {
+                id: true,
+                studentId: true,
+                status: true,
+                paymentStatus: true,
+                offeringId: true,
+              },
+            },
+          },
         },
       },
       orderBy: [{ specificDate: 'asc' }, { startTime: 'asc' }],
